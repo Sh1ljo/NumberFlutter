@@ -80,8 +80,19 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   });
                 },
                 style: SegmentedButton.styleFrom(
-                  selectedForegroundColor: theme.colorScheme.onPrimary,
+                  foregroundColor:
+                      theme.colorScheme.primary.withValues(alpha: 0.7),
+                  selectedForegroundColor: Colors.black,
+                  backgroundColor: theme.colorScheme.surfaceContainerLow,
                   selectedBackgroundColor: theme.colorScheme.primary,
+                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                ).copyWith(
+                  iconColor: WidgetStateProperty.resolveWith<Color?>((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return Colors.black;
+                    }
+                    return theme.colorScheme.primary.withValues(alpha: 0.7);
+                  }),
                 ),
               ),
             ),

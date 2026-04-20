@@ -12,6 +12,9 @@ class GameState extends ChangeNotifier {
   static const String momentumId = 'click_momentum';
   static const String kineticSynergyId = 'click_kinetic_synergy';
   static const String overclockId = 'click_overclock';
+  static const String clickPowerId = 'click_power';
+  static const String autoClickerId = 'idle_auto_clicker';
+  static const String quantumMultiplierId = 'idle_quantum_multiplier';
 
   final StorageService _storageService = StorageService();
   final Completer<void> _readyCompleter = Completer<void>();
@@ -51,8 +54,8 @@ class GameState extends ChangeNotifier {
   int _clickStreak = 0;
   bool _overclockTriggeredThisChain = false;
   double _momentumMultiplier = 1.0;
+  double _momentumProgress = 0.0;
   bool _overclockActive = false;
-  bool _invertFlashActive = false;
 
   BigInt offlineGainsThisSession = BigInt.zero;
 
@@ -65,10 +68,18 @@ class GameState extends ChangeNotifier {
 
   Timer? _ticker;
   Timer? _overclockTimer;
-  Timer? _invertFlashTimer;
 
   // Upgrades
   List<Upgrade> upgrades = [
+    Upgrade(
+      id: clickPowerId,
+      name: 'Click Power',
+      description: 'Increases value per click.',
+      baseCost: BigInt.from(100),
+      costMultiplier: 1.45,
+      effectType: clickCategory,
+      effectValue: BigInt.from(50),
+    ),
     Upgrade(
       id: probabilityStrikeId,
       name: 'Probability Strike',
@@ -112,6 +123,24 @@ class GameState extends ChangeNotifier {
       effectType: clickCategory,
       effectValue: 0,
       maxLevel: 1,
+    ),
+    Upgrade(
+      id: autoClickerId,
+      name: 'Auto-Clicker',
+      description: 'Clicks for you automatically.',
+      baseCost: BigInt.from(50),
+      costMultiplier: 1.15,
+      effectType: idleCategory,
+      effectValue: 1.0,
+    ),
+    Upgrade(
+      id: quantumMultiplierId,
+      name: 'Quantum Multiplier',
+      description: 'Greatly increases idle generation.',
+      baseCost: BigInt.from(1500),
+      costMultiplier: 1.85,
+      effectType: idleCategory,
+      effectValue: 10.0,
     ),
     Upgrade(
       id: 'idle_fractal_engine',
@@ -374,6 +403,8 @@ class GameState extends ChangeNotifier {
   void _startTicker() {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      bool hasStateChange = _updateMomentumDecay();
+
       if (autoClickRate > 0) {
         final effectiveRate = totalIdleRate;
         _idleAccumulator += effectiveRate / 10; // 10 ticks per second
@@ -381,7 +412,7 @@ class GameState extends ChangeNotifier {
           int added = _idleAccumulator.floor();
           number += BigInt.from(added);
           _idleAccumulator -= added;
-          notifyListeners();
+          hasStateChange = true;
 
           // Periodically save
           if (timer.tick % 50 == 0) {
@@ -389,12 +420,17 @@ class GameState extends ChangeNotifier {
           }
         }
       }
+
+      if (hasStateChange) {
+        notifyListeners();
+      }
     });
   }
 
-  bool get isInvertFlashActive => _invertFlashActive;
   bool get isOverclockActive => _overclockActive;
   double get momentumMultiplier => _momentumMultiplier;
+  double get momentumProgress => _momentumProgress;
+  bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
   double get totalIdleRate {
     double idleRate =
@@ -411,6 +447,55 @@ class GameState extends ChangeNotifier {
     return upgrades[idx].level > 0;
   }
 
+  bool _updateMomentumDecay() {
+    if (!_isUpgradeActive(momentumId) || _lastManualClickTime == null) {
+      if (_momentumProgress != 0.0 || _momentumMultiplier != 1.0) {
+        _momentumProgress = 0.0;
+        _momentumMultiplier = 1.0;
+        return true;
+      }
+      return false;
+    }
+
+    final elapsedMs =
+        DateTime.now().difference(_lastManualClickTime!).inMilliseconds;
+    if (elapsedMs <= 0) return false;
+
+    bool changed = false;
+    final baseProgress = (_clickStreak / 50.0).clamp(0.0, 1.0);
+    final fullMomentumMultiplier =
+        (1.0 + ((_clickStreak - 1) * 0.02)).clamp(1.0, 2.0);
+
+    if (elapsedMs >= 1000) {
+      if (_momentumProgress != 0.0 ||
+          _momentumMultiplier != 1.0 ||
+          _clickStreak != 0 ||
+          _overclockTriggeredThisChain) {
+        _momentumProgress = 0.0;
+        _momentumMultiplier = 1.0;
+        _clickStreak = 0;
+        _overclockTriggeredThisChain = false;
+        changed = true;
+      }
+      return changed;
+    }
+
+    final decayFactor = 1.0 - (elapsedMs / 1000.0);
+    final decayedProgress = baseProgress * decayFactor;
+    final decayedMultiplier =
+        1.0 + (fullMomentumMultiplier - 1.0) * decayFactor;
+
+    if ((_momentumProgress - decayedProgress).abs() > 0.001) {
+      _momentumProgress = decayedProgress;
+      changed = true;
+    }
+    if ((_momentumMultiplier - decayedMultiplier).abs() > 0.001) {
+      _momentumMultiplier = decayedMultiplier;
+      changed = true;
+    }
+    return changed;
+  }
+
   ({BigInt gain, bool probabilityStrikeTriggered}) click() {
     final now = DateTime.now();
     final bool chainBroken = _lastManualClickTime == null ||
@@ -420,6 +505,7 @@ class GameState extends ChangeNotifier {
       _clickStreak = 0;
       _overclockTriggeredThisChain = false;
       _momentumMultiplier = 1.0;
+      _momentumProgress = 0.0;
     }
 
     _clickStreak++;
@@ -428,8 +514,10 @@ class GameState extends ChangeNotifier {
     if (_isUpgradeActive(momentumId)) {
       final comboBonus = (_clickStreak - 1) * 0.02;
       _momentumMultiplier = (1.0 + comboBonus).clamp(1.0, 2.0);
+      _momentumProgress = (_clickStreak / 50.0).clamp(0.0, 1.0);
     } else {
       _momentumMultiplier = 1.0;
+      _momentumProgress = 0.0;
     }
 
     if (_isUpgradeActive(overclockId) &&
@@ -450,7 +538,6 @@ class GameState extends ChangeNotifier {
     double gain = (baseClickGain + kineticBonus) * _momentumMultiplier;
     if (probabilityStrikeTriggered) {
       gain *= 10.0;
-      _triggerInvertFlash();
     }
 
     final gained = BigInt.from(gain.floor());
@@ -461,16 +548,6 @@ class GameState extends ChangeNotifier {
       gain: gained,
       probabilityStrikeTriggered: probabilityStrikeTriggered
     );
-  }
-
-  void _triggerInvertFlash() {
-    _invertFlashTimer?.cancel();
-    _invertFlashActive = true;
-    notifyListeners();
-    _invertFlashTimer = Timer(const Duration(milliseconds: 150), () {
-      _invertFlashActive = false;
-      notifyListeners();
-    });
   }
 
   void _activateOverclock() {
@@ -557,6 +634,10 @@ class GameState extends ChangeNotifier {
 
       if (upgrade.effectType == idleCategory) {
         autoClickRate += (upgrade.effectValue as double) * info.amount;
+      } else if (upgrade.effectType == clickCategory &&
+          upgrade.effectValue is BigInt) {
+        clickPower +=
+            (upgrade.effectValue as BigInt) * BigInt.from(info.amount);
       }
 
       notifyListeners();
@@ -580,6 +661,7 @@ class GameState extends ChangeNotifier {
     _clickStreak = 0;
     _overclockTriggeredThisChain = false;
     _momentumMultiplier = 1.0;
+    _momentumProgress = 0.0;
     _overclockActive = false;
     _overclockTimer?.cancel();
 
@@ -643,10 +725,9 @@ class GameState extends ChangeNotifier {
     _clickStreak = 0;
     _overclockTriggeredThisChain = false;
     _momentumMultiplier = 1.0;
+    _momentumProgress = 0.0;
     _overclockActive = false;
     _overclockTimer?.cancel();
-    _invertFlashActive = false;
-    _invertFlashTimer?.cancel();
     offlineGainsThisSession = BigInt.zero;
     prestigeCurrency = 0.0;
     prestigeMultiplier = 1.0;
@@ -685,7 +766,6 @@ class GameState extends ChangeNotifier {
   void dispose() {
     _ticker?.cancel();
     _overclockTimer?.cancel();
-    _invertFlashTimer?.cancel();
     super.dispose();
   }
 }
