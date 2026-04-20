@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;900&amp;family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#5d5f5f",
+                        "inverse-primary": "#5d5f5f",
+                        "on-primary": "#1a1c1c",
+                        "primary": "#ffffff",
+                        "secondary": "#c6c6c7",
+                        "secondary-container": "#454747",
+                        "outline": "#919191",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary-container": "#000000",
+                        "secondary-fixed-dim": "#aaabab",
+                        "tertiary": "#e2e2e2",
+                        "surface-container-low": "#1b1b1b",
+                        "on-background": "#e2e2e2",
+                        "on-secondary-fixed-variant": "#3a3c3c",
+                        "tertiary-container": "#909191",
+                        "surface-variant": "#353535",
+                        "inverse-on-surface": "#303030",
+                        "primary-container": "#d4d4d4",
+                        "on-primary-fixed-variant": "#e2e2e2",
+                        "error": "#ffb4ab",
+                        "inverse-surface": "#e2e2e2",
+                        "primary-fixed-dim": "#454747",
+                        "tertiary-fixed-dim": "#454747",
+                        "on-tertiary": "#1a1c1c",
+                        "on-surface": "#e2e2e2",
+                        "surface-dim": "#131313",
+                        "surface-bright": "#393939",
+                        "surface-container": "#1f1f1f",
+                        "on-error": "#690005",
+                        "on-secondary-container": "#e2e2e2",
+                        "primary-fixed": "#5d5f5f",
+                        "secondary-fixed": "#c6c6c7",
+                        "on-primary-fixed": "#ffffff",
+                        "on-secondary": "#1a1c1c",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "surface-container-highest": "#353535",
+                        "on-surface-variant": "#c6c6c6",
+                        "surface-tint": "#c6c6c7",
+                        "outline-variant": "#474747",
+                        "on-tertiary-fixed-variant": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#ffffff",
+                        "on-tertiary-container": "#000000",
+                        "background": "#131313",
+                        "surface-container-high": "#2a2a2a",
+                        "surface": "#131313"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #131313;
+            color: #e2e2e2;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body selection:bg-primary selection:text-on-primary">
+<!-- TopAppBar -->
+<header class="bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-4 sticky top-0 z-50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#ffffff]" data-icon="toll">toll</span>
+<h1 class="font-['Space_Grotesk'] font-bold tracking-tighter text-2xl text-[#ffffff]">0.00</h1>
+</div>
+<button class="font-['Space_Grotesk'] font-bold text-sm tracking-widest text-[#ffffff] hover:bg-[#2a2a2a] transition-colors px-3 py-1 rounded-sm border border-outline-variant/30 active:scale-95">
+            MAX
+        </button>
+</header>
+<div class="bg-[#1b1b1b] h-[2px] w-full"></div>
+<main class="max-w-4xl mx-auto px-6 py-12 pb-32">
+<!-- Hero Section: Editorial Typography -->
+<section class="mb-16">
+<p class="font-label text-[10px] tracking-[0.4em] text-outline uppercase mb-2">Inventory System</p>
+<h2 class="font-headline font-black text-6xl md:text-8xl tracking-tighter leading-none text-primary">UPGRADES</h2>
+<div class="flex items-end justify-between mt-4">
+<p class="max-w-xs text-sm text-on-surface-variant font-light leading-relaxed">
+                    Enhance computational efficiency through strategic acquisition of automated logic gates.
+                </p>
+<div class="hidden md:block h-[1px] bg-outline-variant flex-grow ml-12 mr-6 mb-2 opacity-30"></div>
+</div>
+</section>
+<!-- Upgrade List: Asymmetric Composition -->
+<div class="space-y-12">
+<!-- Upgrade Item 1 -->
+<div class="group relative flex flex-col md:flex-row md:items-center justify-between py-4 transition-all">
+<div class="flex-1">
+<div class="flex items-center gap-4 mb-1">
+<span class="text-[10px] font-mono text-outline opacity-50">001</span>
+<h3 class="font-headline font-bold text-3xl tracking-tight text-primary">Auto-Clicker</h3>
+</div>
+<div class="flex gap-6 mt-2">
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Level</p>
+<p class="text-lg font-headline font-medium text-secondary">42</p>
+</div>
+<div class="w-[1px] bg-outline-variant/20 h-8 mt-1"></div>
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Rate</p>
+<p class="text-lg font-headline font-medium text-secondary">+1.4/s</p>
+</div>
+</div>
+</div>
+<div class="mt-6 md:mt-0 flex items-center gap-8">
+<div class="text-right">
+<p class="text-[10px] font-label tracking-[0.2em] text-outline uppercase">Cost</p>
+<p class="text-2xl font-headline font-bold text-primary">1,240.00</p>
+</div>
+<button class="bg-primary text-on-primary font-label font-bold text-xs tracking-widest px-8 py-4 rounded-sm hover:bg-primary-container transition-all active:scale-95 duration-100">
+                        PURCHASE
+                    </button>
+</div>
+<div class="absolute -bottom-6 left-0 w-full h-[1px] bg-surface-container-low"></div>
+</div>
+<!-- Upgrade Item 2 -->
+<div class="group relative flex flex-col md:flex-row md:items-center justify-between py-4 transition-all">
+<div class="flex-1">
+<div class="flex items-center gap-4 mb-1">
+<span class="text-[10px] font-mono text-outline opacity-50">002</span>
+<h3 class="font-headline font-bold text-3xl tracking-tight text-primary">Multiplier</h3>
+</div>
+<div class="flex gap-6 mt-2">
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Level</p>
+<p class="text-lg font-headline font-medium text-secondary">08</p>
+</div>
+<div class="w-[1px] bg-outline-variant/20 h-8 mt-1"></div>
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Factor</p>
+<p class="text-lg font-headline font-medium text-secondary">x2.5</p>
+</div>
+</div>
+</div>
+<div class="mt-6 md:mt-0 flex items-center gap-8">
+<div class="text-right">
+<p class="text-[10px] font-label tracking-[0.2em] text-outline uppercase">Cost</p>
+<p class="text-2xl font-headline font-bold text-primary">8,500.00</p>
+</div>
+<button class="bg-primary text-on-primary font-label font-bold text-xs tracking-widest px-8 py-4 rounded-sm hover:bg-primary-container transition-all active:scale-95 duration-100">
+                        PURCHASE
+                    </button>
+</div>
+<div class="absolute -bottom-6 left-0 w-full h-[1px] bg-surface-container-low"></div>
+</div>
+<!-- Upgrade Item 3 (Locked/Expensive state) -->
+<div class="group relative flex flex-col md:flex-row md:items-center justify-between py-4 transition-all opacity-40">
+<div class="flex-1">
+<div class="flex items-center gap-4 mb-1">
+<span class="text-[10px] font-mono text-outline opacity-50">003</span>
+<h3 class="font-headline font-bold text-3xl tracking-tight text-primary">Quantum Buffer</h3>
+</div>
+<div class="flex gap-6 mt-2">
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Level</p>
+<p class="text-lg font-headline font-medium text-secondary">00</p>
+</div>
+<div class="w-[1px] bg-outline-variant/20 h-8 mt-1"></div>
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Yield</p>
+<p class="text-lg font-headline font-medium text-secondary">+15.0/s</p>
+</div>
+</div>
+</div>
+<div class="mt-6 md:mt-0 flex items-center gap-8">
+<div class="text-right">
+<p class="text-[10px] font-label tracking-[0.2em] text-outline uppercase">Cost</p>
+<p class="text-2xl font-headline font-bold text-primary">25,000.00</p>
+</div>
+<button class="border-1.5 border-primary text-primary font-label font-bold text-xs tracking-widest px-8 py-4 rounded-sm hover:bg-primary/10 transition-all active:scale-95 duration-100 cursor-not-allowed">
+                        INSUFFICIENT
+                    </button>
+</div>
+<div class="absolute -bottom-6 left-0 w-full h-[1px] bg-surface-container-low"></div>
+</div>
+<!-- Upgrade Item 4 -->
+<div class="group relative flex flex-col md:flex-row md:items-center justify-between py-4 transition-all">
+<div class="flex-1">
+<div class="flex items-center gap-4 mb-1">
+<span class="text-[10px] font-mono text-outline opacity-50">004</span>
+<h3 class="font-headline font-bold text-3xl tracking-tight text-primary">Neural Mesh</h3>
+</div>
+<div class="flex gap-6 mt-2">
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Level</p>
+<p class="text-lg font-headline font-medium text-secondary">01</p>
+</div>
+<div class="w-[1px] bg-outline-variant/20 h-8 mt-1"></div>
+<div>
+<p class="text-[9px] font-label tracking-[0.2em] text-outline uppercase">Efficiency</p>
+<p class="text-lg font-headline font-medium text-secondary">10%</p>
+</div>
+</div>
+</div>
+<div class="mt-6 md:mt-0 flex items-center gap-8">
+<div class="text-right">
+<p class="text-[10px] font-label tracking-[0.2em] text-outline uppercase">Cost</p>
+<p class="text-2xl font-headline font-bold text-primary">480.00</p>
+</div>
+<button class="bg-primary text-on-primary font-label font-bold text-xs tracking-widest px-8 py-4 rounded-sm hover:bg-primary-container transition-all active:scale-95 duration-100">
+                        PURCHASE
+                    </button>
+</div>
+<div class="absolute -bottom-6 left-0 w-full h-[1px] bg-surface-container-low"></div>
+</div>
+</div>
+<!-- Global Stats Section -->
+<section class="mt-32 grid grid-cols-1 md:grid-cols-3 gap-8">
+<div class="bg-surface-container-low p-8">
+<p class="text-[10px] font-label tracking-[0.4em] text-outline uppercase mb-4">Total Production</p>
+<p class="text-4xl font-headline font-light text-primary">42.8<span class="text-lg text-outline ml-2">Units/s</span></p>
+</div>
+<div class="bg-surface-container-low p-8">
+<p class="text-[10px] font-label tracking-[0.4em] text-outline uppercase mb-4">Efficiency Rating</p>
+<div class="flex items-end gap-4">
+<p class="text-4xl font-headline font-light text-primary">0.82</p>
+<div class="flex-grow bg-surface-container-highest h-1 mb-2">
+<div class="bg-primary h-full w-[82%]"></div>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-8 border-l border-primary/20">
+<p class="text-[10px] font-label tracking-[0.4em] text-outline uppercase mb-4">Uptime</p>
+<p class="text-4xl font-headline font-light text-primary">99.9%</p>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-6 bg-[#131313]/90 backdrop-blur-2xl">
+<!-- GENERATORS -->
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="memory">memory</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">GENERATORS</span>
+</a>
+<!-- UPGRADES (ACTIVE) -->
+<a class="flex flex-col items-center justify-center text-[#ffffff] scale-110 font-bold active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="trending_up">trending_up</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">UPGRADES</span>
+</a>
+<!-- PRESTIGE -->
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">PRESTIGE</span>
+</a>
+<!-- SYSTEM -->
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">SYSTEM</span>
+</a>
+</nav>
+<div class="fixed bottom-[88px] left-0 w-full h-[1px] bg-[#1b1b1b] z-40"></div>
+</body></html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;900&amp;family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#5d5f5f",
+                        "inverse-primary": "#5d5f5f",
+                        "on-primary": "#1a1c1c",
+                        "primary": "#ffffff",
+                        "secondary": "#c6c6c7",
+                        "secondary-container": "#454747",
+                        "outline": "#919191",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary-container": "#000000",
+                        "secondary-fixed-dim": "#aaabab",
+                        "tertiary": "#e2e2e2",
+                        "surface-container-low": "#1b1b1b",
+                        "on-background": "#e2e2e2",
+                        "on-secondary-fixed-variant": "#3a3c3c",
+                        "tertiary-container": "#909191",
+                        "surface-variant": "#353535",
+                        "inverse-on-surface": "#303030",
+                        "primary-container": "#d4d4d4",
+                        "on-primary-fixed-variant": "#e2e2e2",
+                        "error": "#ffb4ab",
+                        "inverse-surface": "#e2e2e2",
+                        "primary-fixed-dim": "#454747",
+                        "tertiary-fixed-dim": "#454747",
+                        "on-tertiary": "#1a1c1c",
+                        "on-surface": "#e2e2e2",
+                        "surface-dim": "#131313",
+                        "surface-bright": "#393939",
+                        "surface-container": "#1f1f1f",
+                        "on-error": "#690005",
+                        "on-secondary-container": "#e2e2e2",
+                        "primary-fixed": "#5d5f5f",
+                        "secondary-fixed": "#c6c6c7",
+                        "on-primary-fixed": "#ffffff",
+                        "on-secondary": "#1a1c1c",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "surface-container-highest": "#353535",
+                        "on-surface-variant": "#c6c6c6",
+                        "surface-tint": "#c6c6c7",
+                        "outline-variant": "#474747",
+                        "on-tertiary-fixed-variant": "#e2e2e2",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#ffffff",
+                        "on-tertiary-container": "#000000",
+                        "background": "#131313",
+                        "surface-container-high": "#2a2a2a",
+                        "surface": "#131313"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #131313;
+            color: #e2e2e2;
+            font-family: 'Manrope', sans-serif;
+        }
+        .display-lg {
+            font-size: clamp(4rem, 15vw, 12rem);
+            line-height: 0.9;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface selection:bg-primary selection:text-on-primary overflow-hidden">
+<!-- TopAppBar -->
+<header class="bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-4 sticky top-0 z-50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#ffffff]" data-icon="toll">toll</span>
+<h1 class="font-['Space_Grotesk'] font-bold tracking-tighter display-lg text-[#ffffff] text-2xl">0.00</h1>
+</div>
+<div class="flex items-center gap-6">
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase text-[#474747]">Active Multiplier: 1.5x</span>
+<button class="font-['Space_Grotesk'] font-bold tracking-tighter text-[#ffffff] hover:bg-[#2a2a2a] transition-colors px-4 py-1 rounded-sm border border-outline-variant/30">
+                MAX
+            </button>
+</div>
+</header>
+<div class="bg-[#1b1b1b] h-[2px] w-full"></div>
+<main class="relative h-[calc(100vh-140px)] w-full flex flex-col items-center justify-center bg-surface-container-lowest overflow-hidden">
+<!-- Background Grain/Texture (Visual depth only) -->
+<div class="absolute inset-0 opacity-[0.03] pointer-events-none" data-alt="subtle dark noise texture with fine white specks on a black background for digital depth" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAcP307u3TUbwjfqCSu5DOHUDdmR656mEKfVMTCYhFzE3MmgZ52h8t8LVEqB93LMZNxhX5LUHAYBy22xHo-jeXNSf73tvtN5Mcyijs4uxC7rKBp6XOd62lVwtZZRoqfoxt7R1tOh-W2zahiDzl6kuKBQIHHIDi65QQ3f0ttOLtZk7gI-YoBgFkVr5pzUYBrA_WehSpqC1sqJjkQQQor8Jks0S9rrP6w0t97tayc18mdeM6vFm0_aJ5XpUpYL9kkJHr0Z6fjwSL2');"></div>
+<!-- Central Counter -->
+<div class="relative z-10 flex flex-col items-center select-none">
+<span class="font-['Manrope'] font-bold text-[12px] tracking-[0.5em] uppercase text-outline mb-4">Current Value</span>
+<div class="font-['Space_Grotesk'] font-black display-lg tracking-tighter text-primary">
+                1,492.65
+            </div>
+<div class="flex items-center gap-4 mt-2">
+<span class="font-['Manrope'] font-medium text-[11px] tracking-widest text-primary/40 uppercase">Quadrillion</span>
+<div class="w-24 h-[2px] bg-surface-container-highest">
+<div class="h-full bg-primary w-3/4"></div>
+</div>
+</div>
+</div>
+<!-- Main Interaction Area -->
+<div class="mt-24 relative group">
+<button class="relative z-10 w-48 h-48 bg-primary rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 hover:shadow-[0_0_50px_rgba(255,255,255,0.1)]">
+<span class="material-symbols-outlined text-on-primary text-5xl" style="font-variation-settings: 'FILL' 1;">add</span>
+</button>
+<!-- Aesthetic Pulse Ring -->
+<div class="absolute inset-0 border border-primary/20 rounded-full animate-ping scale-110 opacity-20 pointer-events-none"></div>
+</div>
+<!-- Indicators Asymmetric Layout -->
+<div class="absolute bottom-12 left-12 flex flex-col gap-8 w-64">
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="font-['Manrope'] font-bold text-[10px] tracking-widest uppercase text-outline">Generator Alpha</span>
+<span class="font-['Space_Grotesk'] text-sm text-primary font-bold">+12.4/s</span>
+</div>
+<div class="w-full h-1 bg-surface-container-low">
+<div class="h-full bg-primary/40 w-2/3"></div>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<div class="flex justify-between items-end">
+<span class="font-['Manrope'] font-bold text-[10px] tracking-widest uppercase text-outline">System Pulse</span>
+<span class="font-['Space_Grotesk'] text-sm text-primary font-bold">88%</span>
+</div>
+<div class="w-full h-1 bg-surface-container-low">
+<div class="h-full bg-primary/40 w-[88%]"></div>
+</div>
+</div>
+</div>
+<div class="absolute top-12 right-12 text-right hidden md:block">
+<div class="font-['Space_Grotesk'] text-4xl font-light text-primary/20 leading-none">PRECISION<br/>INSTRUMENT</div>
+<div class="mt-4 font-['Manrope'] text-[9px] tracking-[0.4em] uppercase text-outline">Ver. 0.9.44_BETA</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<div class="bg-[#1b1b1b] h-[1px] w-full"></div>
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-6 bg-[#131313]/90 backdrop-blur-2xl">
+<a class="flex flex-col items-center justify-center text-[#ffffff] scale-110 font-bold transition-all" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="memory">memory</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">GENERATORS</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="trending_up">trending_up</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">UPGRADES</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">PRESTIGE</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all active:scale-95 duration-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">SYSTEM</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@200;300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed": "#5d5f5f",
+                    "inverse-primary": "#5d5f5f",
+                    "on-primary": "#1a1c1c",
+                    "primary": "#ffffff",
+                    "secondary": "#c6c6c7",
+                    "secondary-container": "#454747",
+                    "outline": "#919191",
+                    "surface-container-lowest": "#0e0e0e",
+                    "on-primary-container": "#000000",
+                    "secondary-fixed-dim": "#aaabab",
+                    "tertiary": "#e2e2e2",
+                    "surface-container-low": "#1b1b1b",
+                    "on-background": "#e2e2e2",
+                    "on-secondary-fixed-variant": "#3a3c3c",
+                    "tertiary-container": "#909191",
+                    "surface-variant": "#353535",
+                    "inverse-on-surface": "#303030",
+                    "primary-container": "#d4d4d4",
+                    "on-primary-fixed-variant": "#e2e2e2",
+                    "error": "#ffb4ab",
+                    "inverse-surface": "#e2e2e2",
+                    "primary-fixed-dim": "#454747",
+                    "tertiary-fixed-dim": "#454747",
+                    "on-tertiary": "#1a1c1c",
+                    "on-surface": "#e2e2e2",
+                    "surface-dim": "#131313",
+                    "surface-bright": "#393939",
+                    "surface-container": "#1f1f1f",
+                    "on-error": "#690005",
+                    "on-secondary-container": "#e2e2e2",
+                    "primary-fixed": "#5d5f5f",
+                    "secondary-fixed": "#c6c6c7",
+                    "on-primary-fixed": "#ffffff",
+                    "on-secondary": "#1a1c1c",
+                    "error-container": "#93000a",
+                    "on-secondary-fixed": "#1a1c1c",
+                    "surface-container-highest": "#353535",
+                    "on-surface-variant": "#c6c6c6",
+                    "surface-tint": "#c6c6c7",
+                    "outline-variant": "#474747",
+                    "on-tertiary-fixed-variant": "#e2e2e2",
+                    "on-error-container": "#ffdad6",
+                    "on-tertiary-fixed": "#ffffff",
+                    "on-tertiary-container": "#000000",
+                    "background": "#131313",
+                    "surface-container-high": "#2a2a2a",
+                    "surface": "#131313"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Space Grotesk"],
+                    "body": ["Manrope"],
+                    "label": ["Manrope"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Manrope', sans-serif; }
+        h1, h2, .display-lg { font-family: 'Space Grotesk', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen selection:bg-primary selection:text-on-primary">
+<!-- TopAppBar Shell -->
+<header class="bg-[#131313]/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-4 sticky top-0 z-50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#ffffff]" data-icon="toll">toll</span>
+<span class="font-['Space_Grotesk'] font-bold tracking-tighter text-[24px] text-[#ffffff]">0.00</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-[12px] font-bold tracking-widest text-[#ffffff] px-3 py-1 border-[1.5px] border-[#ffffff] hover:bg-[#2a2a2a] transition-colors">MAX</button>
+</div>
+</header>
+<div class="bg-[#1b1b1b] h-[2px] w-full"></div>
+<main class="max-w-4xl mx-auto px-6 pt-16 pb-32">
+<!-- System Hero Section -->
+<section class="mb-20">
+<h1 class="text-7xl font-bold tracking-tighter mb-4 uppercase">SYSTEM</h1>
+<p class="text-sm font-medium tracking-[0.3em] text-outline uppercase">Configuration &amp; Protocol v.2.4.0</p>
+</section>
+<!-- Monolithic Settings Grid -->
+<div class="space-y-16">
+<!-- Category: Feedback -->
+<section>
+<h2 class="text-xs font-bold tracking-[0.4em] text-outline-variant mb-8 uppercase">01. Haptic Engine</h2>
+<div class="space-y-0 text-left">
+<div class="group py-8 flex justify-between items-center bg-surface hover:bg-surface-container-low transition-colors px-4 -mx-4 cursor-pointer">
+<div>
+<p class="text-xl font-medium tracking-tight">Vibration Intensity</p>
+<p class="text-xs text-outline-variant mt-1 uppercase tracking-widest">Tactile numeric feedback</p>
+</div>
+<div class="w-48 flex items-center gap-4">
+<span class="text-[10px] font-mono">0%</span>
+<div class="flex-grow h-[2px] bg-surface-container-highest relative">
+<div class="absolute inset-y-0 left-0 w-3/4 bg-primary"></div>
+<div class="absolute top-1/2 left-3/4 -translate-y-1/2 w-3 h-3 bg-primary border-4 border-surface ring-1 ring-primary"></div>
+</div>
+<span class="text-[10px] font-mono">100%</span>
+</div>
+</div>
+<div class="group py-8 flex justify-between items-center bg-surface hover:bg-surface-container-low transition-colors px-4 -mx-4 cursor-pointer">
+<div>
+<p class="text-xl font-medium tracking-tight">Haptic Pulse</p>
+<p class="text-xs text-outline-variant mt-1 uppercase tracking-widest">Active on incrementation</p>
+</div>
+<div class="w-12 h-6 bg-primary flex items-center justify-end px-1">
+<div class="w-4 h-4 bg-on-primary"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Category: Persistence -->
+<section>
+<div class="bg-[#1b1b1b] h-[1px] w-full mb-12 opacity-50"></div>
+<h2 class="text-xs font-bold tracking-[0.4em] text-outline-variant mb-8 uppercase">02. Persistence</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[#1b1b1b]">
+<div class="bg-surface p-10 hover:bg-surface-container transition-colors group">
+<p class="text-xl font-medium tracking-tight mb-2">Cloud Synchronization</p>
+<p class="text-xs text-outline-variant uppercase tracking-widest mb-8">Manual sync with network</p>
+<button class="px-6 py-2 border-[1.5px] border-primary text-xs font-bold tracking-widest hover:bg-primary hover:text-on-primary transition-all">SAVE PROGRESS</button>
+</div>
+<div class="bg-surface p-10 hover:bg-surface-container transition-colors group">
+<p class="text-xl font-medium tracking-tight mb-2">Auto-Save Protocol</p>
+<p class="text-xs text-outline-variant uppercase tracking-widest mb-8">Interval: 60 Seconds</p>
+<div class="w-12 h-6 bg-surface-container-highest flex items-center justify-start px-1 border border-outline-variant">
+<div class="w-4 h-4 bg-outline-variant"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Category: Legal & Info -->
+<section>
+<div class="bg-[#1b1b1b] h-[1px] w-full mb-12 opacity-50"></div>
+<h2 class="text-xs font-bold tracking-[0.4em] text-outline-variant mb-8 uppercase">03. Information</h2>
+<div class="space-y-4">
+<div class="flex justify-between items-baseline py-4 border-b border-outline-variant/10">
+<span class="text-xs font-bold tracking-widest uppercase text-outline">Software Version</span>
+<span class="font-mono text-sm">2.4.0-STABLE</span>
+</div>
+<div class="flex justify-between items-baseline py-4 border-b border-outline-variant/10">
+<span class="text-xs font-bold tracking-widest uppercase text-outline">Terminal ID</span>
+<span class="font-mono text-sm">#882-QX-01</span>
+</div>
+<div class="flex justify-between items-baseline py-4 border-b border-outline-variant/10 cursor-pointer group">
+<span class="text-xs font-bold tracking-widest uppercase text-outline group-hover:text-primary transition-colors">Privacy Policy</span>
+<span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform" data-icon="north_east">north_east</span>
+</div>
+<div class="flex justify-between items-baseline py-4 border-b border-outline-variant/10 cursor-pointer group">
+<span class="text-xs font-bold tracking-widest uppercase text-outline group-hover:text-primary transition-colors">Terms of Service</span>
+<span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform" data-icon="north_east">north_east</span>
+</div>
+<div class="flex justify-between items-baseline py-4 border-b border-outline-variant/10 cursor-pointer group">
+<span class="text-xs font-bold tracking-widest uppercase text-outline group-hover:text-error transition-colors">Factory Reset</span>
+<span class="material-symbols-outlined text-sm text-error" data-icon="warning">warning</span>
+</div>
+</div>
+</section>
+</div>
+<!-- System Branding / About -->
+<div class="mt-32 text-center opacity-30">
+<h3 class="font-['Space_Grotesk'] font-black tracking-[1em] text-2xl uppercase mb-4">NUMBER</h3>
+<p class="text-[10px] tracking-[0.5em] uppercase">Engineered for Mathematical Absolute</p>
+</div>
+</main>
+<!-- BottomNavBar Shell -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-6 bg-[#131313]/90 backdrop-blur-2xl">
+<div class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined mb-1" data-icon="memory">memory</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">GENERATORS</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined mb-1" data-icon="trending_up">trending_up</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">UPGRADES</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#474747] opacity-60 hover:text-[#ffffff] transition-all cursor-pointer active:scale-95 duration-100">
+<span class="material-symbols-outlined mb-1" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">PRESTIGE</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#ffffff] scale-110 font-bold active:scale-95 duration-100">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-['Manrope'] font-medium text-[10px] tracking-[0.2em] uppercase">SYSTEM</span>
+</div>
+</nav>
+<div class="fixed bottom-0 left-0 w-full bg-[#1b1b1b] h-[1px] z-[51]"></div>
+</body></html>
