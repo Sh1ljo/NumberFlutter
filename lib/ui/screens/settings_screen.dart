@@ -28,7 +28,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // Topbar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
               child: Row(
                 children: [
                   Icon(Icons.toll, color: theme.colorScheme.primary),
@@ -41,7 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             Container(height: 2, color: theme.colorScheme.surfaceContainerLow),
-            
+
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(24.0),
@@ -57,39 +58,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: theme.textTheme.labelSmall,
                   ),
                   const SizedBox(height: 48),
-                  
+
                   // Category: Feedback
                   _buildSectionTitle(context, '01. HAPTIC ENGINE'),
-                  _buildListTile(context, title: 'Vibration Intensity', subtitle: 'Tactile numeric feedback', trailing: _buildDummySlider(context)),
+                  _buildListTile(context,
+                      title: 'Vibration Intensity',
+                      subtitle: 'Tactile numeric feedback',
+                      trailing: _buildDummySlider(context)),
                   const SizedBox(height: 24),
-                  _buildListTile(context, title: 'Haptic Pulse', subtitle: 'Active on incrementation', trailing: _buildDummyToggle(context, _hapticPulseEnabled, (val) {
-                    setState(() => _hapticPulseEnabled = val);
-                  })),                  
+                  _buildListTile(context,
+                      title: 'Haptic Pulse',
+                      subtitle: 'Active on incrementation',
+                      trailing: _buildDummyToggle(context, _hapticPulseEnabled,
+                          (val) {
+                        setState(() => _hapticPulseEnabled = val);
+                      })),
                   const SizedBox(height: 32),
-                  Container(height: 1, color: theme.colorScheme.surfaceContainerLow),
+                  Container(
+                      height: 1, color: theme.colorScheme.surfaceContainerLow),
                   const SizedBox(height: 32),
-                  
+
                   // Category: Persistence
                   _buildSectionTitle(context, '02. PERSISTENCE'),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        decoration: BoxDecoration(border: Border.all(color: theme.colorScheme.surfaceContainerLow)),
+                        decoration: BoxDecoration(
+                            border: Border.all(
+                                color: theme.colorScheme.surfaceContainerLow)),
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Cloud Synchronization', style: theme.textTheme.titleLarge?.copyWith(fontSize: 20)),
+                            Text('Cloud Synchronization',
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 20)),
                             const SizedBox(height: 4),
-                            Text('Manual sync with network', style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
+                            Text('Manual sync with network',
+                                style: theme.textTheme.labelSmall
+                                    ?.copyWith(fontSize: 10)),
                             const SizedBox(height: 24),
                             OutlinedButton(
                               onPressed: () {},
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: theme.colorScheme.primary,
-                                side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+                                side: BorderSide(
+                                    color: theme.colorScheme.primary,
+                                    width: 1.5),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(2)),
                               ),
                               child: const Text('SAVE PROGRESS'),
                             )
@@ -98,14 +116,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Container(
-                        decoration: BoxDecoration(border: Border.all(color: theme.colorScheme.surfaceContainerLow)),
+                        decoration: BoxDecoration(
+                            border: Border.all(
+                                color: theme.colorScheme.surfaceContainerLow)),
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Auto-Save Protocol', style: theme.textTheme.titleLarge?.copyWith(fontSize: 20)),
+                            Text('Auto-Save Protocol',
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 20)),
                             const SizedBox(height: 4),
-                            Text('Interval: 60 Seconds', style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
+                            Text('Interval: 60 Seconds',
+                                style: theme.textTheme.labelSmall
+                                    ?.copyWith(fontSize: 10)),
                             const SizedBox(height: 24),
                             _buildDummyToggle(context, _autoSaveEnabled, (val) {
                               setState(() => _autoSaveEnabled = val);
@@ -115,11 +139,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
-                  
+
                   const SizedBox(height: 32),
-                  Container(height: 1, color: theme.colorScheme.surfaceContainerLow),
+                  Container(
+                      height: 1, color: theme.colorScheme.surfaceContainerLow),
                   const SizedBox(height: 32),
-                  
+
                   // Category: Legal & Info
                   _buildSectionTitle(context, '03. INFORMATION'),
                   _buildInfoRow(context, 'Software Version', '0.01'),
@@ -129,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildDangerRow(context, 'Factory Reset', () {
                     _showResetConfirmation(context, gameState);
                   }),
-                  
+
                   const SizedBox(height: 64),
                   // Branding
                   Center(
@@ -137,9 +162,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       opacity: 0.3,
                       child: Column(
                         children: [
-                          Text('NUMBER', style: theme.textTheme.displayLarge?.copyWith(fontSize: 24, letterSpacing: 10)),
+                          Text('NUMBER',
+                              style: theme.textTheme.displayLarge
+                                  ?.copyWith(fontSize: 24, letterSpacing: 10)),
                           const SizedBox(height: 8),
-                          Text('Engineered for Mathematical Absolute', style: theme.textTheme.labelSmall?.copyWith(fontSize: 8)),
+                          Text('Engineered for Mathematical Absolute',
+                              style: theme.textTheme.labelSmall
+                                  ?.copyWith(fontSize: 8)),
                         ],
                       ),
                     ),
@@ -162,7 +191,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return AlertDialog(
           backgroundColor: theme.colorScheme.surfaceContainerHigh,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          title: Text('FACTORY RESET', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.error)),
+          title: Text('FACTORY RESET',
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(color: theme.colorScheme.error)),
           content: Text(
             'Are you sure you want to completely erase all data? This action cannot be undone.',
             style: theme.textTheme.bodyLarge,
@@ -170,7 +201,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('CANCEL', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.primary)),
+              child: Text('CANCEL',
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.primary)),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -182,9 +215,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: theme.colorScheme.error,
                 foregroundColor: theme.colorScheme.onError,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(2)),
               ),
-              child: Text('RESET', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onError)),
+              child: Text('RESET',
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.onError)),
             ),
           ],
         );
@@ -197,12 +233,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outlineVariant),
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.outlineVariant),
       ),
     );
   }
 
-  Widget _buildListTile(BuildContext context, {required String title, required String subtitle, required Widget trailing}) {
+  Widget _buildListTile(BuildContext context,
+      {required String title,
+      required String subtitle,
+      required Widget trailing}) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -213,9 +255,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: theme.textTheme.titleLarge?.copyWith(fontSize: 20)),
+                Text(title,
+                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 20)),
                 const SizedBox(height: 4),
-                Text(subtitle, style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
+                Text(subtitle,
+                    style: theme.textTheme.labelSmall?.copyWith(fontSize: 10)),
               ],
             ),
           ),
@@ -232,7 +276,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       width: 150,
       child: Row(
         children: [
-          Text('0%', style: TextStyle(fontFamily: 'monospace', fontSize: 10, color: theme.colorScheme.outline)),
+          Text('0%',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 10,
+                  color: theme.colorScheme.outline)),
           Expanded(
             child: Slider(
               value: _vibrationIntensity,
@@ -245,13 +293,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               inactiveColor: theme.colorScheme.surfaceContainerHighest,
             ),
           ),
-          Text('100%', style: TextStyle(fontFamily: 'monospace', fontSize: 10, color: theme.colorScheme.outline)),
+          Text('100%',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 10,
+                  color: theme.colorScheme.outline)),
         ],
       ),
     );
   }
 
-  Widget _buildDummyToggle(BuildContext context, bool isOn, ValueChanged<bool> onChanged) {
+  Widget _buildDummyToggle(
+      BuildContext context, bool isOn, ValueChanged<bool> onChanged) {
     final theme = Theme.of(context);
     return GestureDetector(
       onTap: () => onChanged(!isOn),
@@ -260,13 +313,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         duration: const Duration(milliseconds: 200),
         width: 48,
         height: 24,
-        color: isOn ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest,
+        color: isOn
+            ? theme.colorScheme.primary
+            : theme.colorScheme.surfaceContainerHighest,
         alignment: isOn ? Alignment.centerRight : Alignment.centerLeft,
         padding: const EdgeInsets.all(4),
         child: Container(
-          width: 16, 
-          height: 16, 
-          color: isOn ? theme.colorScheme.onPrimary : theme.colorScheme.outlineVariant,
+          width: 16,
+          height: 16,
+          color: isOn
+              ? theme.colorScheme.onPrimary
+              : theme.colorScheme.outlineVariant,
         ),
       ),
     );
@@ -277,13 +334,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16.0),
       child: Container(
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.colorScheme.surfaceContainerLow))),
+        decoration: BoxDecoration(
+            border: Border(
+                bottom:
+                    BorderSide(color: theme.colorScheme.surfaceContainerLow))),
         padding: const EdgeInsets.only(bottom: 16.0),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(key.toUpperCase(), style: theme.textTheme.labelSmall),
-            Text(value, style: const TextStyle(fontFamily: 'monospace', fontSize: 14)),
+            Text(value,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 14)),
           ],
         ),
       ),
@@ -295,7 +356,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16.0),
       child: Container(
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.colorScheme.surfaceContainerLow))),
+        decoration: BoxDecoration(
+            border: Border(
+                bottom:
+                    BorderSide(color: theme.colorScheme.surfaceContainerLow))),
         padding: const EdgeInsets.only(bottom: 16.0),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -316,12 +380,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
         child: Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.colorScheme.surfaceContainerLow))),
+          decoration: BoxDecoration(
+              border: Border(
+                  bottom: BorderSide(
+                      color: theme.colorScheme.surfaceContainerLow))),
           padding: const EdgeInsets.only(bottom: 16.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(key.toUpperCase(), style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.error)),
+              Text(key.toUpperCase(),
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: theme.colorScheme.error)),
               Icon(Icons.warning, size: 16, color: theme.colorScheme.error),
             ],
           ),

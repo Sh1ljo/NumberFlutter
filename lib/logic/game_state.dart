@@ -68,6 +68,8 @@ class GameState extends ChangeNotifier {
 
   Timer? _ticker;
   Timer? _overclockTimer;
+  Timer? _saveDebounceTimer;
+  static const Duration _saveDebounceDuration = Duration(milliseconds: 350);
 
   // Upgrades
   List<Upgrade> upgrades = [
@@ -84,45 +86,40 @@ class GameState extends ChangeNotifier {
       id: probabilityStrikeId,
       name: 'Probability Strike',
       description:
-          'Gives a 5% chance that a manual click yields 10x its normal value.',
+          'Each level adds +5% strike chance. Strike power also increases.',
       baseCost: BigInt.from(2500),
-      costMultiplier: 1.0,
+      costMultiplier: 1.72,
       effectType: clickCategory,
       effectValue: 0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: momentumId,
       name: 'Momentum',
-      description:
-          'Rapid clicking builds a combo multiplier up to 2.0x, reset after 1s idle.',
+      description: 'Each level improves combo growth, cap, and decay window.',
       baseCost: BigInt.from(8000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.68,
       effectType: clickCategory,
       effectValue: 0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: kineticSynergyId,
       name: 'Kinetic Synergy',
       description:
-          'Adds 1% of your total idle Numbers Per Second to your manual click power.',
+          'Each level adds +1% of your idle N/s to manual click power.',
       baseCost: BigInt.from(40000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.75,
       effectType: clickCategory,
       effectValue: 0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: overclockId,
       name: 'Overclock',
       description:
-          'Doubles idle production for 30 seconds after 50 manual clicks in a row.',
+          'Each level boosts overclock power and duration, and lowers trigger streak.',
       baseCost: BigInt.from(125000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.82,
       effectType: clickCategory,
       effectValue: 0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: autoClickerId,
@@ -145,52 +142,47 @@ class GameState extends ChangeNotifier {
     Upgrade(
       id: 'idle_fractal_engine',
       name: 'Fractal Engine',
-      description: 'Generates 100 numbers per second.',
+      description: 'Adds +100 numbers per second each level.',
       baseCost: BigInt.from(7500),
-      costMultiplier: 1.0,
+      costMultiplier: 1.55,
       effectType: idleCategory,
       effectValue: 100.0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: 'idle_singularity_core',
       name: 'Singularity Core',
-      description: 'Generates 1,000 numbers per second.',
+      description: 'Adds +1,000 numbers per second each level.',
       baseCost: BigInt.from(65000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.58,
       effectType: idleCategory,
       effectValue: 1000.0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: 'idle_tesseract_array',
       name: 'Tesseract Array',
-      description: 'Generates 10,000 numbers per second.',
+      description: 'Adds +10,000 numbers per second each level.',
       baseCost: BigInt.from(750000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.62,
       effectType: idleCategory,
       effectValue: 10000.0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: 'idle_entropy_harvester',
       name: 'Entropy Harvester',
-      description: 'Generates 100,000 numbers per second.',
+      description: 'Adds +100,000 numbers per second each level.',
       baseCost: BigInt.from(9000000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.66,
       effectType: idleCategory,
       effectValue: 100000.0,
-      maxLevel: 1,
     ),
     Upgrade(
       id: 'idle_void_resonance',
       name: 'Void Resonance',
-      description: 'Generates 1,000,000 numbers per second.',
+      description: 'Adds +1,000,000 numbers per second each level.',
       baseCost: BigInt.from(120000000),
-      costMultiplier: 1.0,
+      costMultiplier: 1.7,
       effectType: idleCategory,
       effectValue: 1000000.0,
-      maxLevel: 1,
     ),
   ];
 
@@ -421,6 +413,7 @@ class GameState extends ChangeNotifier {
         }
       }
 
+      // Only notify if there's an actual change that affects UI
       if (hasStateChange) {
         notifyListeners();
       }
@@ -436,9 +429,78 @@ class GameState extends ChangeNotifier {
     double idleRate =
         autoClickRate * prestigeMultiplier * permanentIdleMultiplier;
     if (_overclockActive) {
-      idleRate *= 2.0;
+      idleRate *= _overclockIdleMultiplier;
     }
     return idleRate;
+  }
+
+  int _upgradeLevel(String id) {
+    final idx = upgrades.indexWhere((u) => u.id == id);
+    if (idx == -1) return 0;
+    return upgrades[idx].level;
+  }
+
+  double get _probabilityStrikeChance {
+    final level = _upgradeLevel(probabilityStrikeId);
+    if (level <= 0) return 0.0;
+    return (0.05 * level).clamp(0.0, 0.75);
+  }
+
+  double get _probabilityStrikeMultiplier {
+    final level = _upgradeLevel(probabilityStrikeId);
+    if (level <= 0) return 1.0;
+    return 10.0 + (level - 1) * 2.0;
+  }
+
+  double get _kineticSynergyShare {
+    final level = _upgradeLevel(kineticSynergyId);
+    if (level <= 0) return 0.0;
+    return 0.01 * level;
+  }
+
+  double get _momentumPerClickBonus {
+    final level = _upgradeLevel(momentumId);
+    if (level <= 0) return 0.0;
+    return 0.02 + (level - 1) * 0.006;
+  }
+
+  double get _momentumCap {
+    final level = _upgradeLevel(momentumId);
+    if (level <= 0) return 1.0;
+    return 2.0 + (level - 1) * 0.35;
+  }
+
+  int get _momentumDecayWindowMs {
+    final level = _upgradeLevel(momentumId);
+    if (level <= 0) return 1000;
+    return math.min(2500, 1000 + (level - 1) * 120);
+  }
+
+  int get _momentumClicksToCap {
+    final level = _upgradeLevel(momentumId);
+    if (level <= 0) return 50;
+    final perClick = _momentumPerClickBonus;
+    final cap = _momentumCap;
+    final needed = ((cap - 1.0) / perClick).ceil() + 1;
+    return math.max(5, needed);
+  }
+
+  int get _overclockStreakRequirement {
+    final level = _upgradeLevel(overclockId);
+    if (level <= 0) return 50;
+    return math.max(20, 50 - (level - 1) * 3);
+  }
+
+  double get _overclockIdleMultiplier {
+    final level = _upgradeLevel(overclockId);
+    if (level <= 0) return 2.0;
+    return 2.0 + (level - 1) * 0.4;
+  }
+
+  int get _overclockDurationSeconds {
+    final level = _upgradeLevel(overclockId);
+    if (level <= 0) return 30;
+    return math.min(180, 30 + (level - 1) * 5);
   }
 
   bool _isUpgradeActive(String id) {
@@ -462,11 +524,12 @@ class GameState extends ChangeNotifier {
     if (elapsedMs <= 0) return false;
 
     bool changed = false;
-    final baseProgress = (_clickStreak / 50.0).clamp(0.0, 1.0);
+    final baseProgress = (_clickStreak / _momentumClicksToCap).clamp(0.0, 1.0);
     final fullMomentumMultiplier =
-        (1.0 + ((_clickStreak - 1) * 0.02)).clamp(1.0, 2.0);
+        (1.0 + ((_clickStreak - 1) * _momentumPerClickBonus))
+            .clamp(1.0, _momentumCap);
 
-    if (elapsedMs >= 1000) {
+    if (elapsedMs >= _momentumDecayWindowMs) {
       if (_momentumProgress != 0.0 ||
           _momentumMultiplier != 1.0 ||
           _clickStreak != 0 ||
@@ -480,7 +543,7 @@ class GameState extends ChangeNotifier {
       return changed;
     }
 
-    final decayFactor = 1.0 - (elapsedMs / 1000.0);
+    final decayFactor = 1.0 - (elapsedMs / _momentumDecayWindowMs);
     final decayedProgress = baseProgress * decayFactor;
     final decayedMultiplier =
         1.0 + (fullMomentumMultiplier - 1.0) * decayFactor;
@@ -511,39 +574,61 @@ class GameState extends ChangeNotifier {
     _clickStreak++;
     _lastManualClickTime = now;
 
+    bool momentumChanged = false;
     if (_isUpgradeActive(momentumId)) {
-      final comboBonus = (_clickStreak - 1) * 0.02;
-      _momentumMultiplier = (1.0 + comboBonus).clamp(1.0, 2.0);
-      _momentumProgress = (_clickStreak / 50.0).clamp(0.0, 1.0);
+      final comboBonus = (_clickStreak - 1) * _momentumPerClickBonus;
+      final newMultiplier = (1.0 + comboBonus).clamp(1.0, _momentumCap);
+      final newProgress = (_clickStreak / _momentumClicksToCap).clamp(0.0, 1.0);
+      
+      // Only mark as changed if there's a significant difference
+      if ((_momentumMultiplier - newMultiplier).abs() > 0.01 ||
+          (_momentumProgress - newProgress).abs() > 0.01) {
+        _momentumMultiplier = newMultiplier;
+        _momentumProgress = newProgress;
+        momentumChanged = true;
+      }
     } else {
-      _momentumMultiplier = 1.0;
-      _momentumProgress = 0.0;
+      if (_momentumMultiplier != 1.0 || _momentumProgress != 0.0) {
+        _momentumMultiplier = 1.0;
+        _momentumProgress = 0.0;
+        momentumChanged = true;
+      }
     }
 
+    bool overclockChanged = false;
     if (_isUpgradeActive(overclockId) &&
-        _clickStreak >= 50 &&
+        _clickStreak >= _overclockStreakRequirement &&
         !_overclockTriggeredThisChain) {
       _overclockTriggeredThisChain = true;
       _activateOverclock();
+      overclockChanged = true;
     }
 
     final bool probabilityStrikeTriggered =
-        _isUpgradeActive(probabilityStrikeId) && _rng.nextDouble() < 0.05;
+        _isUpgradeActive(probabilityStrikeId) &&
+            _rng.nextDouble() < _probabilityStrikeChance;
 
     final baseClickGain =
         clickPower.toDouble() * prestigeMultiplier * permanentClickMultiplier;
-    final kineticBonus =
-        _isUpgradeActive(kineticSynergyId) ? totalIdleRate * 0.01 : 0.0;
+    final kineticBonus = totalIdleRate * _kineticSynergyShare;
 
     double gain = (baseClickGain + kineticBonus) * _momentumMultiplier;
     if (probabilityStrikeTriggered) {
-      gain *= 10.0;
+      gain *= _probabilityStrikeMultiplier;
     }
 
     final gained = BigInt.from(gain.floor());
     number += gained;
-    notifyListeners();
-    _saveState();
+    
+    // Only notify if momentum or overclock changed, number update is handled by Selector
+    if (momentumChanged || overclockChanged) {
+      notifyListeners();
+    } else {
+      // Still need to notify for number changes, but this is already optimized by Selector
+      notifyListeners();
+    }
+    
+    _scheduleStateSave();
     return (
       gain: gained,
       probabilityStrikeTriggered: probabilityStrikeTriggered
@@ -552,10 +637,11 @@ class GameState extends ChangeNotifier {
 
   void _activateOverclock() {
     _overclockTimer?.cancel();
+    final durationSeconds = _overclockDurationSeconds;
     _overclockActive = true;
     notifyListeners();
 
-    _overclockTimer = Timer(const Duration(seconds: 30), () {
+    _overclockTimer = Timer(Duration(seconds: durationSeconds), () {
       _overclockActive = false;
       notifyListeners();
     });
@@ -762,10 +848,16 @@ class GameState extends ChangeNotifier {
     );
   }
 
+  void _scheduleStateSave() {
+    _saveDebounceTimer?.cancel();
+    _saveDebounceTimer = Timer(_saveDebounceDuration, _saveState);
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
     _overclockTimer?.cancel();
+    _saveDebounceTimer?.cancel();
     super.dispose();
   }
 }

@@ -15,9 +15,17 @@ class MainGameScreen extends StatefulWidget {
 class _MainGameScreenState extends State<MainGameScreen> {
   final List<FloatingTapText> _floatingTexts = [];
   final GlobalKey<PulseNumberState> _numberKey = GlobalKey();
+  static const int _maxFloatingTexts = 18;
 
   final List<DateTime> _recentTaps = [];
   DateTime _lastWarningTime = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _removeFloatingTextByKey(Key key) {
+    if (!mounted) return;
+    setState(() {
+      _floatingTexts.removeWhere((widget) => widget.key == key);
+    });
+  }
 
   void _onTapAnywhere(Offset globalPosition) {
     final now = DateTime.now();
@@ -36,7 +44,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
           ),
         );
       }
-      return; // Throttle to max 30 CPS
+      return;
     }
     _recentTaps.add(now);
 
@@ -44,30 +52,22 @@ class _MainGameScreenState extends State<MainGameScreen> {
     _numberKey.currentState?.pulse();
     final clickResult = gameState.click();
 
-    // Add floating text
-    setState(() {
-      final text = '+${NumberFormatter.format(clickResult.gain)}';
+    // Add floating text - optimized to avoid full setState
+    if (_floatingTexts.length >= _maxFloatingTexts) {
+      _floatingTexts.removeAt(0);
+    }
+    final text = '+${NumberFormatter.format(clickResult.gain)}';
+    final floatingKey = UniqueKey();
 
+    setState(() {
       _floatingTexts.add(
         FloatingTapText(
-          key: UniqueKey(),
+          key: floatingKey,
           text: text,
           isProbabilityStrike: clickResult.probabilityStrikeTriggered,
-          position: globalPosition -
-              const Offset(
-                  20, 20), // offset lightly so it spawns roughly near finger
+          position: globalPosition - const Offset(20, 20),
           onComplete: () {
-            // Wait a bit before cleaning up to avoid concurrent modification during build if many are completing
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (mounted) {
-                setState(() {
-                  // We remove the oldest that match (assuming it might be this one)
-                  if (_floatingTexts.isNotEmpty) {
-                    _floatingTexts.removeAt(0);
-                  }
-                });
-              }
-            });
+            _removeFloatingTextByKey(floatingKey);
           },
         ),
       );
@@ -76,90 +76,116 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          Consumer<GameState>(
-            builder: (context, state, child) {
-              final theme = Theme.of(context);
-              return SafeArea(
-                child: Column(
-                  children: [
-                    // Header (mocked based on HTML)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24.0, vertical: 16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          SafeArea(
+            child: Column(
+              children: [
+                // Header with granular listening
+                RepaintBoundary(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0, vertical: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.toll, color: theme.colorScheme.primary),
+                            const SizedBox(width: 8),
+                            Selector<GameState, BigInt>(
+                              selector: (_, state) => state.number,
+                              builder: (context, number, child) {
+                                return Text(
+                                  NumberFormatter.format(number),
+                                  style: theme.textTheme.titleLarge
+                                      ?.copyWith(fontSize: 24),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                    height: 2, color: theme.colorScheme.surfaceContainerLow),
+                
+                // Momentum bar with granular listening
+                Selector<GameState, ({bool show, double progress, double multiplier})>(
+                  selector: (_, state) => (
+                    show: state.hasMomentumUpgrade,
+                    progress: state.momentumProgress,
+                    multiplier: state.momentumMultiplier,
+                  ),
+                  builder: (context, data, child) {
+                    if (!data.show) return const SizedBox.shrink();
+                    return RepaintBoundary(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
+                        child: _MomentumProgressBar(
+                          progress: data.progress,
+                          multiplier: data.multiplier,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // Main tap area
+                Expanded(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) => _onTapAnywhere(event.position),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.toll,
-                                  color: theme.colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Text(
-                                NumberFormatter.format(state.number),
-                                style: theme.textTheme.titleLarge
-                                    ?.copyWith(fontSize: 24),
-                              ),
-                            ],
+                          Text(
+                            'CURRENT NUMBER',
+                            style: theme.textTheme.labelSmall
+                                ?.copyWith(letterSpacing: 4.0),
+                          ),
+                          const SizedBox(height: 16),
+                          RepaintBoundary(
+                            child: Selector<GameState, BigInt>(
+                              selector: (_, state) => state.number,
+                              builder: (context, number, child) {
+                                return PulseNumber(
+                                  key: _numberKey,
+                                  value: number,
+                                  onTap: () {},
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 48),
+                          RepaintBoundary(
+                            child: Selector<GameState, double>(
+                              selector: (_, state) => state.totalIdleRate,
+                              builder: (context, idleRate, child) {
+                                return Text(
+                                  '+${NumberFormatter.formatDouble(idleRate)} / sec',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.primary
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                        height: 2,
-                        color: theme.colorScheme.surfaceContainerLow),
-                    if (state.hasMomentumUpgrade)
-                      Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
-                        child: _MomentumProgressBar(
-                          progress: state.momentumProgress,
-                          multiplier: state.momentumMultiplier,
-                        ),
-                      ),
-
-                    // Main Area
-                    Expanded(
-                      child: Listener(
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: (event) =>
-                            _onTapAnywhere(event.position),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'CURRENT NUMBER',
-                                style: theme.textTheme.labelSmall
-                                    ?.copyWith(letterSpacing: 4.0),
-                              ),
-                              const SizedBox(height: 16),
-                              PulseNumber(
-                                key: _numberKey,
-                                value: state.number,
-                                onTap:
-                                    () {}, // Tap handled by the parent GestureDetector now
-                              ),
-                              const SizedBox(height: 48),
-                              Text(
-                                '+${NumberFormatter.formatDouble(state.totalIdleRate)} / sec',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.primary
-                                      .withValues(alpha: 0.5),
-                                ),
-                              )
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              );
-            },
+              ],
+            ),
           ),
 
           // Floating texts overlay
@@ -212,9 +238,7 @@ class _MomentumProgressBar extends StatelessWidget {
                 ),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: AnimatedFractionallySizedBox(
-                    duration: const Duration(milliseconds: 100),
-                    curve: Curves.easeOutCubic,
+                  child: FractionallySizedBox(
                     widthFactor: normalized,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
