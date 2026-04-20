@@ -86,7 +86,7 @@ class GameState extends ChangeNotifier {
       id: probabilityStrikeId,
       name: 'Probability Strike',
       description:
-          'Each level adds +5% strike chance. Strike power also increases.',
+          '5% chance for massive damage. Each level increases strike power.',
       baseCost: BigInt.from(2500),
       costMultiplier: 1.72,
       effectType: clickCategory,
@@ -443,7 +443,7 @@ class GameState extends ChangeNotifier {
   double get _probabilityStrikeChance {
     final level = _upgradeLevel(probabilityStrikeId);
     if (level <= 0) return 0.0;
-    return (0.05 * level).clamp(0.0, 0.75);
+    return 0.05; // Fixed 5% chance
   }
 
   double get _probabilityStrikeMultiplier {
@@ -475,6 +475,8 @@ class GameState extends ChangeNotifier {
     if (level <= 0) return 1000;
     return math.min(2500, 1000 + (level - 1) * 120);
   }
+
+  int get _momentumGracePeriodMs => 2000; // 2 second grace period before decay
 
   int get _momentumClicksToCap {
     final level = _upgradeLevel(momentumId);
@@ -529,7 +531,23 @@ class GameState extends ChangeNotifier {
         (1.0 + ((_clickStreak - 1) * _momentumPerClickBonus))
             .clamp(1.0, _momentumCap);
 
-    if (elapsedMs >= _momentumDecayWindowMs) {
+    // Grace period: keep momentum at full for 2 seconds after last click
+    if (elapsedMs < _momentumGracePeriodMs) {
+      // Keep current values, no decay yet
+      if ((_momentumProgress - baseProgress).abs() > 0.001) {
+        _momentumProgress = baseProgress;
+        changed = true;
+      }
+      if ((_momentumMultiplier - fullMomentumMultiplier).abs() > 0.001) {
+        _momentumMultiplier = fullMomentumMultiplier;
+        changed = true;
+      }
+      return changed;
+    }
+
+    // After grace period, check if total time exceeded
+    final totalDecayWindow = _momentumGracePeriodMs + _momentumDecayWindowMs;
+    if (elapsedMs >= totalDecayWindow) {
       if (_momentumProgress != 0.0 ||
           _momentumMultiplier != 1.0 ||
           _clickStreak != 0 ||
@@ -543,7 +561,9 @@ class GameState extends ChangeNotifier {
       return changed;
     }
 
-    final decayFactor = 1.0 - (elapsedMs / _momentumDecayWindowMs);
+    // Start decaying after grace period
+    final decayElapsed = elapsedMs - _momentumGracePeriodMs;
+    final decayFactor = 1.0 - (decayElapsed / _momentumDecayWindowMs);
     final decayedProgress = baseProgress * decayFactor;
     final decayedMultiplier =
         1.0 + (fullMomentumMultiplier - 1.0) * decayFactor;
@@ -580,13 +600,10 @@ class GameState extends ChangeNotifier {
       final newMultiplier = (1.0 + comboBonus).clamp(1.0, _momentumCap);
       final newProgress = (_clickStreak / _momentumClicksToCap).clamp(0.0, 1.0);
       
-      // Only mark as changed if there's a significant difference
-      if ((_momentumMultiplier - newMultiplier).abs() > 0.01 ||
-          (_momentumProgress - newProgress).abs() > 0.01) {
-        _momentumMultiplier = newMultiplier;
-        _momentumProgress = newProgress;
-        momentumChanged = true;
-      }
+      // Always update on click to ensure UI stays responsive
+      _momentumMultiplier = newMultiplier;
+      _momentumProgress = newProgress;
+      momentumChanged = true;
     } else {
       if (_momentumMultiplier != 1.0 || _momentumProgress != 0.0) {
         _momentumMultiplier = 1.0;

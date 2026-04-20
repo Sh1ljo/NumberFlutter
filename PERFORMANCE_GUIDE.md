@@ -18,9 +18,14 @@
 - Changed `AnimatedFractionallySizedBox` to `FractionallySizedBox` in momentum bar
 - Reduces unnecessary animation calculations during rapid clicks
 
-### 4. **Optimized State Notifications**
-- Added thresholds to only notify listeners when changes are significant
-- Prevents micro-updates that don't affect visual output
+### 4. **Improved Momentum System**
+- Added 2-second grace period before momentum starts decaying
+- Visual improvements: white progress bar for better visibility
+- Fixed progress bar calculation for accurate display
+
+### 5. **Optimized State Notifications**
+- Granular updates ensure UI components only rebuild when necessary
+- Prevents cascading rebuilds across the entire widget tree
 
 ## Running in Release Mode
 

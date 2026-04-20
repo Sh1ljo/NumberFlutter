@@ -208,11 +208,7 @@ class _MomentumProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final multiplierProgress =
-        ((multiplier - 1.0).clamp(0.0, 1.0) as num).toDouble();
-    final rawProgress = (progress.clamp(0.0, 1.0) as num).toDouble();
-    final normalized =
-        rawProgress > multiplierProgress ? rawProgress : multiplierProgress;
+    final normalizedProgress = progress.clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,38 +217,30 @@ class _MomentumProgressBar extends StatelessWidget {
           'MOMENTUM  x${multiplier.toStringAsFixed(2)}',
           style: theme.textTheme.labelSmall?.copyWith(
             letterSpacing: 1.2,
-            color: theme.colorScheme.primary.withValues(alpha: 0.85),
+            color: Colors.white.withOpacity(0.85),
           ),
         ),
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
+          child: Container(
             height: 8,
             width: double.infinity,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ColoredBox(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.16),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FractionallySizedBox(
-                    widthFactor: normalized,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            theme.colorScheme.primary.withValues(alpha: 0.75),
-                            theme.colorScheme.primary,
-                          ],
-                        ),
-                      ),
-                    ),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: normalizedProgress,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
