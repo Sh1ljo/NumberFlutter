@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'config/app_config.dart';
 import 'logic/game_state.dart';
+import 'logic/supabase_service.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/main_layout.dart';
 import 'ui/screens/loading_screen.dart';
+import 'ui/widgets/auth_session_listener.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppConfig.load();
+  await SupabaseService.initialize();
   runApp(const NumberApp());
 }
 
@@ -20,6 +26,9 @@ class NumberApp extends StatelessWidget {
         title: 'Number',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
+        builder: (context, child) {
+          return AuthSessionListener(child: child ?? const SizedBox.shrink());
+        },
         home: const AppInitializer(),
       ),
     );
@@ -49,6 +58,9 @@ class _AppInitializerState extends State<AppInitializer> {
       // Smooth branded loading sequence before entering app.
       Future<void>.delayed(const Duration(milliseconds: 2500)),
     ]);
+    if (SupabaseService.instance.currentSession != null) {
+      await gameState.syncWithCloud();
+    }
   }
 
   @override

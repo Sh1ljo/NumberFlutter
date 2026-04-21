@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
+import '../../logic/supabase_service.dart';
 import '../widgets/app_background.dart';
 import '../widgets/offline_gains_dialog.dart';
+import '../widgets/profile_editor_dialog.dart';
 import 'main_game_screen.dart';
 import 'upgrades_screen.dart';
 import 'prestige/prestige_screen.dart';
+import 'leaderboard_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 
@@ -19,16 +22,51 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
   bool _offlineDialogQueued = false;
+  String? _promptedProfileUserId;
+  bool _profilePromptInProgress = false;
 
   final List<Widget> _screens = [
     const MainGameScreen(),
     const UpgradesScreen(),
     const PrestigeScreen(),
+    const LeaderboardScreen(),
     const SettingsScreen(),
   ];
 
+  void _maybePromptForLocation() {
+    final supabase = SupabaseService.instance;
+    if (!supabase.isConfigured || !supabase.isInitialized) return;
+    final userId = supabase.currentSession?.user.id;
+    if (userId == null) {
+      _promptedProfileUserId = null;
+      return;
+    }
+    if (_profilePromptInProgress || _promptedProfileUserId == userId) return;
+
+    _profilePromptInProgress = true;
+    _promptedProfileUserId = userId;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final profile = await supabase.fetchOrCreateProfile(userId: userId);
+        if (!mounted || profile.hasLocation) return;
+        await ProfileEditorDialog.show(
+          context,
+          requireLocation: true,
+          title: 'WHERE ARE YOU PLAYING FROM?',
+          subtitle:
+              'Choose your country and city so local and global rankings can work correctly.',
+        );
+      } catch (_) {
+        _promptedProfileUserId = null;
+      } finally {
+        _profilePromptInProgress = false;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _maybePromptForLocation();
     final isPrestigeAnimating =
         context.select<GameState, bool>((gs) => gs.isPrestigeAnimating);
     final offlineGains = context.select<GameState, BigInt>(

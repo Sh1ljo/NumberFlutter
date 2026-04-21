@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
+import '../../logic/supabase_service.dart';
+import 'auth_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,11 +16,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _vibrationIntensity = 0.8;
   bool _hapticPulseEnabled = true;
   bool _autoSaveEnabled = true;
+  bool _manualSyncInProgress = false;
+
+  Future<void> _runManualSync(BuildContext context, GameState gameState) async {
+    setState(() {
+      _manualSyncInProgress = true;
+    });
+
+    await gameState.syncWithCloud(forceUpload: true);
+    if (!mounted || !context.mounted) return;
+
+    setState(() {
+      _manualSyncInProgress = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          gameState.lastCloudSyncError == null
+              ? 'Cloud sync completed.'
+              : 'Cloud sync failed. Please try again.',
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final gameState = context.watch<GameState>();
+    final supabase = SupabaseService.instance;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -83,37 +110,95 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(
-                        decoration: BoxDecoration(
-                            border: Border.all(
-                                color: theme.colorScheme.surfaceContainerLow)),
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Cloud Synchronization',
-                                style: theme.textTheme.titleLarge
-                                    ?.copyWith(fontSize: 20)),
-                            const SizedBox(height: 4),
-                            Text('Manual sync with network',
-                                style: theme.textTheme.labelSmall
-                                    ?.copyWith(fontSize: 10)),
-                            const SizedBox(height: 24),
-                            OutlinedButton(
-                              onPressed: () {},
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: theme.colorScheme.primary,
-                                side: BorderSide(
-                                    color: theme.colorScheme.primary,
-                                    width: 1.5),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(2)),
+                      if (!supabase.isConfigured)
+                        Container(
+                          decoration: BoxDecoration(
+                              border: Border.all(
+                                  color: theme.colorScheme.surfaceContainerLow)),
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Cloud features need SUPABASE_URL and SUPABASE_ANON_KEY in assets/.env. You can still play offline.',
+                            style: theme.textTheme.labelSmall,
+                          ),
+                        )
+                      else
+                        StreamBuilder(
+                          stream: supabase.authStateChanges(),
+                          builder: (context, snapshot) {
+                            final session = supabase.currentSession;
+                            return Container(
+                              decoration: BoxDecoration(
+                                  border: Border.all(
+                                      color: theme
+                                          .colorScheme.surfaceContainerLow)),
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Cloud Synchronization',
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(fontSize: 20)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    gameState.cloudSyncInProgress
+                                        ? 'Sync in progress...'
+                                        : session != null
+                                            ? 'Signed in as ${session.user.email ?? 'Player'}. Progress syncs in the background.'
+                                            : 'Playing locally. Sign in to back up progress and use the leaderboard.',
+                                    style: theme.textTheme.labelSmall
+                                        ?.copyWith(fontSize: 10),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  if (session == null) ...[
+                                    OutlinedButton(
+                                      onPressed: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      const AuthScreen(),
+                                                ),
+                                              );
+                                            },
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            theme.colorScheme.primary,
+                                        side: BorderSide(
+                                            color: theme.colorScheme.primary,
+                                            width: 1.5),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(2)),
+                                      ),
+                                      child: const Text('SIGN IN / CREATE ACCOUNT'),
+                                    ),
+                                  ] else ...[
+                                    OutlinedButton(
+                                      onPressed: _manualSyncInProgress
+                                          ? null
+                                          : () => _runManualSync(
+                                              context, gameState),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor:
+                                            theme.colorScheme.primary,
+                                        side: BorderSide(
+                                            color: theme.colorScheme.primary,
+                                            width: 1.5),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(2)),
+                                      ),
+                                      child: Text(
+                                        _manualSyncInProgress
+                                            ? 'SYNCING...'
+                                            : 'SYNC NOW',
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
-                              child: const Text('SAVE PROGRESS'),
-                            )
-                          ],
+                            );
+                          },
                         ),
-                      ),
                       const SizedBox(height: 16),
                       Container(
                         decoration: BoxDecoration(
@@ -149,6 +234,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSectionTitle(context, '03. INFORMATION'),
                   _buildInfoRow(context, 'Software Version', '0.01'),
                   _buildInfoRow(context, 'Terminal ID', '#882-QX-01'),
+                  if (supabase.isConfigured)
+                    StreamBuilder(
+                      stream: supabase.authStateChanges(),
+                      builder: (context, snapshot) {
+                        if (supabase.currentSession == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return _buildDangerRow(context, 'Sign Out', () async {
+                          await SupabaseService.instance.signOut();
+                        });
+                      },
+                    ),
                   _buildLinkRow(context, 'Privacy Policy'),
                   _buildLinkRow(context, 'Terms of Service'),
                   _buildDangerRow(context, 'Factory Reset', () {

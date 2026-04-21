@@ -15,6 +15,7 @@ class StorageService {
   static const String _keyPermanentClickPurchases = 'permanentClickPurchases';
   static const String _keyPermanentIdlePurchases = 'permanentIdlePurchases';
   static const String _keyUpgradeLevels = 'upgradeLevels';
+  static const String _keyHighestNumber = 'highestNumber';
 
   Future<void> saveGame({
     required BigInt number,
@@ -26,6 +27,7 @@ class StorageService {
     required int permanentClickPurchases,
     required int permanentIdlePurchases,
     required Map<String, int> upgradeLevels,
+    required BigInt highestNumber,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -38,6 +40,7 @@ class StorageService {
     await prefs.setInt(_keyPermanentClickPurchases, permanentClickPurchases);
     await prefs.setInt(_keyPermanentIdlePurchases, permanentIdlePurchases);
     await prefs.setString(_keyUpgradeLevels, jsonEncode(upgradeLevels));
+    await prefs.setString(_keyHighestNumber, highestNumber.toString());
     await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -48,6 +51,7 @@ class StorageService {
     final clickPowerStr = prefs.getString(_keyClickPower) ?? '1';
     final autoClickRateStr = prefs.getString(_keyAutoClickRate) ?? '0';
     final prestigeCurrencyStr = prefs.getString(_keyPrestigeCurrency) ?? '0';
+    final highestNumberStr = prefs.getString(_keyHighestNumber) ?? numberStr;
     final lastPlayedMs = prefs.getInt(_keyLastPlayed);
 
     final prestigeMultStr = prefs.getString(_keyPrestigeMultiplier);
@@ -98,6 +102,8 @@ class StorageService {
       'legacyPermanentClick': legacyPermanentClick,
       'legacyPermanentIdle': legacyPermanentIdle,
       'upgradeLevels': upgradeLevels,
+      'highestNumber':
+          BigInt.tryParse(highestNumberStr) ?? BigInt.tryParse(numberStr) ?? BigInt.zero,
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,

@@ -45,10 +45,16 @@ class BottomNavBar extends StatelessWidget {
             onTap: () => onIndexChanged(2),
           ),
           _NavItem(
-            icon: Icons.settings,
-            label: 'SYSTEM',
+            icon: Icons.leaderboard,
+            label: 'RANKS',
             isActive: currentIndex == 3,
             onTap: () => onIndexChanged(3),
+          ),
+          _NavItem(
+            icon: Icons.settings,
+            label: 'SYSTEM',
+            isActive: currentIndex == 4,
+            onTap: () => onIndexChanged(4),
           ),
         ],
       ),

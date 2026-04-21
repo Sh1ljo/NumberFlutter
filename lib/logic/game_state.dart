@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/upgrade.dart';
+import '../models/player_progress.dart';
 import 'storage_service.dart';
+import 'sync_service.dart';
 
 class GameState extends ChangeNotifier {
   static const String clickCategory = 'click';
@@ -17,6 +19,7 @@ class GameState extends ChangeNotifier {
   static const String quantumMultiplierId = 'idle_quantum_multiplier';
 
   final StorageService _storageService = StorageService();
+  final SyncService _syncService = SyncService();
   final Completer<void> _readyCompleter = Completer<void>();
   final math.Random _rng = math.Random();
 
@@ -58,8 +61,15 @@ class GameState extends ChangeNotifier {
   bool _overclockActive = false;
 
   BigInt offlineGainsThisSession = BigInt.zero;
+  BigInt highestNumber = BigInt.zero;
+  DateTime? _lastSavedAt;
+  DateTime? _lastCloudPushAt;
+  bool _cloudSyncInProgress = false;
+  String? _lastCloudSyncError;
 
   bool isPrestigeAnimating = false;
+  bool get cloudSyncInProgress => _cloudSyncInProgress;
+  String? get lastCloudSyncError => _lastCloudSyncError;
 
   void setPrestigeAnimating(bool value) {
     isPrestigeAnimating = value;
@@ -362,7 +372,10 @@ class GameState extends ChangeNotifier {
         upgrade.level = normalizedLevel;
       }
 
+      final savedHighest = data['highestNumber'] as BigInt? ?? BigInt.zero;
+      highestNumber = savedHighest > number ? savedHighest : number;
       final lastPlayed = data['lastPlayed'] as DateTime?;
+      _lastSavedAt = lastPlayed;
       _calculateOfflineProgress(lastPlayed);
 
       _startTicker();
@@ -382,6 +395,7 @@ class GameState extends ChangeNotifier {
         final offlineGains = autoClickRate * idleMult * diff;
         offlineGainsThisSession = BigInt.from(offlineGains.floor());
         number += offlineGainsThisSession;
+        _updateHighestNumber();
         _idleAccumulator += offlineGains - offlineGains.floor();
       }
     }
@@ -403,6 +417,7 @@ class GameState extends ChangeNotifier {
         if (_idleAccumulator >= 1.0) {
           int added = _idleAccumulator.floor();
           number += BigInt.from(added);
+          _updateHighestNumber();
           _idleAccumulator -= added;
           hasStateChange = true;
 
@@ -636,6 +651,7 @@ class GameState extends ChangeNotifier {
 
     final gained = BigInt.from(gain.floor());
     number += gained;
+    _updateHighestNumber();
     
     // Only notify if momentum or overclock changed, number update is handled by Selector
     if (momentumChanged || overclockChanged) {
@@ -832,6 +848,7 @@ class GameState extends ChangeNotifier {
     _overclockActive = false;
     _overclockTimer?.cancel();
     offlineGainsThisSession = BigInt.zero;
+    highestNumber = BigInt.zero;
     prestigeCurrency = 0.0;
     prestigeMultiplier = 1.0;
     prestigeCount = 0;
@@ -844,12 +861,125 @@ class GameState extends ChangeNotifier {
     }
 
     await _storageService.clearAllData();
+    _lastSavedAt = DateTime.now();
     await _saveState();
 
     notifyListeners();
   }
 
+  void _updateHighestNumber() {
+    if (number > highestNumber) {
+      highestNumber = number;
+    }
+  }
+
+  PlayerProgress _buildLocalProgress(String userId) {
+    final upgradedLevels = <String, int>{
+      for (final upgrade in upgrades) upgrade.id: upgrade.level,
+    };
+    final currentHigh = number > highestNumber ? number : highestNumber;
+    final now = DateTime.now().toUtc();
+    return PlayerProgress(
+      userId: userId,
+      number: number,
+      clickPower: clickPower,
+      autoClickRate: autoClickRate,
+      prestigeCurrency: prestigeCurrency,
+      prestigeMultiplier: prestigeMultiplier,
+      prestigeCount: prestigeCount,
+      permanentClickPurchases: permanentClickPurchases,
+      permanentIdlePurchases: permanentIdlePurchases,
+      upgradeLevels: upgradedLevels,
+      highestNumber: currentHigh,
+      progressScore: PlayerProgress.calculateProgressScore(
+        number: number,
+        prestigeCount: prestigeCount,
+        prestigeCurrency: prestigeCurrency,
+        permanentClickPurchases: permanentClickPurchases,
+        permanentIdlePurchases: permanentIdlePurchases,
+        upgradeLevels: upgradedLevels,
+      ),
+      updatedAt: _lastSavedAt?.toUtc() ?? now,
+    );
+  }
+
+  void _applyCloudProgress(PlayerProgress progress) {
+    number = progress.number;
+    clickPower = progress.clickPower < BigInt.from(50)
+        ? BigInt.from(50)
+        : progress.clickPower;
+    autoClickRate = progress.autoClickRate.isFinite && progress.autoClickRate > 0
+        ? progress.autoClickRate
+        : 0.0;
+    prestigeCurrency = progress.prestigeCurrency;
+    prestigeMultiplier = progress.prestigeMultiplier < 1.0
+        ? 1.0
+        : progress.prestigeMultiplier;
+    prestigeCount = progress.prestigeCount.clamp(0, 999999);
+    permanentClickPurchases = progress.permanentClickPurchases.clamp(0, 999999);
+    permanentIdlePurchases = progress.permanentIdlePurchases.clamp(0, 999999);
+    highestNumber = progress.normalizedHighestNumber;
+
+    for (final upgrade in upgrades) {
+      final remoteLevel = progress.upgradeLevels[upgrade.id] ?? 0;
+      upgrade.level = upgrade.maxLevel == -1
+          ? remoteLevel
+          : remoteLevel.clamp(0, upgrade.maxLevel);
+    }
+
+    _idleAccumulator = 0.0;
+    _lastManualClickTime = null;
+    _clickStreak = 0;
+    _overclockTriggeredThisChain = false;
+    _momentumMultiplier = 1.0;
+    _momentumProgress = 0.0;
+    _overclockActive = false;
+    _overclockTimer?.cancel();
+  }
+
+  Future<void> syncWithCloud({bool forceUpload = false}) async {
+    if (_cloudSyncInProgress || !_syncService.isAvailable) return;
+    final userId = _syncService.currentUserId;
+    if (userId == null) return;
+
+    _cloudSyncInProgress = true;
+    _lastCloudSyncError = null;
+    notifyListeners();
+
+    try {
+      _updateHighestNumber();
+      final local = _buildLocalProgress(userId);
+      final result = await _syncService.syncProgress(
+        localProgress: local,
+        forceUpload: forceUpload,
+      );
+      if (result == null) return;
+
+      if (result.winner == SyncWinner.remote) {
+        _applyCloudProgress(result.resolved);
+        _startTicker();
+      } else {
+        highestNumber = result.resolved.normalizedHighestNumber;
+      }
+
+      _lastCloudPushAt = DateTime.now().toUtc();
+      await _persistState(skipCloudUpload: true);
+      notifyListeners();
+    } catch (error) {
+      _lastCloudSyncError = error.toString();
+      notifyListeners();
+    } finally {
+      _cloudSyncInProgress = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> _saveState() async {
+    await _persistState(skipCloudUpload: false);
+  }
+
+  Future<void> _persistState({required bool skipCloudUpload}) async {
+    _updateHighestNumber();
     await _storageService.saveGame(
       number: number,
       clickPower: clickPower,
@@ -862,7 +992,22 @@ class GameState extends ChangeNotifier {
       upgradeLevels: {
         for (final upgrade in upgrades) upgrade.id: upgrade.level,
       },
+      highestNumber: highestNumber,
     );
+    _lastSavedAt = DateTime.now();
+
+    if (skipCloudUpload ||
+        !_syncService.isAvailable ||
+        _syncService.currentUserId == null) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final shouldPush = _lastCloudPushAt == null ||
+        now.difference(_lastCloudPushAt!).inSeconds >= 20;
+    if (shouldPush) {
+      unawaited(syncWithCloud());
+    }
   }
 
   void _scheduleStateSave() {

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
+import '../../logic/supabase_service.dart';
 import '../widgets/pulse_number.dart';
 import '../widgets/floating_tap_text.dart';
+import '../widgets/profile_editor_dialog.dart';
+import 'auth_screen.dart';
 import '../../utils/number_formatter.dart';
 
 class MainGameScreen extends StatefulWidget {
@@ -19,6 +22,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
   final List<DateTime> _recentTaps = [];
   DateTime _lastWarningTime = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _profileActionBusy = false;
 
   void _removeFloatingTextByKey(Key key) {
     if (!mounted) return;
@@ -74,10 +78,44 @@ class _MainGameScreenState extends State<MainGameScreen> {
     });
   }
 
+  Future<void> _openProfileEditor() async {
+    if (_profileActionBusy) return;
+    final supabase = SupabaseService.instance;
+    if (!supabase.isConfigured || !supabase.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Profile editing needs Supabase configured in assets/.env.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _profileActionBusy = true;
+    });
+
+    try {
+      if (supabase.currentSession == null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+        );
+      }
+      if (!mounted || supabase.currentSession == null) return;
+      await ProfileEditorDialog.show(context);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _profileActionBusy = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -109,15 +147,21 @@ class _MainGameScreenState extends State<MainGameScreen> {
                             ),
                           ],
                         ),
+                        IconButton(
+                          tooltip: 'Profile',
+                          onPressed: _openProfileEditor,
+                          icon: const Icon(Icons.account_circle_outlined),
+                        ),
                       ],
                     ),
                   ),
                 ),
                 Container(
                     height: 2, color: theme.colorScheme.surfaceContainerLow),
-                
+
                 // Momentum bar with granular listening
-                Selector<GameState, ({bool show, double progress, double multiplier})>(
+                Selector<GameState,
+                    ({bool show, double progress, double multiplier})>(
                   selector: (_, state) => (
                     show: state.hasMomentumUpgrade,
                     progress: state.momentumProgress,
@@ -127,7 +171,8 @@ class _MainGameScreenState extends State<MainGameScreen> {
                     if (!data.show) return const SizedBox.shrink();
                     return RepaintBoundary(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
+                        padding:
+                            const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
                         child: _MomentumProgressBar(
                           progress: data.progress,
                           multiplier: data.multiplier,
@@ -217,7 +262,7 @@ class _MomentumProgressBar extends StatelessWidget {
           'MOMENTUM  x${multiplier.toStringAsFixed(2)}',
           style: theme.textTheme.labelSmall?.copyWith(
             letterSpacing: 1.2,
-            color: Colors.white.withOpacity(0.85),
+            color: Colors.white.withValues(alpha: 0.85),
           ),
         ),
         const SizedBox(height: 6),
@@ -227,7 +272,7 @@ class _MomentumProgressBar extends StatelessWidget {
             height: 8,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Align(
