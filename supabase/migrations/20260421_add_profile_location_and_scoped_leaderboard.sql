@@ -10,7 +10,9 @@ for select
 to authenticated
 using (true);
 
-create or replace view public.leaderboard_view as
+drop view if exists public.leaderboard_view;
+
+create view public.leaderboard_view as
 select
   dense_rank() over (
     order by

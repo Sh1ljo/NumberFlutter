@@ -90,7 +90,9 @@ to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
-create or replace view public.leaderboard_view as
+drop view if exists public.leaderboard_view;
+
+create view public.leaderboard_view as
 select
   dense_rank() over (
     order by
