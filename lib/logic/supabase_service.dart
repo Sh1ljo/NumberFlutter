@@ -210,9 +210,13 @@ class SupabaseService {
   }
 
   Future<UserProfile> fetchOrCreateProfile({required String userId}) async {
+    final existing = await fetchProfile(userId: userId);
+    if (existing != null) return existing;
+
     await upsertProfile(userId: userId);
-    final profile = await fetchProfile(userId: userId);
-    if (profile != null) return profile;
+    final created = await fetchProfile(userId: userId);
+    if (created != null) return created;
+
     return UserProfile(
       id: userId,
       displayName: 'Player',

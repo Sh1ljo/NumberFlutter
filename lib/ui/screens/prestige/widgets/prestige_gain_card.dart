@@ -3,15 +3,13 @@ import '../../../../utils/number_formatter.dart';
 
 /// Minimal prestige reward preview: accent stripe, type hierarchy, no nested frames.
 class PrestigeGainCard extends StatelessWidget {
-  final double pointsToEarn;
   final BigInt prestigeRequirement;
-  final double multiplierAfter;
+  final double multiplierAfterPrestige;
 
   const PrestigeGainCard({
     super.key,
-    required this.pointsToEarn,
     required this.prestigeRequirement,
-    required this.multiplierAfter,
+    required this.multiplierAfterPrestige,
   });
 
   @override
@@ -33,7 +31,7 @@ class PrestigeGainCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'PRESTIGE REWARD AFTER INITIATING',
+            'Prestige multiplier after initiating :',
             style: t.labelSmall?.copyWith(
               letterSpacing: 2.4,
               color: cs.outline,
@@ -42,7 +40,7 @@ class PrestigeGainCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            NumberFormatter.formatDouble(pointsToEarn),
+            'x${multiplierAfterPrestige.toStringAsFixed(3)}',
             style: t.headlineMedium?.copyWith(
               color: cs.onSurface,
               fontWeight: FontWeight.w400,
@@ -52,7 +50,7 @@ class PrestigeGainCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'prestige points',
+            'prestige multiplier',
             style: t.bodySmall?.copyWith(
               color: cs.outline,
               letterSpacing: 0.3,
@@ -84,38 +82,6 @@ class PrestigeGainCard extends StatelessWidget {
                 NumberFormatter.format(prestigeRequirement),
                 style: t.titleMedium?.copyWith(
                   color: cs.onSurface,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 10, bottom: 10),
-            child: Divider(
-              height: 1,
-              thickness: 1,
-              color: cs.outlineVariant.withValues(alpha: 0.4),
-            ),
-          ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Expanded(
-                child: Text(
-                  'Prestige multiplier after reset',
-                  style: t.bodySmall?.copyWith(
-                    color: cs.outline,
-                    height: 1.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '×${NumberFormatter.formatPrestigeMultiplier(multiplierAfter)}',
-                style: t.titleMedium?.copyWith(
-                  color: cs.primary,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.2,
                 ),

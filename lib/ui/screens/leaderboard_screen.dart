@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../logic/supabase_service.dart';
 import '../../models/user_profile.dart';
+import '../../utils/number_formatter.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -13,6 +14,13 @@ class LeaderboardScreen extends StatefulWidget {
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   int _refreshEpoch = 0;
   LeaderboardScope _scope = LeaderboardScope.global;
+
+  String _formatLeaderboardNumber(dynamic value) {
+    final raw = value?.toString() ?? '0';
+    final parsed = BigInt.tryParse(raw);
+    if (parsed == null) return raw;
+    return NumberFormatter.format(parsed);
+  }
 
   Future<UserProfile?> _fetchProfile() async {
     final s = SupabaseService.instance;
@@ -238,9 +246,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                             row['display_name']?.toString() ??
                                                 'Player';
                                         final highest =
-                                            row['highest_number_numeric']
-                                                    ?.toString() ??
-                                                '0';
+                                            _formatLeaderboardNumber(
+                                          row['highest_number_numeric'],
+                                        );
                                         final country =
                                             row['country']?.toString();
                                         final city = row['city']?.toString();

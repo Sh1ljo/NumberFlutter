@@ -22,39 +22,48 @@ class BottomNavBar extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _NavItem(
-            icon: Icons.memory,
-            label: 'GENERATORS',
-            isActive: currentIndex == 0,
-            onTap: () => onIndexChanged(0),
+          Expanded(
+            child: _NavItem(
+              icon: Icons.memory,
+              label: 'GENERATORS',
+              isActive: currentIndex == 0,
+              onTap: () => onIndexChanged(0),
+            ),
           ),
-          _NavItem(
-            icon: Icons.trending_up,
-            label: 'UPGRADES',
-            isActive: currentIndex == 1,
-            onTap: () => onIndexChanged(1),
+          Expanded(
+            child: _NavItem(
+              icon: Icons.trending_up,
+              label: 'UPGRADES',
+              isActive: currentIndex == 1,
+              onTap: () => onIndexChanged(1),
+            ),
           ),
-          _NavItem(
-            icon: Icons.auto_awesome,
-            label: 'PRESTIGE',
-            isActive: currentIndex == 2,
-            onTap: () => onIndexChanged(2),
+          Expanded(
+            child: _NavItem(
+              icon: Icons.auto_awesome,
+              label: 'PRESTIGE',
+              isActive: currentIndex == 2,
+              onTap: () => onIndexChanged(2),
+            ),
           ),
-          _NavItem(
-            icon: Icons.leaderboard,
-            label: 'RANKS',
-            isActive: currentIndex == 3,
-            onTap: () => onIndexChanged(3),
+          Expanded(
+            child: _NavItem(
+              icon: Icons.leaderboard,
+              label: 'RANKS',
+              isActive: currentIndex == 3,
+              onTap: () => onIndexChanged(3),
+            ),
           ),
-          _NavItem(
-            icon: Icons.settings,
-            label: 'SYSTEM',
-            isActive: currentIndex == 4,
-            onTap: () => onIndexChanged(4),
+          Expanded(
+            child: _NavItem(
+              icon: Icons.settings,
+              label: 'SYSTEM',
+              isActive: currentIndex == 4,
+              onTap: () => onIndexChanged(4),
+            ),
           ),
         ],
       ),
@@ -84,23 +93,31 @@ class _NavItem extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        transform: Matrix4.identity()..scale(scale),
-        transformAlignment: Alignment.center,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: color,
-                fontSize: 10,
+      child: SizedBox(
+        height: 56,
+        width: double.infinity,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          transform: Matrix4.identity()..scale(scale),
+          transformAlignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontSize: 9,
+                  letterSpacing: 0.2,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

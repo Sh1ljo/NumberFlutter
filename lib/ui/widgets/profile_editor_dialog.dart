@@ -150,7 +150,8 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
               child: Center(child: CircularProgressIndicator()),
             )
           : SizedBox(
-              width: 440,
+              width: 460,
+              height: 420,
               child: Form(
                 key: _formKey,
                 child: SingleChildScrollView(

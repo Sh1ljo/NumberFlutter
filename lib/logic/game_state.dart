@@ -9,6 +9,14 @@ import 'sync_service.dart';
 class GameState extends ChangeNotifier {
   static const String clickCategory = 'click';
   static const String idleCategory = 'idle';
+  static const List<int> upgradeMilestoneThresholds = [
+    25,
+    50,
+    100,
+    250,
+    500,
+    1000,
+  ];
 
   static const String probabilityStrikeId = 'click_probability_strike';
   static const String momentumId = 'click_momentum';
@@ -45,11 +53,8 @@ class GameState extends ChangeNotifier {
   /// How many prestiges completed (used for incremental gains).
   int prestigeCount = 0;
 
-  /// Times each permanent shop track was upgraded (incremental bonuses scale with rank).
-  int permanentClickPurchases = 0;
-  int permanentIdlePurchases = 0;
-
   int buyAmount = 1; // 1, 10, 100, -1 (MAX)
+  String selectedUpgradeCategory = clickCategory;
 
   double _idleAccumulator = 0.0;
   double autoClickRate = 0.0; // Per second Rate
@@ -62,6 +67,8 @@ class GameState extends ChangeNotifier {
 
   BigInt offlineGainsThisSession = BigInt.zero;
   BigInt highestNumber = BigInt.zero;
+  bool hapticPulseEnabled = true;
+  double vibrationIntensity = 0.8;
   DateTime? _lastSavedAt;
   DateTime? _lastCloudPushAt;
   bool _cloudSyncInProgress = false;
@@ -226,34 +233,6 @@ class GameState extends ChangeNotifier {
   /// Fixed reward for the next prestige activation.
   double get nextPrestigeReward => prestigeRewardAtCount(prestigeCount);
 
-  /// Prestige-shop permanent mult (click): starts ~1.0, grows in small steps per purchase.
-  double get permanentClickMultiplier =>
-      multiplierFromPermanentPurchases(permanentClickPurchases);
-
-  /// Prestige-shop permanent mult (idle).
-  double get permanentIdleMultiplier =>
-      multiplierFromPermanentPurchases(permanentIdlePurchases);
-
-  /// Bonus per permanent-shop tier (like prestige deltas, a bit smaller).
-  static double permanentShopDeltaAtIndex(int index) {
-    const base = 0.014;
-    const perStep = 0.006;
-    return base + index * perStep;
-  }
-
-  static double multiplierFromPermanentPurchases(int purchases) {
-    double m = 1.0;
-    for (int i = 0; i < purchases; i++) {
-      m += permanentShopDeltaAtIndex(i);
-    }
-    return m;
-  }
-
-  /// Prestige points for the next single upgrade on this track.
-  static double shopPrestigeCostAtRank(int rank) {
-    return 1.0 + (rank / 14.0);
-  }
-
   /// Requirement for the prestige at [count] completed prestiges.
   /// Starts at 10,000 and increases exponentially each prestige.
   static BigInt prestigeRequirementAtCount(int count) {
@@ -276,32 +255,6 @@ class GameState extends ChangeNotifier {
     final requirement = prestigeRequirement;
     if (currentNumber < requirement) return 0.0;
     return nextPrestigeReward;
-  }
-
-  /// Total prestige cost for buying [bulkAmount] steps (1/10/100) or -1 for MAX affordable.
-  double totalShopPrestigeCost({
-    required bool forClick,
-    required int bulkAmount,
-  }) {
-    int rank = forClick ? permanentClickPurchases : permanentIdlePurchases;
-    if (bulkAmount == -1) {
-      double sum = 0.0;
-      double wallet = prestigeCurrency;
-      int r = rank;
-      while (wallet > 0.0) {
-        final c = shopPrestigeCostAtRank(r);
-        if (wallet < c) break;
-        wallet -= c;
-        sum += c;
-        r++;
-      }
-      return sum;
-    }
-    double sum = 0.0;
-    for (int i = 0; i < bulkAmount; i++) {
-      sum += shopPrestigeCostAtRank(rank + i);
-    }
-    return sum;
   }
 
   Future<void> _init() async {
@@ -341,28 +294,8 @@ class GameState extends ChangeNotifier {
         if (prestigeCount < 0) prestigeCount = 0;
       }
 
-      final pcp = data['permanentClickPurchases'] as int?;
-      final pip = data['permanentIdlePurchases'] as int?;
       final upgradeLevels =
           (data['upgradeLevels'] as Map<String, int>?) ?? <String, int>{};
-      if (pcp != null) {
-        permanentClickPurchases = pcp.clamp(0, 999999);
-      } else {
-        final old = data['legacyPermanentClick'] as BigInt?;
-        permanentClickPurchases =
-            old != null ? (old - BigInt.one).toInt().clamp(0, 999999) : 0;
-      }
-      if (pip != null) {
-        permanentIdlePurchases = pip.clamp(0, 999999);
-      } else {
-        final old = data['legacyPermanentIdle'] as BigInt?;
-        permanentIdlePurchases =
-            old != null ? (old - BigInt.one).toInt().clamp(0, 999999) : 0;
-      }
-
-      if (pcp == null || pip == null) {
-        await _saveState();
-      }
 
       for (final upgrade in upgrades) {
         final savedLevel = upgradeLevels[upgrade.id] ?? 0;
@@ -371,9 +304,13 @@ class GameState extends ChangeNotifier {
             : savedLevel.clamp(0, upgrade.maxLevel);
         upgrade.level = normalizedLevel;
       }
+      _recalculateDerivedStatsFromUpgrades();
 
       final savedHighest = data['highestNumber'] as BigInt? ?? BigInt.zero;
       highestNumber = savedHighest > number ? savedHighest : number;
+      hapticPulseEnabled = (data['hapticPulseEnabled'] as bool?) ?? true;
+      final loadedIntensity = data['vibrationIntensity'] as double?;
+      vibrationIntensity = (loadedIntensity ?? 0.8).clamp(0.0, 1.0).toDouble();
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
       _calculateOfflineProgress(lastPlayed);
@@ -391,7 +328,7 @@ class GameState extends ChangeNotifier {
     if (lastPlayed != null && autoClickRate > 0) {
       final diff = DateTime.now().difference(lastPlayed).inSeconds;
       if (diff > 0) {
-        final idleMult = prestigeMultiplier * permanentIdleMultiplier;
+        final idleMult = prestigeMultiplier;
         final offlineGains = autoClickRate * idleMult * diff;
         offlineGainsThisSession = BigInt.from(offlineGains.floor());
         number += offlineGainsThisSession;
@@ -441,18 +378,54 @@ class GameState extends ChangeNotifier {
   bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
   double get totalIdleRate {
-    double idleRate =
-        autoClickRate * prestigeMultiplier * permanentIdleMultiplier;
+    double idleRate = autoClickRate * prestigeMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
     return idleRate;
   }
 
+  int upgradeMilestoneMultiplierForLevel(int level) {
+    if (level <= 0) return 1;
+
+    int reachedMilestones = 0;
+    for (final threshold in upgradeMilestoneThresholds) {
+      if (level >= threshold) {
+        reachedMilestones++;
+      }
+    }
+    return 1 << reachedMilestones;
+  }
+
+  int upgradeMilestoneMultiplier(Upgrade upgrade) {
+    return upgradeMilestoneMultiplierForLevel(upgrade.level);
+  }
+
+  void _recalculateDerivedStatsFromUpgrades() {
+    clickPower = BigInt.from(50);
+    autoClickRate = 0.0;
+
+    for (final upgrade in upgrades) {
+      if (upgrade.level <= 0) continue;
+
+      final milestoneMultiplier = upgradeMilestoneMultiplier(upgrade);
+      if (upgrade.effectType == idleCategory && upgrade.effectValue is double) {
+        autoClickRate += (upgrade.effectValue as double) *
+            upgrade.level *
+            milestoneMultiplier;
+      } else if (upgrade.effectType == clickCategory &&
+          upgrade.effectValue is BigInt) {
+        clickPower += (upgrade.effectValue as BigInt) *
+            BigInt.from(upgrade.level * milestoneMultiplier);
+      }
+    }
+  }
+
   int _upgradeLevel(String id) {
     final idx = upgrades.indexWhere((u) => u.id == id);
     if (idx == -1) return 0;
-    return upgrades[idx].level;
+    final upgrade = upgrades[idx];
+    return upgrade.level * upgradeMilestoneMultiplier(upgrade);
   }
 
   double get _probabilityStrikeChance {
@@ -594,7 +567,11 @@ class GameState extends ChangeNotifier {
     return changed;
   }
 
-  ({BigInt gain, bool probabilityStrikeTriggered}) click() {
+  ({
+    BigInt gain,
+    bool probabilityStrikeTriggered,
+    bool personalBestReached,
+  }) click() {
     final now = DateTime.now();
     final bool chainBroken = _lastManualClickTime == null ||
         now.difference(_lastManualClickTime!).inMilliseconds > 1000;
@@ -614,7 +591,7 @@ class GameState extends ChangeNotifier {
       final comboBonus = (_clickStreak - 1) * _momentumPerClickBonus;
       final newMultiplier = (1.0 + comboBonus).clamp(1.0, _momentumCap);
       final newProgress = (_clickStreak / _momentumClicksToCap).clamp(0.0, 1.0);
-      
+
       // Always update on click to ensure UI stays responsive
       _momentumMultiplier = newMultiplier;
       _momentumProgress = newProgress;
@@ -640,8 +617,7 @@ class GameState extends ChangeNotifier {
         _isUpgradeActive(probabilityStrikeId) &&
             _rng.nextDouble() < _probabilityStrikeChance;
 
-    final baseClickGain =
-        clickPower.toDouble() * prestigeMultiplier * permanentClickMultiplier;
+    final baseClickGain = clickPower.toDouble() * prestigeMultiplier;
     final kineticBonus = totalIdleRate * _kineticSynergyShare;
 
     double gain = (baseClickGain + kineticBonus) * _momentumMultiplier;
@@ -649,10 +625,12 @@ class GameState extends ChangeNotifier {
       gain *= _probabilityStrikeMultiplier;
     }
 
+    final previousHighest = highestNumber;
     final gained = BigInt.from(gain.floor());
     number += gained;
     _updateHighestNumber();
-    
+    final personalBestReached = highestNumber > previousHighest;
+
     // Only notify if momentum or overclock changed, number update is handled by Selector
     if (momentumChanged || overclockChanged) {
       notifyListeners();
@@ -660,12 +638,28 @@ class GameState extends ChangeNotifier {
       // Still need to notify for number changes, but this is already optimized by Selector
       notifyListeners();
     }
-    
+
     _scheduleStateSave();
     return (
       gain: gained,
-      probabilityStrikeTriggered: probabilityStrikeTriggered
+      probabilityStrikeTriggered: probabilityStrikeTriggered,
+      personalBestReached: personalBestReached,
     );
+  }
+
+  void setHapticPulseEnabled(bool enabled) {
+    if (hapticPulseEnabled == enabled) return;
+    hapticPulseEnabled = enabled;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  void setVibrationIntensity(double intensity) {
+    final normalized = intensity.clamp(0.0, 1.0).toDouble();
+    if ((vibrationIntensity - normalized).abs() < 0.001) return;
+    vibrationIntensity = normalized;
+    notifyListeners();
+    _scheduleStateSave();
   }
 
   void _activateOverclock() {
@@ -682,6 +676,13 @@ class GameState extends ChangeNotifier {
 
   void setBuyAmount(int amount) {
     buyAmount = amount;
+    notifyListeners();
+  }
+
+  void setSelectedUpgradeCategory(String category) {
+    if (category != clickCategory && category != idleCategory) return;
+    if (selectedUpgradeCategory == category) return;
+    selectedUpgradeCategory = category;
     notifyListeners();
   }
 
@@ -750,14 +751,7 @@ class GameState extends ChangeNotifier {
     if (number >= info.cost) {
       number -= info.cost;
       upgrade.level += info.amount;
-
-      if (upgrade.effectType == idleCategory) {
-        autoClickRate += (upgrade.effectValue as double) * info.amount;
-      } else if (upgrade.effectType == clickCategory &&
-          upgrade.effectValue is BigInt) {
-        clickPower +=
-            (upgrade.effectValue as BigInt) * BigInt.from(info.amount);
-      }
+      _recalculateDerivedStatsFromUpgrades();
 
       notifyListeners();
       _saveState();
@@ -787,49 +781,11 @@ class GameState extends ChangeNotifier {
     for (var u in upgrades) {
       u.level = 0;
     }
+    _recalculateDerivedStatsFromUpgrades();
 
     _startTicker();
     notifyListeners();
     _saveState();
-  }
-
-  /// Incremental shop upgrades; cost scales with rank. [amount] -1 = MAX affordable.
-  void buyPermanentClickMultiplierAmount(int amount) {
-    _buyPermanentMultiplierAmount(amount, forClick: true);
-  }
-
-  void buyPermanentIdleMultiplierAmount(int amount) {
-    _buyPermanentMultiplierAmount(amount, forClick: false);
-  }
-
-  void _buyPermanentMultiplierAmount(int amount, {required bool forClick}) {
-    if (amount == 0) return;
-
-    int bought = 0;
-    const safetyCap = 250000;
-
-    while (true) {
-      if (amount != -1 && bought >= amount) break;
-      if (bought >= safetyCap) break;
-
-      final rank = forClick ? permanentClickPurchases : permanentIdlePurchases;
-      final stepCost = shopPrestigeCostAtRank(rank);
-      if (prestigeCurrency < stepCost) break;
-
-      prestigeCurrency -= stepCost;
-      if (forClick) {
-        permanentClickPurchases++;
-      } else {
-        permanentIdlePurchases++;
-      }
-      bought++;
-    }
-
-    if (bought > 0) {
-      _startTicker();
-      notifyListeners();
-      _saveState();
-    }
   }
 
   /// Calculates how many prestige points would be earned on prestige
@@ -849,20 +805,25 @@ class GameState extends ChangeNotifier {
     _overclockTimer?.cancel();
     offlineGainsThisSession = BigInt.zero;
     highestNumber = BigInt.zero;
+    hapticPulseEnabled = true;
+    vibrationIntensity = 0.8;
     prestigeCurrency = 0.0;
     prestigeMultiplier = 1.0;
     prestigeCount = 0;
-    permanentClickPurchases = 0;
-    permanentIdlePurchases = 0;
     buyAmount = 1;
+    selectedUpgradeCategory = clickCategory;
 
     for (var u in upgrades) {
       u.level = 0;
     }
+    _recalculateDerivedStatsFromUpgrades();
 
     await _storageService.clearAllData();
     _lastSavedAt = DateTime.now();
-    await _saveState();
+    await _persistState(skipCloudUpload: true);
+    if (_syncService.isAvailable && _syncService.currentUserId != null) {
+      await syncWithCloud(forceUpload: true);
+    }
 
     notifyListeners();
   }
@@ -887,16 +848,12 @@ class GameState extends ChangeNotifier {
       prestigeCurrency: prestigeCurrency,
       prestigeMultiplier: prestigeMultiplier,
       prestigeCount: prestigeCount,
-      permanentClickPurchases: permanentClickPurchases,
-      permanentIdlePurchases: permanentIdlePurchases,
       upgradeLevels: upgradedLevels,
       highestNumber: currentHigh,
       progressScore: PlayerProgress.calculateProgressScore(
         number: number,
         prestigeCount: prestigeCount,
         prestigeCurrency: prestigeCurrency,
-        permanentClickPurchases: permanentClickPurchases,
-        permanentIdlePurchases: permanentIdlePurchases,
         upgradeLevels: upgradedLevels,
       ),
       updatedAt: _lastSavedAt?.toUtc() ?? now,
@@ -908,16 +865,14 @@ class GameState extends ChangeNotifier {
     clickPower = progress.clickPower < BigInt.from(50)
         ? BigInt.from(50)
         : progress.clickPower;
-    autoClickRate = progress.autoClickRate.isFinite && progress.autoClickRate > 0
-        ? progress.autoClickRate
-        : 0.0;
+    autoClickRate =
+        progress.autoClickRate.isFinite && progress.autoClickRate > 0
+            ? progress.autoClickRate
+            : 0.0;
     prestigeCurrency = progress.prestigeCurrency;
-    prestigeMultiplier = progress.prestigeMultiplier < 1.0
-        ? 1.0
-        : progress.prestigeMultiplier;
+    prestigeMultiplier =
+        progress.prestigeMultiplier < 1.0 ? 1.0 : progress.prestigeMultiplier;
     prestigeCount = progress.prestigeCount.clamp(0, 999999);
-    permanentClickPurchases = progress.permanentClickPurchases.clamp(0, 999999);
-    permanentIdlePurchases = progress.permanentIdlePurchases.clamp(0, 999999);
     highestNumber = progress.normalizedHighestNumber;
 
     for (final upgrade in upgrades) {
@@ -926,6 +881,7 @@ class GameState extends ChangeNotifier {
           ? remoteLevel
           : remoteLevel.clamp(0, upgrade.maxLevel);
     }
+    _recalculateDerivedStatsFromUpgrades();
 
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -987,12 +943,12 @@ class GameState extends ChangeNotifier {
       prestigeCurrency: prestigeCurrency,
       prestigeMultiplier: prestigeMultiplier,
       prestigeCount: prestigeCount,
-      permanentClickPurchases: permanentClickPurchases,
-      permanentIdlePurchases: permanentIdlePurchases,
       upgradeLevels: {
         for (final upgrade in upgrades) upgrade.id: upgrade.level,
       },
       highestNumber: highestNumber,
+      hapticPulseEnabled: hapticPulseEnabled,
+      vibrationIntensity: vibrationIntensity,
     );
     _lastSavedAt = DateTime.now();
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'config/app_config.dart';
@@ -11,7 +13,12 @@ import 'ui/widgets/auth_session_listener.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppConfig.load();
-  await SupabaseService.initialize();
+  try {
+    // Never block app launch on network-backed service boot.
+    await SupabaseService.initialize().timeout(const Duration(seconds: 4));
+  } catch (_) {
+    // Continue in local/offline mode; cloud sync can recover later.
+  }
   runApp(const NumberApp());
 }
 
@@ -59,7 +66,8 @@ class _AppInitializerState extends State<AppInitializer> {
       Future<void>.delayed(const Duration(milliseconds: 2500)),
     ]);
     if (SupabaseService.instance.currentSession != null) {
-      await gameState.syncWithCloud();
+      // Sync in background so offline players never get stuck on loading.
+      unawaited(gameState.syncWithCloud());
     }
   }
 

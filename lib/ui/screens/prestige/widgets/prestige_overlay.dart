@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
-import '../../../../utils/number_formatter.dart';
 import '../prestige_constants.dart';
 
 class PrestigeOverlay extends StatelessWidget {
   final double progress;
   final ThemeData theme;
-  final double pointsEarned;
+  final double multiplierAfterPrestige;
 
   const PrestigeOverlay({
     super.key,
     required this.progress,
     required this.theme,
-    required this.pointsEarned,
+    required this.multiplierAfterPrestige,
   });
 
   static const _labelIn = Interval(0.18, 0.42, curve: Curves.easeIn);
@@ -24,8 +23,7 @@ class PrestigeOverlay extends StatelessWidget {
 
     final labelOpacity = isReveal
         ? 0.0
-        : (_labelIn.transform(progress) *
-                (1.0 - _labelOut.transform(progress)))
+        : (_labelIn.transform(progress) * (1.0 - _labelOut.transform(progress)))
             .clamp(0.0, 1.0);
 
     final scanProgress = isReveal ? 1.0 : _scan.transform(progress);
@@ -71,10 +69,10 @@ class PrestigeOverlay extends StatelessWidget {
                       minHeight: 2,
                     ),
                   ),
-                  if (pointsEarned > 0.0) ...[
+                  if (multiplierAfterPrestige > 0.0) ...[
                     const SizedBox(height: 22),
                     Text(
-                      '+${NumberFormatter.formatDouble(pointsEarned)}',
+                      'x${multiplierAfterPrestige.toStringAsFixed(3)}',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         color: Colors.black87,
                         fontWeight: FontWeight.bold,
@@ -82,7 +80,7 @@ class PrestigeOverlay extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'PRESTIGE POINTS',
+                      'PRESTIGE MULTIPLIER',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.black54,
                         letterSpacing: 2.5,
@@ -108,10 +106,8 @@ class _PrestigePainter extends CustomPainter {
 
   const _PrestigePainter({required this.progress});
 
-  static const _overlayIn =
-      Interval(0.00, 0.14, curve: Curves.easeIn);
-  static const _scan =
-      Interval(0.14, 0.66, curve: Curves.easeInOut);
+  static const _overlayIn = Interval(0.00, 0.14, curve: Curves.easeIn);
+  static const _scan = Interval(0.14, 0.66, curve: Curves.easeInOut);
   static const _flashIn =
       Interval(0.64, kPrestigeFirePoint, curve: Curves.easeIn);
   static const _reveal =
@@ -126,8 +122,7 @@ class _PrestigePainter extends CustomPainter {
         canvas.drawRect(
           Offset.zero & size,
           Paint()
-            ..color =
-                Colors.black.withValues(alpha: 0.88 * overlayOpacity),
+            ..color = Colors.black.withValues(alpha: 0.88 * overlayOpacity),
         );
       }
 
@@ -144,8 +139,7 @@ class _PrestigePainter extends CustomPainter {
 
         // Glowing leading edge
         const glowH = 60.0;
-        final glowRect =
-            Rect.fromLTWH(0, scanY - glowH / 2, size.width, glowH);
+        final glowRect = Rect.fromLTWH(0, scanY - glowH / 2, size.width, glowH);
         canvas.drawRect(
           glowRect,
           Paint()

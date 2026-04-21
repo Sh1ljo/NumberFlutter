@@ -10,12 +10,10 @@ class StorageService {
   static const String _keyGlobalMultiplier = 'globalMultiplier';
   static const String _keyPrestigeMultiplier = 'prestigeMultiplier';
   static const String _keyPrestigeCount = 'prestigeCount';
-  static const String _keyPermanentClickMultiplier = 'permanentClickMultiplier';
-  static const String _keyPermanentIdleMultiplier = 'permanentIdleMultiplier';
-  static const String _keyPermanentClickPurchases = 'permanentClickPurchases';
-  static const String _keyPermanentIdlePurchases = 'permanentIdlePurchases';
   static const String _keyUpgradeLevels = 'upgradeLevels';
   static const String _keyHighestNumber = 'highestNumber';
+  static const String _keyHapticPulseEnabled = 'hapticPulseEnabled';
+  static const String _keyVibrationIntensity = 'vibrationIntensity';
 
   Future<void> saveGame({
     required BigInt number,
@@ -24,10 +22,10 @@ class StorageService {
     required double prestigeCurrency,
     required double prestigeMultiplier,
     required int prestigeCount,
-    required int permanentClickPurchases,
-    required int permanentIdlePurchases,
     required Map<String, int> upgradeLevels,
     required BigInt highestNumber,
+    required bool hapticPulseEnabled,
+    required double vibrationIntensity,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -37,10 +35,13 @@ class StorageService {
     await prefs.setString(
         _keyPrestigeMultiplier, prestigeMultiplier.toString());
     await prefs.setInt(_keyPrestigeCount, prestigeCount);
-    await prefs.setInt(_keyPermanentClickPurchases, permanentClickPurchases);
-    await prefs.setInt(_keyPermanentIdlePurchases, permanentIdlePurchases);
     await prefs.setString(_keyUpgradeLevels, jsonEncode(upgradeLevels));
     await prefs.setString(_keyHighestNumber, highestNumber.toString());
+    await prefs.setBool(_keyHapticPulseEnabled, hapticPulseEnabled);
+    await prefs.setDouble(
+      _keyVibrationIntensity,
+      vibrationIntensity.clamp(0.0, 1.0),
+    );
     await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -53,6 +54,8 @@ class StorageService {
     final prestigeCurrencyStr = prefs.getString(_keyPrestigeCurrency) ?? '0';
     final highestNumberStr = prefs.getString(_keyHighestNumber) ?? numberStr;
     final lastPlayedMs = prefs.getInt(_keyLastPlayed);
+    final hapticPulseEnabled = prefs.getBool(_keyHapticPulseEnabled);
+    final vibrationIntensity = prefs.getDouble(_keyVibrationIntensity);
 
     final prestigeMultStr = prefs.getString(_keyPrestigeMultiplier);
     final prestigeCountRaw = prefs.getInt(_keyPrestigeCount);
@@ -63,8 +66,6 @@ class StorageService {
       legacyGlobalMultiplier = BigInt.tryParse(legacyGm) ?? BigInt.one;
     }
 
-    final pClick = prefs.getInt(_keyPermanentClickPurchases);
-    final pIdle = prefs.getInt(_keyPermanentIdlePurchases);
     final upgradeLevelsRaw = prefs.getString(_keyUpgradeLevels);
     final Map<String, dynamic> decodedUpgradeLevels = upgradeLevelsRaw == null
         ? {}
@@ -72,17 +73,6 @@ class StorageService {
     final upgradeLevels = decodedUpgradeLevels.map(
       (key, value) => MapEntry(key, (value as num).toInt()),
     );
-
-    BigInt? legacyPermanentClick;
-    BigInt? legacyPermanentIdle;
-    if (pClick == null) {
-      final s = prefs.getString(_keyPermanentClickMultiplier) ?? '1';
-      legacyPermanentClick = BigInt.tryParse(s) ?? BigInt.one;
-    }
-    if (pIdle == null) {
-      final s = prefs.getString(_keyPermanentIdleMultiplier) ?? '1';
-      legacyPermanentIdle = BigInt.tryParse(s) ?? BigInt.one;
-    }
 
     final prestigeCurrencyDouble = double.tryParse(prestigeCurrencyStr);
     final prestigeCurrencyLegacy = BigInt.tryParse(prestigeCurrencyStr);
@@ -97,13 +87,12 @@ class StorageService {
           prestigeMultStr != null ? double.tryParse(prestigeMultStr) : null,
       'prestigeCount': prestigeCountRaw,
       'legacyGlobalMultiplier': legacyGlobalMultiplier,
-      'permanentClickPurchases': pClick,
-      'permanentIdlePurchases': pIdle,
-      'legacyPermanentClick': legacyPermanentClick,
-      'legacyPermanentIdle': legacyPermanentIdle,
       'upgradeLevels': upgradeLevels,
-      'highestNumber':
-          BigInt.tryParse(highestNumberStr) ?? BigInt.tryParse(numberStr) ?? BigInt.zero,
+      'highestNumber': BigInt.tryParse(highestNumberStr) ??
+          BigInt.tryParse(numberStr) ??
+          BigInt.zero,
+      'hapticPulseEnabled': hapticPulseEnabled,
+      'vibrationIntensity': vibrationIntensity,
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,

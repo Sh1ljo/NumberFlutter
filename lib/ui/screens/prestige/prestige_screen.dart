@@ -5,7 +5,6 @@ import '../../../utils/number_formatter.dart';
 import 'prestige_constants.dart';
 import 'widgets/prestige_gain_card.dart';
 import 'widgets/prestige_overlay.dart';
-import 'widgets/prestige_shop_popup.dart';
 import 'widgets/prestige_stat_block.dart';
 
 class PrestigeScreen extends StatefulWidget {
@@ -20,10 +19,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   late AnimationController _controller;
   bool _isAnimating = false;
   bool _prestigeCalled = false;
-  double _pendingPrestigePoints = 0.0;
-
-  // Prestige shop quantity selection: 1, 10, 100, -1 (MAX)
-  int _shopBuyAmount = 1;
+  double _pendingPrestigeMultiplier = 0.0;
 
   @override
   void initState() {
@@ -49,7 +45,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
         context.read<GameState>().setPrestigeAnimating(false);
         setState(() {
           _isAnimating = false;
-          _pendingPrestigePoints = 0.0;
+          _pendingPrestigeMultiplier = 0.0;
         });
         _prestigeCalled = false;
         _controller.reset();
@@ -65,10 +61,11 @@ class _PrestigeScreenState extends State<PrestigeScreen>
 
   void _initiatePrestige() {
     if (_isAnimating) return;
-    final pts = context.read<GameState>().prestigePointsOnPrestige;
+    final multiplierAfter =
+        context.read<GameState>().prestigeMultiplierAfterNext;
     setState(() {
       _isAnimating = true;
-      _pendingPrestigePoints = pts;
+      _pendingPrestigeMultiplier = multiplierAfter;
     });
     context.read<GameState>().setPrestigeAnimating(true);
     _controller.forward();
@@ -77,15 +74,13 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   Future<void> _confirmAndPrestige() async {
     final theme = Theme.of(context);
     final gameState = context.read<GameState>();
-    final pointsToEarn = gameState.prestigePointsOnPrestige;
 
     final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.72),
       builder: (ctx) => Dialog(
         backgroundColor: theme.colorScheme.surfaceContainerLow,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Padding(
@@ -96,14 +91,13 @@ class _PrestigeScreenState extends State<PrestigeScreen>
               children: [
                 Text(
                   'INITIATE PRESTIGE?',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(letterSpacing: 2.0),
+                  style:
+                      theme.textTheme.titleMedium?.copyWith(letterSpacing: 2.0),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   'Your Numbers, Upgrades, and idle generators will reset. '
-                  'You earn prestige points and a small prestige multiplier '
-                  'bonus that grows with each reset.',
+                  'Your prestige multiplier increases after initiating.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.outline,
                     height: 1.6,
@@ -111,9 +105,9 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                 ),
                 const SizedBox(height: 20),
                 PrestigeGainCard(
-                  pointsToEarn: pointsToEarn,
                   prestigeRequirement: gameState.prestigeRequirement,
-                  multiplierAfter: gameState.prestigeMultiplierAfterNext,
+                  multiplierAfterPrestige:
+                      gameState.prestigeMultiplierAfterNext,
                 ),
                 const SizedBox(height: 28),
                 Row(
@@ -126,8 +120,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                               color: theme.colorScheme.outlineVariant),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(2)),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         child: Text(
                           'CANCEL',
@@ -146,8 +139,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                           backgroundColor: theme.colorScheme.primary,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(2)),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         child: Text(
                           'CONFIRM',
@@ -169,31 +161,12 @@ class _PrestigeScreenState extends State<PrestigeScreen>
     if (confirmed == true && mounted) _initiatePrestige();
   }
 
-  /// Shows the prestige shop as a modal popup
-  Future<void> _showPrestigeShop() async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => PrestigeShopPopup(
-        initialShopBuyAmount: _shopBuyAmount,
-        onShopBuyAmountChanged: (amount) {
-          setState(() => _shopBuyAmount = amount);
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final gameState = context.watch<GameState>();
     final theme = Theme.of(context);
     final requirement = gameState.prestigeRequirement;
     final canPrestige = gameState.number >= requirement;
-    final pointsToEarn = gameState.prestigePointsOnPrestige;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -223,8 +196,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                   ),
                 ),
                 Container(
-                    height: 2,
-                    color: theme.colorScheme.surfaceContainerLow),
+                    height: 2, color: theme.colorScheme.surfaceContainerLow),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
                   child: Column(
@@ -232,12 +204,12 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                     children: [
                       Text(
                         'PRESTIGE',
-                        style: theme.textTheme.displayLarge?.copyWith(
-                            fontSize: 48),
+                        style: theme.textTheme.displayLarge
+                            ?.copyWith(fontSize: 48),
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Reset progress for permanent multipliers and prestige currency.',
+                        'Reset progress for prestige currency.',
                         style: theme.textTheme.bodyLarge?.copyWith(
                           color: theme.colorScheme.outline,
                           height: 1.45,
@@ -250,19 +222,20 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                           Expanded(
                             child: PrestigeStatBlock(
                               icon: Icons.stars,
-                              label: 'PRESTIGE POINTS',
-                              value: NumberFormatter.formatDouble(
-                                  gameState.prestigeCurrency),
+                              label: 'PRESTIGE MULTIPLIER',
+                              value:
+                                  'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
                               theme: theme,
                             ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: PrestigeStatBlock(
-                              icon: Icons.bolt,
-                              label: 'PRESTIGE MULTIPLIER',
-                              value:
-                                  '×${NumberFormatter.formatPrestigeMultiplier(gameState.prestigeMultiplier)}',
+                              icon: Icons.replay,
+                              label: 'TOTAL PRESTIGES',
+                              value: NumberFormatter.format(
+                                BigInt.from(gameState.prestigeCount),
+                              ),
                               theme: theme,
                             ),
                           ),
@@ -272,8 +245,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                   ),
                 ),
                 Container(
-                    height: 2,
-                    color: theme.colorScheme.surfaceContainerLow),
+                    height: 2, color: theme.colorScheme.surfaceContainerLow),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -286,9 +258,8 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         PrestigeGainCard(
-                          pointsToEarn: pointsToEarn,
                           prestigeRequirement: requirement,
-                          multiplierAfter:
+                          multiplierAfterPrestige:
                               gameState.prestigeMultiplierAfterNext,
                         ),
                         const SizedBox(height: 20),
@@ -296,9 +267,8 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _isAnimating
-                                  ? null
-                                  : _confirmAndPrestige,
+                              onPressed:
+                                  _isAnimating ? null : _confirmAndPrestige,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: theme.colorScheme.primary,
                                 padding: const EdgeInsets.symmetric(
@@ -337,25 +307,6 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                               color: theme.colorScheme.error,
                             ),
                           ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _showPrestigeShop,
-                            icon: const Icon(Icons.shopping_cart),
-                            label: const Text('PRESTIGE SHOP'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme
-                                  .colorScheme.secondaryContainer,
-                              foregroundColor: theme
-                                  .colorScheme.onSecondaryContainer,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(2)),
-                            ),
-                          ),
-                        ),
                         const Spacer(),
                       ],
                     ),
@@ -372,7 +323,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
               builder: (context, _) => PrestigeOverlay(
                 progress: _controller.value,
                 theme: theme,
-                pointsEarned: _pendingPrestigePoints,
+                multiplierAfterPrestige: _pendingPrestigeMultiplier,
               ),
             ),
         ],

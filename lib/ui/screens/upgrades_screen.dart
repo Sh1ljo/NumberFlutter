@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../../logic/game_state.dart';
 import '../../models/upgrade.dart';
 import '../../utils/number_formatter.dart';
@@ -12,12 +13,24 @@ class UpgradesScreen extends StatefulWidget {
 }
 
 class _UpgradesScreenState extends State<UpgradesScreen> {
-  String _selectedCategory = GameState.clickCategory;
+  double _calculateAffordabilityProgress(BigInt amount, BigInt target) {
+    if (target <= BigInt.zero) return 1.0;
+    if (amount <= BigInt.zero) return 0.0;
+    if (amount >= target) return 1.0;
+
+    final commonShift =
+        math.max(0, math.max(amount.bitLength, target.bitLength) - 53);
+    final scaledAmount = (amount >> commonShift).toDouble();
+    final scaledTarget = (target >> commonShift).toDouble();
+    if (scaledTarget <= 0) return 0.0;
+    return (scaledAmount / scaledTarget).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
     final gameState = context.watch<GameState>();
     final theme = Theme.of(context);
+    final selectedCategory = gameState.selectedUpgradeCategory;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -72,12 +85,12 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                     icon: Icon(Icons.bolt),
                   ),
                 ],
-                selected: {_selectedCategory},
+                selected: {selectedCategory},
                 showSelectedIcon: false,
                 onSelectionChanged: (Set<String> newSelection) {
-                  setState(() {
-                    _selectedCategory = newSelection.first;
-                  });
+                  context
+                      .read<GameState>()
+                      .setSelectedUpgradeCategory(newSelection.first);
                 },
                 style: SegmentedButton.styleFrom(
                   foregroundColor:
@@ -123,21 +136,34 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
 
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
-                  .where((upgrade) => upgrade.effectType == _selectedCategory)
+                  .where((upgrade) => upgrade.effectType == selectedCategory)
                   .toList();
+              final entries = filteredUpgrades.map((upgrade) {
+                final info = gameState.getPurchaseInfo(upgrade);
+                final canAfford =
+                    info.amount > 0 && gameState.number >= info.cost;
+                return (upgrade: upgrade, info: info, canAfford: canAfford);
+              }).toList();
 
               return Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 24.0, vertical: 10.0),
-                  itemCount: filteredUpgrades.length,
+                  itemCount: entries.length,
                   itemBuilder: (context, index) {
-                    final upgrade = filteredUpgrades[index];
-                    final info = gameState.getPurchaseInfo(upgrade);
-                    final canAfford =
-                        info.amount > 0 && gameState.number >= info.cost;
+                    final entry = entries[index];
+                    final milestoneMultiplier =
+                        gameState.upgradeMilestoneMultiplier(entry.upgrade);
                     return _UpgradeItem(
-                        upgrade: upgrade, canAfford: canAfford, info: info);
+                      upgrade: entry.upgrade,
+                      canAfford: entry.canAfford,
+                      info: entry.info,
+                      milestoneMultiplier: milestoneMultiplier,
+                      affordabilityProgress: _calculateAffordabilityProgress(
+                        gameState.number,
+                        entry.info.cost,
+                      ),
+                    );
                   },
                 ),
               );
@@ -156,11 +182,15 @@ class _UpgradeItem extends StatelessWidget {
   final Upgrade upgrade;
   final bool canAfford;
   final ({BigInt cost, int amount}) info;
+  final int milestoneMultiplier;
+  final double affordabilityProgress;
 
   const _UpgradeItem({
     required this.upgrade,
     required this.canAfford,
     required this.info,
+    required this.milestoneMultiplier,
+    required this.affordabilityProgress,
   });
 
   @override
@@ -265,9 +295,26 @@ class _UpgradeItem extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('LEVEL', style: theme.textTheme.labelSmall),
-                  Text(upgrade.level.toString(),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                          fontSize: 18, color: theme.colorScheme.secondary)),
+                  Row(
+                    children: [
+                      Text(
+                        upgrade.level.toString(),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontSize: 18,
+                          color: theme.colorScheme.secondary,
+                        ),
+                      ),
+                      if (milestoneMultiplier > 1) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          'x$milestoneMultiplier',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.95),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
               Column(
@@ -280,7 +327,19 @@ class _UpgradeItem extends StatelessWidget {
                 ],
               ),
             ],
-          )
+          ),
+          if (!isMaxed && !canAfford) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: affordabilityProgress,
+                minHeight: 1.5,
+                backgroundColor: Colors.white.withValues(alpha: 0.12),
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+          ],
         ],
       ),
     );

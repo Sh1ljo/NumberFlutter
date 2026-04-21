@@ -13,10 +13,92 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  double _vibrationIntensity = 0.8;
-  bool _hapticPulseEnabled = true;
   bool _autoSaveEnabled = true;
   bool _manualSyncInProgress = false;
+  static const List<String> _namedDenominationSuffixes = [
+    'K',
+    'M',
+    'B',
+    'T',
+    'Qa',
+    'Qi',
+    'Sx',
+    'Sp',
+    'Oc',
+    'No',
+    'Dc',
+    'UDc',
+    'DDc',
+    'TDc',
+    'QaDc',
+    'QiDc',
+    'SxDc',
+    'SpDc',
+    'OcDc',
+    'NoDc',
+    'Vg',
+    'UVg',
+    'DVg',
+    'TVg',
+    'QaVg',
+    'QiVg',
+    'SxVg',
+    'SpVg',
+    'OcVg',
+    'NoVg',
+    'Tg',
+    'UTg',
+    'DTg',
+    'TTg',
+    'QaTg',
+    'QiTg',
+    'SxTg',
+    'SpTg',
+    'OcTg',
+    'NoTg',
+  ];
+  static const List<String> _namedDenominationNames = [
+    'thousand',
+    'million',
+    'billion',
+    'trillion',
+    'quadrillion',
+    'quintillion',
+    'sextillion',
+    'septillion',
+    'octillion',
+    'nonillion',
+    'decillion',
+    'undecillion',
+    'duodecillion',
+    'tredecillion',
+    'quattuordecillion',
+    'quindecillion',
+    'sexdecillion',
+    'septendecillion',
+    'octodecillion',
+    'novemdecillion',
+    'vigintillion',
+    'unvigintillion',
+    'duovigintillion',
+    'tresvigintillion',
+    'quattuorvigintillion',
+    'quinvigintillion',
+    'sesvigintillion',
+    'septemvigintillion',
+    'octovigintillion',
+    'novemvigintillion',
+    'trigintillion',
+    'untrigintillion',
+    'duotrigintillion',
+    'trestrigintillion',
+    'quattuortrigintillion',
+    'quintrigintillion',
+    'sestrigintillion',
+    'septentrigintillion',
+    'octotrigintillion',
+    'novemtrigintillion',
+  ];
 
   Future<void> _runManualSync(BuildContext context, GameState gameState) async {
     setState(() {
@@ -91,15 +173,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildListTile(context,
                       title: 'Vibration Intensity',
                       subtitle: 'Tactile numeric feedback',
-                      trailing: _buildDummySlider(context)),
+                      trailing:
+                          _buildHapticIntensitySlider(context, gameState)),
                   const SizedBox(height: 24),
                   _buildListTile(context,
                       title: 'Haptic Pulse',
                       subtitle: 'Active on incrementation',
-                      trailing: _buildDummyToggle(context, _hapticPulseEnabled,
-                          (val) {
-                        setState(() => _hapticPulseEnabled = val);
-                      })),
+                      trailing: _buildDummyToggle(
+                        context,
+                        gameState.hapticPulseEnabled,
+                        gameState.setHapticPulseEnabled,
+                      )),
                   const SizedBox(height: 32),
                   Container(
                       height: 1, color: theme.colorScheme.surfaceContainerLow),
@@ -114,7 +198,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Container(
                           decoration: BoxDecoration(
                               border: Border.all(
-                                  color: theme.colorScheme.surfaceContainerLow)),
+                                  color:
+                                      theme.colorScheme.surfaceContainerLow)),
                           padding: const EdgeInsets.all(24),
                           child: Text(
                             'Cloud features need SUPABASE_URL and SUPABASE_ANON_KEY in assets/.env. You can still play offline.',
@@ -152,13 +237,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   if (session == null) ...[
                                     OutlinedButton(
                                       onPressed: () {
-                                              Navigator.of(context).push(
-                                                MaterialPageRoute<void>(
-                                                  builder: (_) =>
-                                                      const AuthScreen(),
-                                                ),
-                                              );
-                                            },
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => const AuthScreen(),
+                                          ),
+                                        );
+                                      },
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor:
                                             theme.colorScheme.primary,
@@ -169,7 +253,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             borderRadius:
                                                 BorderRadius.circular(2)),
                                       ),
-                                      child: const Text('SIGN IN / CREATE ACCOUNT'),
+                                      child: const Text(
+                                          'SIGN IN / CREATE ACCOUNT'),
                                     ),
                                   ] else ...[
                                     OutlinedButton(
@@ -234,6 +319,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildSectionTitle(context, '03. INFORMATION'),
                   _buildInfoRow(context, 'Software Version', '0.01'),
                   _buildInfoRow(context, 'Terminal ID', '#882-QX-01'),
+                  _buildDenominationsAccordion(context),
                   if (supabase.isConfigured)
                     StreamBuilder(
                       stream: supabase.authStateChanges(),
@@ -367,7 +453,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildDummySlider(BuildContext context) {
+  Widget _buildHapticIntensitySlider(
+      BuildContext context, GameState gameState) {
     final theme = Theme.of(context);
     return SizedBox(
       width: 150,
@@ -380,11 +467,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: theme.colorScheme.outline)),
           Expanded(
             child: Slider(
-              value: _vibrationIntensity,
+              value: gameState.vibrationIntensity,
               onChanged: (val) {
-                setState(() {
-                  _vibrationIntensity = val;
-                });
+                gameState.setVibrationIntensity(val);
               },
               activeColor: theme.colorScheme.primary,
               inactiveColor: theme.colorScheme.surfaceContainerHighest,
@@ -443,6 +528,137 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text(value,
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 14)),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDenominationsAccordion(BuildContext context) {
+    final theme = Theme.of(context);
+    final rows = <({String abbreviation, String name, String value})>[
+      for (int i = 0; i < _namedDenominationSuffixes.length; i++)
+        (
+          abbreviation: _namedDenominationSuffixes[i],
+          name: _namedDenominationNames[i],
+          value: '10^${(i + 1) * 3}',
+        ),
+      (
+        abbreviation: 'aa ... zz',
+        name: 'letter pair series',
+        value: '10^123 ... 10^2151',
+      ),
+      (
+        abbreviation: 'scientific',
+        name: 'scientific notation',
+        value: '10^2154+',
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: theme.colorScheme.surfaceContainerLow),
+          ),
+        ),
+        child: Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 14),
+            title: Text(
+              'NUMBER DENOMINATIONS',
+              style: theme.textTheme.labelSmall,
+            ),
+            trailing: Icon(Icons.expand_more, color: theme.colorScheme.outline),
+            collapsedIconColor: theme.colorScheme.outline,
+            iconColor: theme.colorScheme.primary,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  border:
+                      Border.all(color: theme.colorScheme.surfaceContainerLow),
+                ),
+                padding: const EdgeInsets.all(12),
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: rows.length + 1,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 8,
+                    color: theme.colorScheme.surfaceContainerLow,
+                  ),
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      return DefaultTextStyle(
+                        style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                              letterSpacing: 0.6,
+                            ) ??
+                            const TextStyle(),
+                        child: const Row(
+                          children: [
+                            Expanded(flex: 3, child: Text('ABBR')),
+                            Expanded(flex: 5, child: Text('NAME')),
+                            Expanded(
+                              flex: 4,
+                              child: Text(
+                                'VALUE',
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final rowIndex = index - 1;
+                    final row = rows[rowIndex];
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            row.abbreviation,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontFamily: 'monospace',
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 5,
+                          child: Text(
+                            row.name,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 4,
+                          child: Text(
+                            row.value,
+                            textAlign: TextAlign.right,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontFamily: 'monospace',
+                              color: theme.colorScheme.outline,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

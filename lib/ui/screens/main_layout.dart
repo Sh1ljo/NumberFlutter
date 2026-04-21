@@ -24,6 +24,8 @@ class _MainLayoutState extends State<MainLayout> {
   bool _offlineDialogQueued = false;
   String? _promptedProfileUserId;
   bool _profilePromptInProgress = false;
+  String? _lastCloudErrorNotified;
+  bool _offlineNoticeVisible = false;
 
   final List<Widget> _screens = [
     const MainGameScreen(),
@@ -64,11 +66,65 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  bool _isLikelyOfflineError(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('socketexception') ||
+        normalized.contains('failed host lookup') ||
+        normalized.contains('network') ||
+        normalized.contains('connection') ||
+        normalized.contains('timed out');
+  }
+
+  void _maybeShowOfflineNotice(String? error) {
+    if (error == null ||
+        error == _lastCloudErrorNotified ||
+        _offlineNoticeVisible) {
+      return;
+    }
+    _lastCloudErrorNotified = error;
+    if (!_isLikelyOfflineError(error)) return;
+
+    _offlineNoticeVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _offlineNoticeVisible = false;
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) {
+          final theme = Theme.of(ctx);
+          return AlertDialog(
+            backgroundColor: theme.colorScheme.surfaceContainerHigh,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            title: Text('Offline Mode', style: theme.textTheme.titleLarge),
+            content: Text(
+              'No internet connection, will save when you are online. Porgress will be saved locally',
+              style: theme.textTheme.bodyLarge,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+      _offlineNoticeVisible = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     _maybePromptForLocation();
     final isPrestigeAnimating =
         context.select<GameState, bool>((gs) => gs.isPrestigeAnimating);
+    final cloudError =
+        context.select<GameState, String?>((gs) => gs.lastCloudSyncError);
+    _maybeShowOfflineNotice(cloudError);
     final offlineGains = context.select<GameState, BigInt>(
       (gs) => gs.offlineGainsThisSession,
     );

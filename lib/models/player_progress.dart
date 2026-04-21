@@ -8,8 +8,6 @@ class PlayerProgress {
   final double prestigeCurrency;
   final double prestigeMultiplier;
   final int prestigeCount;
-  final int permanentClickPurchases;
-  final int permanentIdlePurchases;
   final Map<String, int> upgradeLevels;
   final BigInt highestNumber;
   final int progressScore;
@@ -23,8 +21,6 @@ class PlayerProgress {
     required this.prestigeCurrency,
     required this.prestigeMultiplier,
     required this.prestigeCount,
-    required this.permanentClickPurchases,
-    required this.permanentIdlePurchases,
     required this.upgradeLevels,
     required this.highestNumber,
     required this.progressScore,
@@ -41,23 +37,17 @@ class PlayerProgress {
     required BigInt number,
     required int prestigeCount,
     required double prestigeCurrency,
-    required int permanentClickPurchases,
-    required int permanentIdlePurchases,
     required Map<String, int> upgradeLevels,
   }) {
     final numberDigits = number == BigInt.zero ? 1 : number.toString().length;
     final upgradesTotal =
         upgradeLevels.values.fold<int>(0, (sum, level) => sum + level);
-    final shopTotal = permanentClickPurchases + permanentIdlePurchases;
     final prestigeCurrencyScaled = (prestigeCurrency * 1000).floor();
     final logScore = (math.log(numberDigits + 1) / math.ln10 * 1000).floor();
 
     // Bounded deterministic score that fits PostgreSQL bigint.
-    return (prestigeCount * 100000000)
-        .clamp(0, 9000000000000000000)
-        .toInt() +
+    return (prestigeCount * 100000000).clamp(0, 9000000000000000000).toInt() +
         (prestigeCurrencyScaled * 10000) +
-        (shopTotal * 1000) +
         (upgradesTotal * 10) +
         logScore;
   }
@@ -69,8 +59,6 @@ class PlayerProgress {
     double? prestigeCurrency,
     double? prestigeMultiplier,
     int? prestigeCount,
-    int? permanentClickPurchases,
-    int? permanentIdlePurchases,
     Map<String, int>? upgradeLevels,
     BigInt? highestNumber,
     int? progressScore,
@@ -84,10 +72,6 @@ class PlayerProgress {
       prestigeCurrency: prestigeCurrency ?? this.prestigeCurrency,
       prestigeMultiplier: prestigeMultiplier ?? this.prestigeMultiplier,
       prestigeCount: prestigeCount ?? this.prestigeCount,
-      permanentClickPurchases:
-          permanentClickPurchases ?? this.permanentClickPurchases,
-      permanentIdlePurchases:
-          permanentIdlePurchases ?? this.permanentIdlePurchases,
       upgradeLevels: upgradeLevels ?? this.upgradeLevels,
       highestNumber: highestNumber ?? this.highestNumber,
       progressScore: progressScore ?? this.progressScore,
@@ -104,8 +88,6 @@ class PlayerProgress {
       'prestige_currency': prestigeCurrency,
       'prestige_multiplier': prestigeMultiplier,
       'prestige_count': prestigeCount,
-      'permanent_click_purchases': permanentClickPurchases,
-      'permanent_idle_purchases': permanentIdlePurchases,
       'upgrade_levels': upgradeLevels,
       'highest_number_numeric': normalizedHighestNumber.toString(),
       'progress_score': progressScore,
@@ -119,7 +101,8 @@ class PlayerProgress {
       (key, value) => MapEntry(key, (value as num?)?.toInt() ?? 0),
     );
 
-    final parsedNumber = BigInt.tryParse(row['number_numeric'] as String? ?? '');
+    final parsedNumber =
+        BigInt.tryParse(row['number_numeric'] as String? ?? '');
     final parsedHighest =
         BigInt.tryParse(row['highest_number_numeric'] as String? ?? '');
 
@@ -134,10 +117,6 @@ class PlayerProgress {
       prestigeMultiplier:
           (row['prestige_multiplier'] as num?)?.toDouble() ?? 1.0,
       prestigeCount: (row['prestige_count'] as num?)?.toInt() ?? 0,
-      permanentClickPurchases:
-          (row['permanent_click_purchases'] as num?)?.toInt() ?? 0,
-      permanentIdlePurchases:
-          (row['permanent_idle_purchases'] as num?)?.toInt() ?? 0,
       upgradeLevels: upgradeLevels,
       highestNumber: parsedHighest ?? parsedNumber ?? BigInt.zero,
       progressScore: (row['progress_score'] as num?)?.toInt() ??
@@ -146,10 +125,6 @@ class PlayerProgress {
             prestigeCount: (row['prestige_count'] as num?)?.toInt() ?? 0,
             prestigeCurrency:
                 (row['prestige_currency'] as num?)?.toDouble() ?? 0.0,
-            permanentClickPurchases:
-                (row['permanent_click_purchases'] as num?)?.toInt() ?? 0,
-            permanentIdlePurchases:
-                (row['permanent_idle_purchases'] as num?)?.toInt() ?? 0,
             upgradeLevels: upgradeLevels,
           ),
       updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ??
