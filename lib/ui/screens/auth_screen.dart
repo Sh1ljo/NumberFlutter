@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../logic/supabase_service.dart';
+import '../../utils/network_error_utils.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -73,7 +74,12 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = cloudErrorMessage(
+          error,
+          offlineMessage:
+              'No internet connection. Please reconnect and try again.',
+          fallbackMessage: 'Authentication failed. Please try again.',
+        );
       });
     } finally {
       if (mounted) {
@@ -94,7 +100,12 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = cloudErrorMessage(
+          error,
+          offlineMessage:
+              'No internet connection. Please reconnect and try again.',
+          fallbackMessage: 'Could not complete sign in. Please try again.',
+        );
       });
     } finally {
       if (mounted) {

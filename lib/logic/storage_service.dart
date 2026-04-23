@@ -12,8 +12,8 @@ class StorageService {
   static const String _keyPrestigeCount = 'prestigeCount';
   static const String _keyUpgradeLevels = 'upgradeLevels';
   static const String _keyHighestNumber = 'highestNumber';
-  static const String _keyHapticPulseEnabled = 'hapticPulseEnabled';
-  static const String _keyVibrationIntensity = 'vibrationIntensity';
+  static const String _keyNexusLevels = 'nexus_levels';
+  static const String _keyTutorialCompleted = 'tutorialCompleted';
 
   Future<void> saveGame({
     required BigInt number,
@@ -24,8 +24,8 @@ class StorageService {
     required int prestigeCount,
     required Map<String, int> upgradeLevels,
     required BigInt highestNumber,
-    required bool hapticPulseEnabled,
-    required double vibrationIntensity,
+    required Map<String, int> nexusLevels,
+    required bool tutorialCompleted,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -37,11 +37,8 @@ class StorageService {
     await prefs.setInt(_keyPrestigeCount, prestigeCount);
     await prefs.setString(_keyUpgradeLevels, jsonEncode(upgradeLevels));
     await prefs.setString(_keyHighestNumber, highestNumber.toString());
-    await prefs.setBool(_keyHapticPulseEnabled, hapticPulseEnabled);
-    await prefs.setDouble(
-      _keyVibrationIntensity,
-      vibrationIntensity.clamp(0.0, 1.0),
-    );
+    await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
+    await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
     await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -54,9 +51,6 @@ class StorageService {
     final prestigeCurrencyStr = prefs.getString(_keyPrestigeCurrency) ?? '0';
     final highestNumberStr = prefs.getString(_keyHighestNumber) ?? numberStr;
     final lastPlayedMs = prefs.getInt(_keyLastPlayed);
-    final hapticPulseEnabled = prefs.getBool(_keyHapticPulseEnabled);
-    final vibrationIntensity = prefs.getDouble(_keyVibrationIntensity);
-
     final prestigeMultStr = prefs.getString(_keyPrestigeMultiplier);
     final prestigeCountRaw = prefs.getInt(_keyPrestigeCount);
 
@@ -71,6 +65,14 @@ class StorageService {
         ? {}
         : (jsonDecode(upgradeLevelsRaw) as Map<String, dynamic>);
     final upgradeLevels = decodedUpgradeLevels.map(
+      (key, value) => MapEntry(key, (value as num).toInt()),
+    );
+
+    final nexusLevelsRaw = prefs.getString(_keyNexusLevels);
+    final Map<String, dynamic> decodedNexusLevels = nexusLevelsRaw == null
+        ? {}
+        : (jsonDecode(nexusLevelsRaw) as Map<String, dynamic>);
+    final nexusLevels = decodedNexusLevels.map(
       (key, value) => MapEntry(key, (value as num).toInt()),
     );
 
@@ -91,8 +93,8 @@ class StorageService {
       'highestNumber': BigInt.tryParse(highestNumberStr) ??
           BigInt.tryParse(numberStr) ??
           BigInt.zero,
-      'hapticPulseEnabled': hapticPulseEnabled,
-      'vibrationIntensity': vibrationIntensity,
+      'nexusLevels': nexusLevels,
+      'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,

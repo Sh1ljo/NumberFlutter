@@ -3,6 +3,7 @@ import '../../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/supabase_service.dart';
+import '../../utils/network_error_utils.dart';
 import 'auth_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -117,7 +118,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         content: Text(
           gameState.lastCloudSyncError == null
               ? 'Cloud sync completed.'
-              : 'Cloud sync failed. Please try again.',
+              : cloudErrorMessage(
+                  gameState.lastCloudSyncError,
+                  offlineMessage:
+                      'No internet connection. Playing locally; sync will resume when online.',
+                  fallbackMessage: 'Cloud sync failed. Please try again.',
+                ),
         ),
       ),
     );
@@ -168,29 +174,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 48),
 
-                  // Category: Feedback
-                  _buildSectionTitle(context, '01. HAPTIC ENGINE'),
-                  _buildListTile(context,
-                      title: 'Vibration Intensity',
-                      subtitle: 'Tactile numeric feedback',
-                      trailing:
-                          _buildHapticIntensitySlider(context, gameState)),
-                  const SizedBox(height: 24),
-                  _buildListTile(context,
-                      title: 'Haptic Pulse',
-                      subtitle: 'Active on incrementation',
-                      trailing: _buildDummyToggle(
-                        context,
-                        gameState.hapticPulseEnabled,
-                        gameState.setHapticPulseEnabled,
-                      )),
-                  const SizedBox(height: 32),
-                  Container(
-                      height: 1, color: theme.colorScheme.surfaceContainerLow),
-                  const SizedBox(height: 32),
-
                   // Category: Persistence
-                  _buildSectionTitle(context, '02. PERSISTENCE'),
+                  _buildSectionTitle(context, '01. PERSISTENCE'),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -320,6 +305,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildInfoRow(context, 'Software Version', '0.01'),
                   _buildInfoRow(context, 'Terminal ID', '#882-QX-01'),
                   _buildDenominationsAccordion(context),
+                  _buildLinkRow(context, 'Privacy Policy'),
+                  _buildLinkRow(context, 'Terms of Service'),
                   if (supabase.isConfigured)
                     StreamBuilder(
                       stream: supabase.authStateChanges(),
@@ -332,8 +319,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         });
                       },
                     ),
-                  _buildLinkRow(context, 'Privacy Policy'),
-                  _buildLinkRow(context, 'Terms of Service'),
                   _buildDangerRow(context, 'Factory Reset', () {
                     _showResetConfirmation(context, gameState);
                   }),
@@ -448,38 +433,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(width: 16),
           trailing,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHapticIntensitySlider(
-      BuildContext context, GameState gameState) {
-    final theme = Theme.of(context);
-    return SizedBox(
-      width: 150,
-      child: Row(
-        children: [
-          Text('0%',
-              style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 10,
-                  color: theme.colorScheme.outline)),
-          Expanded(
-            child: Slider(
-              value: gameState.vibrationIntensity,
-              onChanged: (val) {
-                gameState.setVibrationIntensity(val);
-              },
-              activeColor: theme.colorScheme.primary,
-              inactiveColor: theme.colorScheme.surfaceContainerHighest,
-            ),
-          ),
-          Text('100%',
-              style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 10,
-                  color: theme.colorScheme.outline)),
         ],
       ),
     );

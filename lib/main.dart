@@ -65,7 +65,8 @@ class _AppInitializerState extends State<AppInitializer> {
       // Smooth branded loading sequence before entering app.
       Future<void>.delayed(const Duration(milliseconds: 2500)),
     ]);
-    if (SupabaseService.instance.currentSession != null) {
+    if (SupabaseService.instance.currentSession != null &&
+        gameState.tutorialCompleted) {
       // Sync in background so offline players never get stuck on loading.
       unawaited(gameState.syncWithCloud());
     }

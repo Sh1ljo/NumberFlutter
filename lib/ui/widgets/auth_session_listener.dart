@@ -33,7 +33,13 @@ class _AuthSessionListenerState extends State<AuthSessionListener> {
       }
       final signedIn = data.session != null;
       if (!signedIn || !mounted) return;
-      context.read<GameState>().syncWithCloud();
+      final gameState = context.read<GameState>();
+      unawaited(() async {
+        await gameState.refreshTutorialFromCloud();
+        await gameState.syncTutorialCompletedToProfileIfNeeded();
+        if (!mounted) return;
+        gameState.syncWithCloud();
+      }());
     });
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../logic/location_catalog_service.dart';
 import '../../logic/supabase_service.dart';
 import '../../models/user_profile.dart';
+import '../../utils/network_error_utils.dart';
 
 class ProfileEditorDialog extends StatefulWidget {
   const ProfileEditorDialog({
@@ -94,7 +95,12 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Could not load profile.';
+        _error = cloudErrorMessage(
+          error,
+          offlineMessage:
+              'No internet connection. Profile editing is unavailable offline.',
+          fallbackMessage: 'Could not load profile.',
+        );
       });
     }
   }
@@ -125,11 +131,16 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
       );
       if (!mounted) return;
       Navigator.of(context).pop(updated ?? _profile);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not save profile. Please try again.';
+        _error = cloudErrorMessage(
+          error,
+          offlineMessage:
+              'No internet connection. Profile changes will need internet to save.',
+          fallbackMessage: 'Could not save profile. Please try again.',
+        );
       });
     }
   }

@@ -15,6 +15,7 @@ class SyncService {
       : _supabaseService = supabaseService ?? SupabaseService.instance;
 
   final SupabaseService _supabaseService;
+  static const Duration _cloudRequestTimeout = Duration(seconds: 6);
 
   bool get isAvailable => _supabaseService.isInitialized;
   String? get currentUserId => _supabaseService.currentUser?.id;
@@ -27,15 +28,21 @@ class SyncService {
     final userId = currentUserId;
     if (userId == null) return null;
 
-    await _supabaseService.upsertProfile(userId: userId);
-    final remoteProgress = await _supabaseService.fetchProgress(userId: userId);
+    await _supabaseService
+        .upsertProfile(userId: userId)
+        .timeout(_cloudRequestTimeout);
+    final remoteProgress = await _supabaseService
+        .fetchProgress(userId: userId)
+        .timeout(_cloudRequestTimeout);
     final resolved = _pickWinner(
       local: localProgress,
       remote: remoteProgress,
       forceUpload: forceUpload,
     );
 
-    await _supabaseService.upsertProgress(resolved.resolved);
+    await _supabaseService
+        .upsertProgress(resolved.resolved)
+        .timeout(_cloudRequestTimeout);
     return resolved;
   }
 
@@ -48,10 +55,10 @@ class SyncService {
       return SyncResult(resolved: local, winner: SyncWinner.local);
     }
 
-    if (remote.progressScore > local.progressScore) {
+    if (remote.updatedAt.isAfter(local.updatedAt)) {
       return SyncResult(resolved: remote, winner: SyncWinner.remote);
     }
-    if (remote.progressScore < local.progressScore) {
+    if (local.updatedAt.isAfter(remote.updatedAt)) {
       return SyncResult(resolved: local, winner: SyncWinner.local);
     }
 
@@ -62,8 +69,11 @@ class SyncService {
       return SyncResult(resolved: local, winner: SyncWinner.local);
     }
 
-    if (remote.updatedAt.isAfter(local.updatedAt)) {
+    if (remote.progressScore > local.progressScore) {
       return SyncResult(resolved: remote, winner: SyncWinner.remote);
+    }
+    if (remote.progressScore < local.progressScore) {
+      return SyncResult(resolved: local, winner: SyncWinner.local);
     }
     return SyncResult(resolved: local, winner: SyncWinner.local);
   }

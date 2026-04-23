@@ -8,6 +8,7 @@ create table if not exists public.profiles (
   display_name text,
   country text,
   city text,
+  tutorial_completed boolean not null default false,
   created_at timestamptz not null default now()
 );
 

@@ -183,6 +183,7 @@ class SupabaseService {
     String? displayName,
     String? country,
     String? city,
+    bool? tutorialCompleted,
   }) async {
     if (!_initialized) return;
     final metadata = currentUser?.userMetadata ?? <String, dynamic>{};
@@ -198,6 +199,7 @@ class SupabaseService {
       'display_name': resolvedDisplayName,
       if (country != null) 'country': country.trim(),
       if (city != null) 'city': city.trim(),
+      if (tutorialCompleted != null) 'tutorial_completed': tutorialCompleted,
     });
   }
 
@@ -223,7 +225,20 @@ class SupabaseService {
       country: null,
       city: null,
       createdAt: null,
+      tutorialCompleted: false,
     );
+  }
+
+  /// Persists tutorial completion on `profiles.tutorial_completed` (row must exist).
+  Future<void> setProfileTutorialCompleted({
+    required String userId,
+    required bool completed,
+  }) async {
+    if (!_initialized) return;
+    await fetchOrCreateProfile(userId: userId);
+    await _client.from('profiles').update({
+      'tutorial_completed': completed,
+    }).eq('id', userId);
   }
 
   Future<UserProfile?> updateProfile({

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../logic/supabase_service.dart';
+import '../widgets/system_loading_indicator.dart';
 import '../../models/user_profile.dart';
 import '../../utils/number_formatter.dart';
+import '../../utils/network_error_utils.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -140,13 +142,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               if (snapshot.connectionState !=
                                   ConnectionState.done) {
                                 return const Center(
-                                    child: CircularProgressIndicator());
+                                  child: SystemLoadingIndicator(repeat: true),
+                                );
                               }
                               if (snapshot.hasError) {
+                                final message = cloudErrorMessage(
+                                  snapshot.error,
+                                  offlineMessage:
+                                      'No internet connection. Leaderboard is unavailable offline.',
+                                  fallbackMessage:
+                                      'Could not load leaderboard.',
+                                );
                                 return Center(
                                   child: Text(
-                                    'Could not load leaderboard.',
+                                    message,
                                     style: theme.textTheme.bodyLarge,
+                                    textAlign: TextAlign.center,
                                   ),
                                 );
                               }

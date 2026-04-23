@@ -5,6 +5,7 @@ class UserProfile {
     required this.country,
     required this.city,
     required this.createdAt,
+    this.tutorialCompleted = false,
   });
 
   final String id;
@@ -12,6 +13,9 @@ class UserProfile {
   final String? country;
   final String? city;
   final DateTime? createdAt;
+
+  /// Synced with `profiles.tutorial_completed` in Supabase when signed in.
+  final bool tutorialCompleted;
 
   bool get hasLocation =>
       (country?.trim().isNotEmpty ?? false) &&
@@ -26,6 +30,7 @@ class UserProfile {
     String? displayName,
     String? country,
     String? city,
+    bool? tutorialCompleted,
   }) {
     return UserProfile(
       id: id,
@@ -33,6 +38,7 @@ class UserProfile {
       country: country ?? this.country,
       city: city ?? this.city,
       createdAt: createdAt,
+      tutorialCompleted: tutorialCompleted ?? this.tutorialCompleted,
     );
   }
 
@@ -47,6 +53,7 @@ class UserProfile {
           ? null
           : (row['city'] as String?)?.trim(),
       createdAt: DateTime.tryParse((row['created_at'] as String?) ?? ''),
+      tutorialCompleted: (row['tutorial_completed'] as bool?) ?? false,
     );
   }
 }

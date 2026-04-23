@@ -2,9 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/upgrade.dart';
+import '../models/research_node.dart';
 import '../models/player_progress.dart';
+import '../data/nexus_data.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
+import 'supabase_service.dart';
+import 'tutorial_step.dart';
 
 class GameState extends ChangeNotifier {
   static const String clickCategory = 'click';
@@ -67,8 +71,6 @@ class GameState extends ChangeNotifier {
 
   BigInt offlineGainsThisSession = BigInt.zero;
   BigInt highestNumber = BigInt.zero;
-  bool hapticPulseEnabled = true;
-  double vibrationIntensity = 0.8;
   DateTime? _lastSavedAt;
   DateTime? _lastCloudPushAt;
   bool _cloudSyncInProgress = false;
@@ -77,6 +79,18 @@ class GameState extends ChangeNotifier {
   bool isPrestigeAnimating = false;
   bool get cloudSyncInProgress => _cloudSyncInProgress;
   String? get lastCloudSyncError => _lastCloudSyncError;
+
+  List<ResearchNode> researchNodes = NexusData.allNodes();
+
+  // ── Tutorial ───────────────────────────────────────────────────────────
+  TutorialStep _tutorialStep = TutorialStep.welcomeTap;
+  bool _tutorialCompleted = false;
+  bool _tutorialNeedsCloudSync = false;
+
+  TutorialStep get tutorialStep => _tutorialStep;
+  bool get tutorialCompleted => _tutorialCompleted;
+  bool get isTutorialActive =>
+      !_tutorialCompleted && _tutorialStep != TutorialStep.done;
 
   void setPrestigeAnimating(bool value) {
     isPrestigeAnimating = value;
@@ -207,12 +221,74 @@ class GameState extends ChangeNotifier {
     _init();
   }
 
+  /// ── NEXUS research getters ─────────────────────────────────────────────
+
+  int _nexusLevel(String id) =>
+      researchNodes.where((n) => n.id == id).firstOrNull?.level ?? 0;
+
+  /// Factor to multiply upgrade costs by. e.g. 0.93 = 7% cheaper.
+  double get upgradeCostReductionFactor {
+    final level = _nexusLevel('opt_protocol');
+    return (1.0 - level * 0.01).clamp(0.01, 1.0);
+  }
+
+  /// Seconds of idle rate added as a burst immediately after prestige.
+  double get surgeProtocolSeconds => _nexusLevel('surge_protocol') * 30.0;
+
+  /// Multiplier applied to the prestige delta (Enhanced Extraction).
+  double get prestigeDeltaMultiplier {
+    final level = _nexusLevel('enhanced_extraction');
+    return 1.0 + level * 0.10;
+  }
+
+  /// Permanent flat idle rate bonus that survives prestige resets.
+  double get permanentIdleBonus => _nexusLevel('idle_foundation') * 1.0;
+
+  /// Multiplier on offline gains (Quick Resume).
+  double get offlineGainMultiplier {
+    final level = _nexusLevel('quick_resume');
+    return 1.0 + level * 0.10;
+  }
+
+  /// Flat addition to the momentum cap (Kinetic Surge).
+  double get momentumCapBonus => _nexusLevel('kinetic_surge') * 0.1;
+
+  /// Additional idle rate multiplier from Resonance Core: 1.05 ^ level.
+  double get resonanceMultiplier {
+    final level = _nexusLevel('resonance_core');
+    return math.pow(1.05, level).toDouble();
+  }
+
+  /// Multiplier on prestige points earned (Echo Protocol).
+  double get prestigePointsMultiplier {
+    final level = _nexusLevel('echo_protocol');
+    return 1.0 + level * 0.10;
+  }
+
+  void purchaseResearch(String nodeId) {
+    final node = researchNodes.where((n) => n.id == nodeId).firstOrNull;
+    if (node == null || node.isMaxed) return;
+    if (!node.prereqsMet(researchNodes)) return;
+    final cost = node.costForNextLevel;
+    if (prestigeCurrency < cost) return;
+    prestigeCurrency -= cost;
+    node.level++;
+    notifyListeners();
+    _saveState();
+  }
+
+  /// ── end NEXUS ──────────────────────────────────────────────────────────
+
   /// Increment added on the prestige with index [prestigeIndex] (0 = first prestige).
   static double prestigeDeltaAtIndex(int prestigeIndex) {
     const base = 0.028;
     const perStep = 0.011;
     return base + prestigeIndex * perStep;
   }
+
+  /// Delta for the next prestige, boosted by Enhanced Extraction.
+  double get nextPrestigeDelta =>
+      prestigeDeltaAtIndex(prestigeCount) * prestigeDeltaMultiplier;
 
   /// Total prestige multiplier after exactly [count] completed prestiges.
   static double multiplierAfterPrestigeCount(int count) {
@@ -225,7 +301,7 @@ class GameState extends ChangeNotifier {
 
   /// Multiplier value after the next prestige (preview).
   double get prestigeMultiplierAfterNext =>
-      prestigeMultiplier + prestigeDeltaAtIndex(prestigeCount);
+      prestigeMultiplier + nextPrestigeDelta;
 
   /// Number required to perform the next prestige.
   BigInt get prestigeRequirement => prestigeRequirementAtCount(prestigeCount);
@@ -254,7 +330,7 @@ class GameState extends ChangeNotifier {
   double calculatePrestigePoints(BigInt currentNumber) {
     final requirement = prestigeRequirement;
     if (currentNumber < requirement) return 0.0;
-    return nextPrestigeReward;
+    return nextPrestigeReward * prestigePointsMultiplier;
   }
 
   Future<void> _init() async {
@@ -308,9 +384,17 @@ class GameState extends ChangeNotifier {
 
       final savedHighest = data['highestNumber'] as BigInt? ?? BigInt.zero;
       highestNumber = savedHighest > number ? savedHighest : number;
-      hapticPulseEnabled = (data['hapticPulseEnabled'] as bool?) ?? true;
-      final loadedIntensity = data['vibrationIntensity'] as double?;
-      vibrationIntensity = (loadedIntensity ?? 0.8).clamp(0.0, 1.0).toDouble();
+      final nexusLevelMap =
+          (data['nexusLevels'] as Map<String, int>?) ?? <String, int>{};
+      for (final node in researchNodes) {
+        node.level = (nexusLevelMap[node.id] ?? 0).clamp(0, node.maxLevel);
+      }
+
+      _tutorialCompleted = (data['tutorialCompleted'] as bool?) ?? false;
+      if (_tutorialCompleted) {
+        _tutorialStep = TutorialStep.done;
+      }
+
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
       _calculateOfflineProgress(lastPlayed);
@@ -325,11 +409,10 @@ class GameState extends ChangeNotifier {
   }
 
   void _calculateOfflineProgress(DateTime? lastPlayed) {
-    if (lastPlayed != null && autoClickRate > 0) {
+    if (lastPlayed != null && totalIdleRate > 0) {
       final diff = DateTime.now().difference(lastPlayed).inSeconds;
       if (diff > 0) {
-        final idleMult = prestigeMultiplier;
-        final offlineGains = autoClickRate * idleMult * diff;
+        final offlineGains = totalIdleRate * diff * offlineGainMultiplier;
         offlineGainsThisSession = BigInt.from(offlineGains.floor());
         number += offlineGainsThisSession;
         _updateHighestNumber();
@@ -378,7 +461,7 @@ class GameState extends ChangeNotifier {
   bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
   double get totalIdleRate {
-    double idleRate = autoClickRate * prestigeMultiplier;
+    double idleRate = (autoClickRate + permanentIdleBonus) * prestigeMultiplier * resonanceMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
@@ -455,7 +538,7 @@ class GameState extends ChangeNotifier {
   double get _momentumCap {
     final level = _upgradeLevel(momentumId);
     if (level <= 0) return 1.0;
-    return 2.0 + (level - 1) * 0.35;
+    return 2.0 + (level - 1) * 0.35 + momentumCapBonus;
   }
 
   int get _momentumDecayWindowMs {
@@ -647,21 +730,6 @@ class GameState extends ChangeNotifier {
     );
   }
 
-  void setHapticPulseEnabled(bool enabled) {
-    if (hapticPulseEnabled == enabled) return;
-    hapticPulseEnabled = enabled;
-    notifyListeners();
-    _scheduleStateSave();
-  }
-
-  void setVibrationIntensity(double intensity) {
-    final normalized = intensity.clamp(0.0, 1.0).toDouble();
-    if ((vibrationIntensity - normalized).abs() < 0.001) return;
-    vibrationIntensity = normalized;
-    notifyListeners();
-    _scheduleStateSave();
-  }
-
   void _activateOverclock() {
     _overclockTimer?.cancel();
     final durationSeconds = _overclockDurationSeconds;
@@ -705,9 +773,10 @@ class GameState extends ChangeNotifier {
       currentMultiplier *= upgrade.costMultiplier;
     }
 
+    final costFactor = upgradeCostReductionFactor;
     while (bought < toBuy) {
       BigInt cost =
-          BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier);
+          BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
       if (remainingNumber >= cost) {
         remainingNumber -= cost;
         totalCost += cost;
@@ -722,7 +791,7 @@ class GameState extends ChangeNotifier {
           bought++;
           currentMultiplier *= upgrade.costMultiplier;
           while (bought < toBuy) {
-            cost = BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier);
+            cost = BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
             totalCost += cost;
             bought++;
             currentMultiplier *= upgrade.costMultiplier;
@@ -734,8 +803,8 @@ class GameState extends ChangeNotifier {
 
     int finalAmount = buyAmount == -1 ? bought : toBuy;
     if (buyAmount == -1 && finalAmount == 0) {
-      // Even if max is 0, let's return the cost of 1 to show what they need next
-      return (cost: upgrade.currentCost, amount: 0);
+      final singleCost = BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
+      return (cost: singleCost, amount: 0);
     }
     return (cost: totalCost, amount: finalAmount);
   }
@@ -752,7 +821,7 @@ class GameState extends ChangeNotifier {
       number -= info.cost;
       upgrade.level += info.amount;
       _recalculateDerivedStatsFromUpgrades();
-
+      _advanceTutorialOnPurchase(id);
       notifyListeners();
       _saveState();
     }
@@ -763,7 +832,7 @@ class GameState extends ChangeNotifier {
     if (pointsToEarn <= 0.0) return;
     prestigeCurrency += pointsToEarn;
 
-    prestigeMultiplier += prestigeDeltaAtIndex(prestigeCount);
+    prestigeMultiplier += nextPrestigeDelta;
     prestigeCount += 1;
 
     number = BigInt.zero;
@@ -783,6 +852,15 @@ class GameState extends ChangeNotifier {
     }
     _recalculateDerivedStatsFromUpgrades();
 
+    // Surge Protocol: instantly add N seconds of idle rate
+    final surgeBurst = surgeProtocolSeconds;
+    if (surgeBurst > 0 && permanentIdleBonus > 0) {
+      final burst = permanentIdleBonus * prestigeMultiplier * resonanceMultiplier * surgeBurst;
+      number += BigInt.from(burst.floor());
+      _updateHighestNumber();
+    }
+
+    _completeTutorialOnPrestige();
     _startTicker();
     notifyListeners();
     _saveState();
@@ -805,8 +883,6 @@ class GameState extends ChangeNotifier {
     _overclockTimer?.cancel();
     offlineGainsThisSession = BigInt.zero;
     highestNumber = BigInt.zero;
-    hapticPulseEnabled = true;
-    vibrationIntensity = 0.8;
     prestigeCurrency = 0.0;
     prestigeMultiplier = 1.0;
     prestigeCount = 0;
@@ -816,6 +892,12 @@ class GameState extends ChangeNotifier {
     for (var u in upgrades) {
       u.level = 0;
     }
+    for (var n in researchNodes) {
+      n.level = 0;
+    }
+    _tutorialCompleted = false;
+    _tutorialStep = TutorialStep.welcomeTap;
+    _tutorialNeedsCloudSync = false;
     _recalculateDerivedStatsFromUpgrades();
 
     await _storageService.clearAllData();
@@ -838,6 +920,9 @@ class GameState extends ChangeNotifier {
     final upgradedLevels = <String, int>{
       for (final upgrade in upgrades) upgrade.id: upgrade.level,
     };
+    final nexusLevelMap = <String, int>{
+      for (final node in researchNodes) node.id: node.level,
+    };
     final currentHigh = number > highestNumber ? number : highestNumber;
     final now = DateTime.now().toUtc();
     return PlayerProgress(
@@ -849,6 +934,7 @@ class GameState extends ChangeNotifier {
       prestigeMultiplier: prestigeMultiplier,
       prestigeCount: prestigeCount,
       upgradeLevels: upgradedLevels,
+      nexusLevels: nexusLevelMap,
       highestNumber: currentHigh,
       progressScore: PlayerProgress.calculateProgressScore(
         number: number,
@@ -880,6 +966,9 @@ class GameState extends ChangeNotifier {
       upgrade.level = upgrade.maxLevel == -1
           ? remoteLevel
           : remoteLevel.clamp(0, upgrade.maxLevel);
+    }
+    for (final node in researchNodes) {
+      node.level = (progress.nexusLevels[node.id] ?? 0).clamp(0, node.maxLevel);
     }
     _recalculateDerivedStatsFromUpgrades();
 
@@ -947,8 +1036,10 @@ class GameState extends ChangeNotifier {
         for (final upgrade in upgrades) upgrade.id: upgrade.level,
       },
       highestNumber: highestNumber,
-      hapticPulseEnabled: hapticPulseEnabled,
-      vibrationIntensity: vibrationIntensity,
+      nexusLevels: {
+        for (final node in researchNodes) node.id: node.level,
+      },
+      tutorialCompleted: _tutorialCompleted,
     );
     _lastSavedAt = DateTime.now();
 
@@ -969,6 +1060,106 @@ class GameState extends ChangeNotifier {
   void _scheduleStateSave() {
     _saveDebounceTimer?.cancel();
     _saveDebounceTimer = Timer(_saveDebounceDuration, _saveState);
+  }
+
+  // ── Tutorial methods ───────────────────────────────────────────────────
+
+  void setTutorialCompletionFromProfile(bool completed) {
+    if (completed && !_tutorialCompleted) {
+      _tutorialCompleted = true;
+      _tutorialStep = TutorialStep.done;
+      notifyListeners();
+    }
+  }
+
+  Future<void> syncTutorialCompletedToProfileIfNeeded() async {
+    if (!_tutorialNeedsCloudSync) return;
+    final userId = _syncService.currentUserId;
+    if (userId == null) return;
+    _tutorialNeedsCloudSync = false;
+    try {
+      await SupabaseService.instance.setProfileTutorialCompleted(
+        userId: userId,
+        completed: _tutorialCompleted,
+      );
+    } catch (_) {
+      _tutorialNeedsCloudSync = true;
+    }
+  }
+
+  Future<void> refreshTutorialFromCloud() async {
+    final userId = _syncService.currentUserId;
+    if (userId == null) return;
+    try {
+      final profile =
+          await SupabaseService.instance.fetchProfile(userId: userId);
+      if (profile != null) {
+        setTutorialCompletionFromProfile(profile.tutorialCompleted);
+      }
+    } catch (_) {}
+  }
+
+  void onTutorialWelcomeTap() {
+    if (_tutorialStep != TutorialStep.welcomeTap) return;
+    _tutorialStep = TutorialStep.navUpgrades;
+    notifyListeners();
+  }
+
+  void skipTutorial() {
+    _tutorialCompleted = true;
+    _tutorialStep = TutorialStep.done;
+    _tutorialNeedsCloudSync = true;
+    notifyListeners();
+    _scheduleStateSave();
+    unawaited(syncTutorialCompletedToProfileIfNeeded());
+  }
+
+  void onMainTabChanged(int index) {
+    if (_tutorialStep == TutorialStep.navUpgrades && index == 1) {
+      _tutorialStep = TutorialStep.buyClickPower;
+      selectedUpgradeCategory = clickCategory;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.navPrestige && index == 2) {
+      // Grant enough numbers to reach first prestige requirement
+      final req = prestigeRequirement;
+      if (number < req) number = req + BigInt.from(500);
+      _updateHighestNumber();
+      _tutorialStep = TutorialStep.initiatePrestige;
+      notifyListeners();
+    }
+  }
+
+  void _advanceTutorialOnPurchase(String upgradeId) {
+    if (_tutorialStep == TutorialStep.buyClickPower &&
+        upgradeId == clickPowerId) {
+      _tutorialStep = TutorialStep.buyAutoClicker;
+      selectedUpgradeCategory = idleCategory;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.buyAutoClicker &&
+        upgradeId == autoClickerId) {
+      // Grant enough to afford Probability Strike base cost
+      const probStrikeCost = 2500;
+      if (number < BigInt.from(probStrikeCost)) {
+        number = BigInt.from(probStrikeCost + 500);
+        _updateHighestNumber();
+      }
+      _tutorialStep = TutorialStep.buyProbabilityStrike;
+      selectedUpgradeCategory = clickCategory;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.buyProbabilityStrike &&
+        upgradeId == probabilityStrikeId) {
+      _tutorialStep = TutorialStep.navPrestige;
+      notifyListeners();
+    }
+  }
+
+  void _completeTutorialOnPrestige() {
+    if (_tutorialStep == TutorialStep.initiatePrestige) {
+      _tutorialCompleted = true;
+      _tutorialStep = TutorialStep.done;
+      _tutorialNeedsCloudSync = true;
+      unawaited(syncTutorialCompletedToProfileIfNeeded());
+    }
   }
 
   @override

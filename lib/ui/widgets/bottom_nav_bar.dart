@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onIndexChanged;
+  final List<GlobalKey?>? itemKeys;
 
   const BottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onIndexChanged,
+    this.itemKeys,
   });
 
   @override
@@ -25,49 +27,51 @@ class BottomNavBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       child: Row(
         children: [
-          Expanded(
-            child: _NavItem(
-              icon: Icons.memory,
-              label: 'GENERATORS',
-              isActive: currentIndex == 0,
-              onTap: () => onIndexChanged(0),
+          for (var i = 0; i < 5; i++)
+            Expanded(
+              child: _NavItem(
+                key: itemKeys != null && i < itemKeys!.length
+                    ? itemKeys![i]
+                    : null,
+                icon: _navIcon(i),
+                label: _navLabel(i),
+                isActive: currentIndex == i,
+                onTap: () => onIndexChanged(i),
+              ),
             ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.trending_up,
-              label: 'UPGRADES',
-              isActive: currentIndex == 1,
-              onTap: () => onIndexChanged(1),
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.auto_awesome,
-              label: 'PRESTIGE',
-              isActive: currentIndex == 2,
-              onTap: () => onIndexChanged(2),
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.leaderboard,
-              label: 'RANKS',
-              isActive: currentIndex == 3,
-              onTap: () => onIndexChanged(3),
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.settings,
-              label: 'SYSTEM',
-              isActive: currentIndex == 4,
-              onTap: () => onIndexChanged(4),
-            ),
-          ),
         ],
       ),
     );
+  }
+}
+
+IconData _navIcon(int i) {
+  switch (i) {
+    case 0:
+      return Icons.memory;
+    case 1:
+      return Icons.trending_up;
+    case 2:
+      return Icons.auto_awesome;
+    case 3:
+      return Icons.leaderboard;
+    default:
+      return Icons.settings;
+  }
+}
+
+String _navLabel(int i) {
+  switch (i) {
+    case 0:
+      return 'GENERATORS';
+    case 1:
+      return 'UPGRADES';
+    case 2:
+      return 'PRESTIGE';
+    case 3:
+      return 'RANKS';
+    default:
+      return 'SYSTEM';
   }
 }
 
@@ -78,6 +82,7 @@ class _NavItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _NavItem({
+    super.key,
     required this.icon,
     required this.label,
     required this.isActive,

@@ -6,7 +6,9 @@ import '../../models/upgrade.dart';
 import '../../utils/number_formatter.dart';
 
 class UpgradesScreen extends StatefulWidget {
-  const UpgradesScreen({super.key});
+  final Map<String, GlobalKey>? upgradeRowKeys;
+
+  const UpgradesScreen({super.key, this.upgradeRowKeys});
 
   @override
   State<UpgradesScreen> createState() => _UpgradesScreenState();
@@ -154,7 +156,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                     final entry = entries[index];
                     final milestoneMultiplier =
                         gameState.upgradeMilestoneMultiplier(entry.upgrade);
-                    return _UpgradeItem(
+                    final row = _UpgradeItem(
                       upgrade: entry.upgrade,
                       canAfford: entry.canAfford,
                       info: entry.info,
@@ -164,6 +166,11 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                         entry.info.cost,
                       ),
                     );
+                    final gk = widget.upgradeRowKeys?[entry.upgrade.id];
+                    if (gk != null) {
+                      return KeyedSubtree(key: gk, child: row);
+                    }
+                    return row;
                   },
                 ),
               );

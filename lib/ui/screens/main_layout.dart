@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/supabase_service.dart';
+import '../../utils/network_error_utils.dart';
 import '../widgets/app_background.dart';
 import '../widgets/offline_gains_dialog.dart';
 import '../widgets/profile_editor_dialog.dart';
@@ -27,13 +30,28 @@ class _MainLayoutState extends State<MainLayout> {
   String? _lastCloudErrorNotified;
   bool _offlineNoticeVisible = false;
 
-  final List<Widget> _screens = [
-    const MainGameScreen(),
-    const UpgradesScreen(),
-    const PrestigeScreen(),
-    const LeaderboardScreen(),
-    const SettingsScreen(),
-  ];
+  final GlobalKey _tapAreaKey = GlobalKey();
+  final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
+  final Map<String, GlobalKey> _upgradeRowKeys = {
+    GameState.clickPowerId: GlobalKey(),
+    GameState.autoClickerId: GlobalKey(),
+    GameState.probabilityStrikeId: GlobalKey(),
+  };
+  final GlobalKey _prestigeInitiateKey = GlobalKey();
+
+  late final List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      MainGameScreen(tapAreaKey: _tapAreaKey),
+      UpgradesScreen(upgradeRowKeys: _upgradeRowKeys),
+      PrestigeScreen(initiateButtonKey: _prestigeInitiateKey),
+      const LeaderboardScreen(),
+      const SettingsScreen(),
+    ];
+  }
 
   void _maybePromptForLocation() {
     final supabase = SupabaseService.instance;
@@ -50,7 +68,11 @@ class _MainLayoutState extends State<MainLayout> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final profile = await supabase.fetchOrCreateProfile(userId: userId);
-        if (!mounted || profile.hasLocation) return;
+        if (!mounted) return;
+        final gameState = context.read<GameState>();
+        gameState.setTutorialCompletionFromProfile(profile.tutorialCompleted);
+        unawaited(gameState.syncTutorialCompletedToProfileIfNeeded());
+        if (profile.hasLocation) return;
         await ProfileEditorDialog.show(
           context,
           requireLocation: true,
@@ -67,12 +89,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   bool _isLikelyOfflineError(String message) {
-    final normalized = message.toLowerCase();
-    return normalized.contains('socketexception') ||
-        normalized.contains('failed host lookup') ||
-        normalized.contains('network') ||
-        normalized.contains('connection') ||
-        normalized.contains('timed out');
+    return isLikelyNetworkError(message);
   }
 
   void _maybeShowOfflineNotice(String? error) {
@@ -101,7 +118,7 @@ class _MainLayoutState extends State<MainLayout> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             title: Text('Offline Mode', style: theme.textTheme.titleLarge),
             content: Text(
-              'No internet connection, will save when you are online. Porgress will be saved locally',
+              'No internet connection, will save when you are online. Progress will be saved locally',
               style: theme.textTheme.bodyLarge,
             ),
             actions: [
@@ -159,11 +176,13 @@ class _MainLayoutState extends State<MainLayout> {
                 bottom: 0,
                 child: BottomNavBar(
                   currentIndex: _currentIndex,
+                  itemKeys: _navKeys,
                   onIndexChanged: (index) {
                     if (index == _currentIndex) return;
                     setState(() {
                       _currentIndex = index;
                     });
+                    context.read<GameState>().onMainTabChanged(index);
                   },
                 ),
               ),

@@ -9,6 +9,7 @@ class PlayerProgress {
   final double prestigeMultiplier;
   final int prestigeCount;
   final Map<String, int> upgradeLevels;
+  final Map<String, int> nexusLevels;
   final BigInt highestNumber;
   final int progressScore;
   final DateTime updatedAt;
@@ -22,6 +23,7 @@ class PlayerProgress {
     required this.prestigeMultiplier,
     required this.prestigeCount,
     required this.upgradeLevels,
+    this.nexusLevels = const {},
     required this.highestNumber,
     required this.progressScore,
     required this.updatedAt,
@@ -60,6 +62,7 @@ class PlayerProgress {
     double? prestigeMultiplier,
     int? prestigeCount,
     Map<String, int>? upgradeLevels,
+    Map<String, int>? nexusLevels,
     BigInt? highestNumber,
     int? progressScore,
     DateTime? updatedAt,
@@ -73,6 +76,7 @@ class PlayerProgress {
       prestigeMultiplier: prestigeMultiplier ?? this.prestigeMultiplier,
       prestigeCount: prestigeCount ?? this.prestigeCount,
       upgradeLevels: upgradeLevels ?? this.upgradeLevels,
+      nexusLevels: nexusLevels ?? this.nexusLevels,
       highestNumber: highestNumber ?? this.highestNumber,
       progressScore: progressScore ?? this.progressScore,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -89,6 +93,7 @@ class PlayerProgress {
       'prestige_multiplier': prestigeMultiplier,
       'prestige_count': prestigeCount,
       'upgrade_levels': upgradeLevels,
+      'nexus_levels': nexusLevels,
       'highest_number_numeric': normalizedHighestNumber.toString(),
       'progress_score': progressScore,
       'updated_at': updatedAt.toUtc().toIso8601String(),
@@ -98,6 +103,10 @@ class PlayerProgress {
   factory PlayerProgress.fromDatabase(Map<String, dynamic> row) {
     final levelsRaw = row['upgrade_levels'] as Map<String, dynamic>? ?? {};
     final upgradeLevels = levelsRaw.map(
+      (key, value) => MapEntry(key, (value as num?)?.toInt() ?? 0),
+    );
+    final nexusRaw = row['nexus_levels'] as Map<String, dynamic>? ?? {};
+    final nexusLevels = nexusRaw.map(
       (key, value) => MapEntry(key, (value as num?)?.toInt() ?? 0),
     );
 
@@ -118,6 +127,7 @@ class PlayerProgress {
           (row['prestige_multiplier'] as num?)?.toDouble() ?? 1.0,
       prestigeCount: (row['prestige_count'] as num?)?.toInt() ?? 0,
       upgradeLevels: upgradeLevels,
+      nexusLevels: nexusLevels,
       highestNumber: parsedHighest ?? parsedNumber ?? BigInt.zero,
       progressScore: (row['progress_score'] as num?)?.toInt() ??
           calculateProgressScore(

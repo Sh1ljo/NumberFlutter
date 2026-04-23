@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
-import 'dart:ui';
 import '../../logic/game_state.dart';
 import '../../logic/supabase_service.dart';
 import '../widgets/pulse_number.dart';
@@ -10,17 +9,16 @@ import '../widgets/profile_editor_dialog.dart';
 import 'auth_screen.dart';
 import 'player_stats_screen.dart';
 import '../../utils/number_formatter.dart';
-import '../../utils/haptic_feedback_engine.dart';
-
 class MainGameScreen extends StatefulWidget {
-  const MainGameScreen({super.key});
+  final GlobalKey? tapAreaKey;
+
+  const MainGameScreen({super.key, this.tapAreaKey});
 
   @override
   State<MainGameScreen> createState() => _MainGameScreenState();
 }
 
-class _MainGameScreenState extends State<MainGameScreen>
-    with SingleTickerProviderStateMixin {
+class _MainGameScreenState extends State<MainGameScreen> {
   final List<FloatingTapText> _floatingTexts = [];
   final GlobalKey<PulseNumberState> _numberKey = GlobalKey();
   static const int _maxFloatingTexts = 18;
@@ -28,24 +26,6 @@ class _MainGameScreenState extends State<MainGameScreen>
   final List<DateTime> _recentTaps = [];
   DateTime _lastWarningTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _profileActionBusy = false;
-  late final AnimationController _screenShakeController;
-  late Animation<Offset> _screenShakeOffset;
-
-  @override
-  void initState() {
-    super.initState();
-    _screenShakeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 260),
-    );
-    _screenShakeOffset = const AlwaysStoppedAnimation<Offset>(Offset.zero);
-  }
-
-  @override
-  void dispose() {
-    _screenShakeController.dispose();
-    super.dispose();
-  }
 
   void _removeFloatingTextByKey(Key key) {
     if (!mounted) return;
@@ -78,29 +58,6 @@ class _MainGameScreenState extends State<MainGameScreen>
     final gameState = context.read<GameState>();
     _numberKey.currentState?.pulse();
     final clickResult = gameState.click();
-    final hapticsEnabled = gameState.hapticPulseEnabled;
-    final vibrationIntensity = gameState.vibrationIntensity;
-
-    unawaited(HapticFeedbackEngine.playTap(
-      enabled: hapticsEnabled,
-      intensity: vibrationIntensity,
-    ));
-    if (clickResult.probabilityStrikeTriggered) {
-      unawaited(HapticFeedbackEngine.playProbabilityStrike(
-        enabled: hapticsEnabled,
-        intensity: vibrationIntensity,
-      ));
-    }
-    if (clickResult.personalBestReached) {
-      unawaited(HapticFeedbackEngine.playPersonalBest(
-        enabled: hapticsEnabled,
-        intensity: vibrationIntensity,
-      ));
-      _triggerScreenShake(
-        enabled: hapticsEnabled,
-        intensity: vibrationIntensity,
-      );
-    }
 
     // Add floating text - optimized to avoid full setState
     if (_floatingTexts.length >= _maxFloatingTexts) {
@@ -122,45 +79,6 @@ class _MainGameScreenState extends State<MainGameScreen>
         ),
       );
     });
-  }
-
-  void _triggerScreenShake({
-    required bool enabled,
-    required double intensity,
-  }) {
-    if (!enabled || intensity <= 0.0) return;
-    final amplitude = lerpDouble(2.0, 8.0, intensity.clamp(0.0, 1.0)) ?? 4.0;
-    _screenShakeOffset = TweenSequence<Offset>([
-      TweenSequenceItem(
-        tween: Tween(begin: Offset.zero, end: Offset(amplitude, -amplitude)),
-        weight: 1,
-      ),
-      TweenSequenceItem(
-        tween: Tween(
-          begin: Offset(amplitude, -amplitude),
-          end: Offset(-amplitude, amplitude * 0.75),
-        ),
-        weight: 1,
-      ),
-      TweenSequenceItem(
-        tween: Tween(
-          begin: Offset(-amplitude, amplitude * 0.75),
-          end: Offset(amplitude * 0.45, -amplitude * 0.35),
-        ),
-        weight: 1,
-      ),
-      TweenSequenceItem(
-        tween: Tween(
-          begin: Offset(amplitude * 0.45, -amplitude * 0.35),
-          end: Offset.zero,
-        ),
-        weight: 1.2,
-      ),
-    ]).animate(CurvedAnimation(
-      parent: _screenShakeController,
-      curve: Curves.easeOutCubic,
-    ));
-    _screenShakeController.forward(from: 0.0);
   }
 
   Future<void> _openProfileEditor() async {
@@ -212,15 +130,7 @@ class _MainGameScreenState extends State<MainGameScreen>
       body: Stack(
         children: [
           SafeArea(
-            child: AnimatedBuilder(
-              animation: _screenShakeController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: _screenShakeOffset.value,
-                  child: child,
-                );
-              },
-              child: Column(
+            child: Column(
                 children: [
                   // Header with granular listening
                   RepaintBoundary(
@@ -294,6 +204,7 @@ class _MainGameScreenState extends State<MainGameScreen>
                   // Main tap area
                   Expanded(
                     child: Listener(
+                      key: widget.tapAreaKey,
                       behavior: HitTestBehavior.opaque,
                       onPointerDown: (event) => _onTapAnywhere(event.position),
                       child: Center(
@@ -340,7 +251,6 @@ class _MainGameScreenState extends State<MainGameScreen>
                   ),
                 ],
               ),
-            ),
           ),
 
           // Floating texts overlay
