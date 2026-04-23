@@ -103,6 +103,17 @@ class StorageService {
 
   Future<void> clearAllData() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await prefs.remove(_keyNumber);
+    await prefs.remove(_keyClickPower);
+    await prefs.remove(_keyAutoClickRate);
+    await prefs.remove(_keyLastPlayed);
+    await prefs.remove(_keyPrestigeCurrency);
+    await prefs.remove(_keyGlobalMultiplier);
+    await prefs.remove(_keyPrestigeMultiplier);
+    await prefs.remove(_keyPrestigeCount);
+    await prefs.remove(_keyUpgradeLevels);
+    await prefs.remove(_keyHighestNumber);
+    await prefs.remove(_keyNexusLevels);
+    await prefs.remove(_keyTutorialCompleted);
   }
 }

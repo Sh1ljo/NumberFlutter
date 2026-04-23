@@ -29,6 +29,9 @@ class _MainLayoutState extends State<MainLayout> {
   bool _profilePromptInProgress = false;
   String? _lastCloudErrorNotified;
   bool _offlineNoticeVisible = false;
+  bool _prestigeNoticeVisible = false;
+  int? _lastPrestigeReadyNotifiedCount;
+  OverlayEntry? _prestigeNoticeEntry;
 
   final GlobalKey _tapAreaKey = GlobalKey();
   final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
@@ -134,14 +137,69 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  void _maybeShowPrestigeReadyNotice({
+    required bool canPrestige,
+    required int prestigeCount,
+  }) {
+    if (!canPrestige ||
+        _prestigeNoticeVisible ||
+        _lastPrestigeReadyNotifiedCount == prestigeCount) {
+      return;
+    }
+
+    _lastPrestigeReadyNotifiedCount = prestigeCount;
+    _prestigeNoticeVisible = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _prestigeNoticeVisible = false;
+        return;
+      }
+
+      final overlay = Overlay.of(context, rootOverlay: true);
+      _prestigeNoticeEntry?.remove();
+      _prestigeNoticeEntry = OverlayEntry(
+        builder: (ctx) => _TopPrestigeNotice(
+          onClosed: _removePrestigeNotice,
+        ),
+      );
+      overlay.insert(_prestigeNoticeEntry!);
+    });
+  }
+
+  void _removePrestigeNotice() {
+    _prestigeNoticeEntry?.remove();
+    _prestigeNoticeEntry = null;
+    _prestigeNoticeVisible = false;
+  }
+
+  @override
+  void dispose() {
+    _removePrestigeNotice();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     _maybePromptForLocation();
     final isPrestigeAnimating =
         context.select<GameState, bool>((gs) => gs.isPrestigeAnimating);
+    if (isPrestigeAnimating && _prestigeNoticeVisible) {
+      _removePrestigeNotice();
+    }
     final cloudError =
         context.select<GameState, String?>((gs) => gs.lastCloudSyncError);
     _maybeShowOfflineNotice(cloudError);
+    final canPrestige = context
+        .select<GameState, bool>((gs) => gs.number >= gs.prestigeRequirement);
+    final prestigeCount =
+        context.select<GameState, int>((gs) => gs.prestigeCount);
+    if (!isPrestigeAnimating) {
+      _maybeShowPrestigeReadyNotice(
+        canPrestige: canPrestige,
+        prestigeCount: prestigeCount,
+      );
+    }
     final offlineGains = context.select<GameState, BigInt>(
       (gs) => gs.offlineGainsThisSession,
     );
@@ -187,6 +245,109 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TopPrestigeNotice extends StatefulWidget {
+  const _TopPrestigeNotice({required this.onClosed});
+
+  final VoidCallback onClosed;
+
+  @override
+  State<_TopPrestigeNotice> createState() => _TopPrestigeNoticeState();
+}
+
+class _TopPrestigeNoticeState extends State<_TopPrestigeNotice>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offsetAnimation;
+  Timer? _autoCloseTimer;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _offsetAnimation = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+    _autoCloseTimer = Timer(const Duration(seconds: 4), _closeAnimated);
+  }
+
+  Future<void> _closeAnimated() async {
+    if (_closing) return;
+    _closing = true;
+    await _controller.reverse();
+    widget.onClosed();
+  }
+
+  void _closeImmediately() {
+    if (_closing) return;
+    _closing = true;
+    widget.onClosed();
+  }
+
+  @override
+  void dispose() {
+    _autoCloseTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final topInset = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: topInset + 8,
+      left: 12,
+      right: 12,
+      child: Material(
+        color: Colors.transparent,
+        child: SlideTransition(
+          position: _offsetAnimation,
+          child: Dismissible(
+            key: const ValueKey('prestige_ready_notice'),
+            direction: DismissDirection.up,
+            onDismissed: (_) => _closeImmediately(),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                ),
+              ),
+              child: ListTile(
+                leading:
+                    Icon(Icons.auto_awesome, color: theme.colorScheme.primary),
+                title: Text(
+                  'Prestige Available',
+                  style: theme.textTheme.titleMedium,
+                ),
+                subtitle: Text(
+                  'You have enough Numbers to initiate prestige.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                trailing: IconButton(
+                  tooltip: 'Dismiss',
+                  onPressed: _closeAnimated,
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

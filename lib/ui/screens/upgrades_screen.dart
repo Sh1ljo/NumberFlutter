@@ -59,13 +59,13 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
 
             // Title
             Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'UPGRADES',
-                    style: theme.textTheme.displayLarge?.copyWith(fontSize: 48),
+                    style: theme.textTheme.displayLarge?.copyWith(fontSize: 40),
                   ),
                 ],
               ),
@@ -101,6 +101,12 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   backgroundColor: theme.colorScheme.surfaceContainerLow,
                   selectedBackgroundColor: theme.colorScheme.primary,
                   side: BorderSide(color: theme.colorScheme.outlineVariant),
+                  visualDensity:
+                      const VisualDensity(horizontal: -2.0, vertical: -2.0),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  textStyle:
+                      theme.textTheme.labelSmall?.copyWith(letterSpacing: 0.8),
                 ).copyWith(
                   iconColor: WidgetStateProperty.resolveWith<Color?>((states) {
                     if (states.contains(WidgetState.selected)) {
@@ -121,6 +127,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   ButtonSegment(value: 1, label: Text('1X')),
                   ButtonSegment(value: 10, label: Text('10X')),
                   ButtonSegment(value: 100, label: Text('100X')),
+                  ButtonSegment(value: -2, label: Text('NEXT')),
                   ButtonSegment(value: -1, label: Text('MAX')),
                 ],
                 selected: {gameState.buyAmount},
@@ -131,10 +138,16 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                 style: SegmentedButton.styleFrom(
                   selectedForegroundColor: theme.colorScheme.onPrimary,
                   selectedBackgroundColor: theme.colorScheme.primary,
+                  visualDensity:
+                      const VisualDensity(horizontal: -2.0, vertical: -2.0),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  textStyle:
+                      theme.textTheme.labelSmall?.copyWith(letterSpacing: 0.8),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
 
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
@@ -150,7 +163,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
               return Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0, vertical: 10.0),
+                      horizontal: 24.0, vertical: 6.0),
                   itemCount: entries.length,
                   itemBuilder: (context, index) {
                     final entry = entries[index];
@@ -206,14 +219,14 @@ class _UpgradeItem extends StatelessWidget {
     final isMaxed = upgrade.isMaxed;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10.0),
+      margin: const EdgeInsets.only(bottom: 8.0),
       // "No-line rule" handled by surface transition
       decoration: BoxDecoration(
         border: Border(
             bottom: BorderSide(
                 color: theme.colorScheme.surfaceContainerLow, width: 2)),
       ),
-      padding: const EdgeInsets.only(bottom: 10.0),
+      padding: const EdgeInsets.only(bottom: 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -223,7 +236,7 @@ class _UpgradeItem extends StatelessWidget {
               Expanded(
                 child: Text(
                   upgrade.name,
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 22),
+                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
                 ),
               ),
               const SizedBox(width: 8),
@@ -287,14 +300,14 @@ class _UpgradeItem extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             upgrade.description,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

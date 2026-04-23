@@ -57,7 +57,7 @@ class GameState extends ChangeNotifier {
   /// How many prestiges completed (used for incremental gains).
   int prestigeCount = 0;
 
-  int buyAmount = 1; // 1, 10, 100, -1 (MAX)
+  int buyAmount = 1; // 1, 10, 100, -2 (NEXT), -1 (MAX)
   String selectedUpgradeCategory = clickCategory;
 
   double _idleAccumulator = 0.0;
@@ -232,8 +232,8 @@ class GameState extends ChangeNotifier {
     return (1.0 - level * 0.01).clamp(0.01, 1.0);
   }
 
-  /// Seconds of idle rate added as a burst immediately after prestige.
-  double get surgeProtocolSeconds => _nexusLevel('surge_protocol') * 30.0;
+  /// Basis points (1/100 of 1%) of pre-prestige net worth paid after prestige.
+  int get surgeProtocolNetWorthCarryBps => _nexusLevel('surge_protocol') * 50;
 
   /// Multiplier applied to the prestige delta (Enhanced Extraction).
   double get prestigeDeltaMultiplier {
@@ -461,7 +461,9 @@ class GameState extends ChangeNotifier {
   bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
   double get totalIdleRate {
-    double idleRate = (autoClickRate + permanentIdleBonus) * prestigeMultiplier * resonanceMultiplier;
+    double idleRate = (autoClickRate + permanentIdleBonus) *
+        prestigeMultiplier *
+        resonanceMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
@@ -755,7 +757,21 @@ class GameState extends ChangeNotifier {
   }
 
   ({BigInt cost, int amount}) getPurchaseInfo(Upgrade upgrade) {
-    int toBuy = buyAmount == -1 ? 999999 : buyAmount;
+    int toBuy;
+    if (buyAmount == -1) {
+      toBuy = 999999;
+    } else if (buyAmount == -2) {
+      final nextMilestone = upgradeMilestoneThresholds
+          .where((threshold) => threshold > upgrade.level)
+          .firstOrNull;
+      if (nextMilestone == null) {
+        toBuy = 1;
+      } else {
+        toBuy = nextMilestone - upgrade.level;
+      }
+    } else {
+      toBuy = buyAmount;
+    }
     if (upgrade.maxLevel != -1) {
       final remainingLevels = upgrade.maxLevel - upgrade.level;
       if (remainingLevels <= 0) {
@@ -775,8 +791,8 @@ class GameState extends ChangeNotifier {
 
     final costFactor = upgradeCostReductionFactor;
     while (bought < toBuy) {
-      BigInt cost =
-          BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
+      BigInt cost = BigInt.from(
+          upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
       if (remainingNumber >= cost) {
         remainingNumber -= cost;
         totalCost += cost;
@@ -791,7 +807,8 @@ class GameState extends ChangeNotifier {
           bought++;
           currentMultiplier *= upgrade.costMultiplier;
           while (bought < toBuy) {
-            cost = BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
+            cost = BigInt.from(
+                upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
             totalCost += cost;
             bought++;
             currentMultiplier *= upgrade.costMultiplier;
@@ -801,9 +818,11 @@ class GameState extends ChangeNotifier {
       }
     }
 
-    int finalAmount = buyAmount == -1 ? bought : toBuy;
-    if (buyAmount == -1 && finalAmount == 0) {
-      final singleCost = BigInt.from(upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
+    final isMaxMode = buyAmount == -1;
+    int finalAmount = isMaxMode ? bought : toBuy;
+    if (isMaxMode && finalAmount == 0) {
+      final singleCost = BigInt.from(
+          upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
       return (cost: singleCost, amount: 0);
     }
     return (cost: totalCost, amount: finalAmount);
@@ -828,6 +847,7 @@ class GameState extends ChangeNotifier {
   }
 
   void prestige() {
+    final netWorthBeforePrestige = number;
     final pointsToEarn = calculatePrestigePoints(number);
     if (pointsToEarn <= 0.0) return;
     prestigeCurrency += pointsToEarn;
@@ -852,12 +872,14 @@ class GameState extends ChangeNotifier {
     }
     _recalculateDerivedStatsFromUpgrades();
 
-    // Surge Protocol: instantly add N seconds of idle rate
-    final surgeBurst = surgeProtocolSeconds;
-    if (surgeBurst > 0 && permanentIdleBonus > 0) {
-      final burst = permanentIdleBonus * prestigeMultiplier * resonanceMultiplier * surgeBurst;
-      number += BigInt.from(burst.floor());
-      _updateHighestNumber();
+    final carryBps = surgeProtocolNetWorthCarryBps;
+    if (carryBps > 0 && netWorthBeforePrestige > BigInt.zero) {
+      final carried = (netWorthBeforePrestige * BigInt.from(carryBps)) ~/
+          BigInt.from(10000);
+      if (carried > BigInt.zero) {
+        number += carried;
+        _updateHighestNumber();
+      }
     }
 
     _completeTutorialOnPrestige();

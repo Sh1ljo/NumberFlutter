@@ -100,27 +100,6 @@ class _SystemLoadingIndicatorState extends State<SystemLoadingIndicator>
                       }),
                     ),
                   ),
-                  Positioned(
-                    left: (_controller.value * 252) - 44,
-                    top: 0,
-                    bottom: 0,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: 44,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              theme.colorScheme.primary.withValues(alpha: 0.0),
-                              theme.colorScheme.primary.withValues(alpha: 0.14),
-                              theme.colorScheme.primary.withValues(alpha: 0.0),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             );

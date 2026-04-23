@@ -22,7 +22,7 @@ abstract class NexusData {
           id: 'surge_protocol',
           name: 'Surge Protocol',
           description:
-              'Begin each prestige with a burst equal to 30 × level seconds of idle rate added instantly.',
+              'After each prestige, gain 0.5% of your pre-prestige net worth per level.',
           icon: Icons.electric_bolt,
           tier: 1,
           effectType: ResearchEffect.surgeSeconds,
@@ -66,7 +66,8 @@ abstract class NexusData {
         ResearchNode(
           id: 'quick_resume',
           name: 'Quick Resume',
-          description: 'Multiplies offline gains by an additional 10% per level.',
+          description:
+              'Multiplies offline gains by an additional 10% per level.',
           icon: Icons.fast_forward,
           tier: 2,
           prereqLevels: {'opt_protocol': 5},
@@ -112,7 +113,8 @@ abstract class NexusData {
         ResearchNode(
           id: 'echo_protocol',
           name: 'Echo Protocol',
-          description: 'Earn 10% more prestige points per level on each prestige.',
+          description:
+              'Earn 10% more prestige points per level on each prestige.',
           icon: Icons.all_inclusive,
           tier: 3,
           prereqLevels: {'enhanced_extraction': 3},
