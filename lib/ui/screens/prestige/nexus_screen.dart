@@ -11,24 +11,36 @@ class NexusScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final prestigeCount =
         context.select<GameState, int>((g) => g.prestigeCount);
+    final nexusStabilized =
+        context.select<GameState, bool>((g) => g.nexusStabilized);
+
+    // If already stabilized, show the stabilized view
+    if (nexusStabilized) {
+      return const _StabilizedView();
+    }
+
     return prestigeCount == 0
-        ? const _UnstabilizedView()
-        : const _StabilizedView();
+        ? const _UnstabilizedView(prestigeCount: 0)
+        : _UnstabilizedView(prestigeCount: prestigeCount);
   }
 }
 
 // ─────────────────────────────────── UNSTABILIZED ────────────────────────────
 
 class _UnstabilizedView extends StatefulWidget {
-  const _UnstabilizedView();
+  final int prestigeCount;
+
+  const _UnstabilizedView({required this.prestigeCount});
 
   @override
   State<_UnstabilizedView> createState() => _UnstabilizedViewState();
 }
 
 class _UnstabilizedViewState extends State<_UnstabilizedView>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _ctrl;
+  late final AnimationController _stabilizeCtrl;
+  bool _isStabilizing = false;
 
   @override
   void initState() {
@@ -37,12 +49,26 @@ class _UnstabilizedViewState extends State<_UnstabilizedView>
       vsync: this,
       duration: const Duration(seconds: 8),
     )..repeat();
+    _stabilizeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    );
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _stabilizeCtrl.dispose();
     super.dispose();
+  }
+
+  void _stabilizeNexus() {
+    setState(() => _isStabilizing = true);
+    _stabilizeCtrl.forward().then((_) {
+      if (mounted) {
+        context.read<GameState>().stabilizeNexus();
+      }
+    });
   }
 
   @override
@@ -53,49 +79,115 @@ class _UnstabilizedViewState extends State<_UnstabilizedView>
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _NexusAmbientBackground(),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 36),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 180,
-                  height: 180,
-                  child: AnimatedBuilder(
-                    animation: _ctrl,
-                    builder: (_, __) => CustomPaint(
-                      painter: _DotSpherePainter(
-                        angle: _ctrl.value * math.pi * 2,
-                        primaryColor: cs.primary,
+        const ColoredBox(color: Colors.black),
+        if (_isStabilizing)
+          AnimatedBuilder(
+            animation: _stabilizeCtrl,
+            builder: (_, __) {
+              final t = _stabilizeCtrl.value;
+              // Smoothly increment spin speed (cubic curve)
+              final spinMultiplier = 1.0 + (t * t * t) * 8.0;
+              // Faster dot spreading for wow effect
+              final sphereExpand = 1.0 + (t < 0.7 ? t * 1.2 : (0.7 - (t - 0.7)) * 1.2);
+              // Keep sphere at full opacity longer, then fade
+              final sphereOpacity = (math.max(0.0, 1.0 - (t - 0.5) * 2.0).clamp(0.0, 1.0) as double);
+              // Fade in content after halfway point
+              final contentOpacity = (t > 0.5 ? (t - 0.5) * 2.0 : 0.0).clamp(0.0, 1.0);
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Center(
+                    child: Opacity(
+                      opacity: sphereOpacity,
+                      child: SizedBox(
+                        width: 180 * sphereExpand,
+                        height: 180 * sphereExpand,
+                        child: CustomPaint(
+                          painter: _DotSpherePainter(
+                            angle: _ctrl.value * math.pi * 2 * spinMultiplier,
+                            primaryColor: cs.primary,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 36),
-                Text(
-                  'NEXUS NOT YET STABILIZED',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: cs.outline,
-                    letterSpacing: 3.0,
-                    fontSize: 10,
+                  Opacity(
+                    opacity: contentOpacity,
+                    child: const _StabilizedView(),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'To stabilize the Nexus, initiate at least 1 prestige.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.outlineVariant,
-                    height: 1.7,
+                ],
+              );
+            },
+          )
+        else
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 36),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 180,
+                    height: 180,
+                    child: AnimatedBuilder(
+                      animation: _ctrl,
+                      builder: (_, __) => CustomPaint(
+                        painter: _DotSpherePainter(
+                          angle: _ctrl.value * math.pi * 2,
+                          primaryColor: cs.primary,
+                        ),
+                      ),
+                    ),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 36),
+                  Text(
+                    'NEXUS NOT YET STABILIZED',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.outline,
+                      letterSpacing: 3.0,
+                      fontSize: 10,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.prestigeCount == 0
+                        ? 'To stabilize the Nexus, reach Prestige 1.'
+                        : 'The Nexus awaits stabilization.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.outlineVariant,
+                      height: 1.7,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (widget.prestigeCount > 0) ...[
+                    const SizedBox(height: 32),
+                    ElevatedButton(
+                      onPressed: _stabilizeNexus,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: cs.primary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      child: Text(
+                        'STABILIZE NEXUS',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onPrimary,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }

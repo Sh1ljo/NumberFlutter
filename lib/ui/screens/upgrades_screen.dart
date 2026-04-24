@@ -7,8 +7,9 @@ import '../../utils/number_formatter.dart';
 
 class UpgradesScreen extends StatefulWidget {
   final Map<String, GlobalKey>? upgradeRowKeys;
+  final GlobalKey? idleCategoryKey;
 
-  const UpgradesScreen({super.key, this.upgradeRowKeys});
+  const UpgradesScreen({super.key, this.upgradeRowKeys, this.idleCategoryKey});
 
   @override
   State<UpgradesScreen> createState() => _UpgradesScreenState();
@@ -73,6 +74,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
 
             // Upgrade Category Toggle
             Padding(
+              key: widget.idleCategoryKey,
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
               child: SegmentedButton<String>(
                 segments: const [

@@ -14,6 +14,7 @@ class StorageService {
   static const String _keyHighestNumber = 'highestNumber';
   static const String _keyNexusLevels = 'nexus_levels';
   static const String _keyTutorialCompleted = 'tutorialCompleted';
+  static const String _keyNexusStabilized = 'nexusStabilized';
 
   Future<void> saveGame({
     required BigInt number,
@@ -26,6 +27,7 @@ class StorageService {
     required BigInt highestNumber,
     required Map<String, int> nexusLevels,
     required bool tutorialCompleted,
+    required bool nexusStabilized,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -39,6 +41,7 @@ class StorageService {
     await prefs.setString(_keyHighestNumber, highestNumber.toString());
     await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
     await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
+    await prefs.setBool(_keyNexusStabilized, nexusStabilized);
     await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -95,6 +98,7 @@ class StorageService {
           BigInt.zero,
       'nexusLevels': nexusLevels,
       'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
+      'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,

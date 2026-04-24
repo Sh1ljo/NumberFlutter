@@ -10,6 +10,9 @@ class TutorialOverlay extends StatefulWidget {
   final List<GlobalKey> navKeys;
   final Map<String, GlobalKey> upgradeRowKeys;
   final GlobalKey? prestigeButtonKey;
+  final GlobalKey? prestigeMultiplierKey;
+  final GlobalKey? prestigeGainCardKey;
+  final GlobalKey? idleCategoryKey;
 
   const TutorialOverlay({
     super.key,
@@ -17,6 +20,9 @@ class TutorialOverlay extends StatefulWidget {
     required this.navKeys,
     required this.upgradeRowKeys,
     required this.prestigeButtonKey,
+    this.prestigeMultiplierKey,
+    this.prestigeGainCardKey,
+    this.idleCategoryKey,
   });
 
   @override
@@ -47,34 +53,43 @@ class _TutorialOverlayState extends State<TutorialOverlay>
 
   GlobalKey? _keyForStep(TutorialStep step) {
     switch (step) {
-      case TutorialStep.welcomeTap:
+      case TutorialStep.clickToFifty:
         return widget.tapAreaKey;
       case TutorialStep.navUpgrades:
+      case TutorialStep.navUpgradesForClick:
         return widget.navKeys.length > 1 ? widget.navKeys[1] : null;
-      case TutorialStep.buyClickPower:
-        return widget.upgradeRowKeys[GameState.clickPowerId];
+      case TutorialStep.selectIdle:
+        return widget.idleCategoryKey;
       case TutorialStep.buyAutoClicker:
         return widget.upgradeRowKeys[GameState.autoClickerId];
-      case TutorialStep.buyProbabilityStrike:
-        return widget.upgradeRowKeys[GameState.probabilityStrikeId];
+      case TutorialStep.navGenerators:
+        return widget.navKeys.isNotEmpty ? widget.navKeys[0] : null;
+      case TutorialStep.buyClickPower:
+        return widget.upgradeRowKeys[GameState.clickPowerId];
       case TutorialStep.navPrestige:
         return widget.navKeys.length > 2 ? widget.navKeys[2] : null;
-      case TutorialStep.initiatePrestige:
-        return widget.prestigeButtonKey;
+      case TutorialStep.prestigeMultiplierHint:
+        return widget.prestigeMultiplierKey;
+      case TutorialStep.prestigeGainHint:
+        return widget.prestigeGainCardKey;
+      case TutorialStep.welcome:
+      case TutorialStep.watchIdle:
+      case TutorialStep.exploreUpgrades:
+      case TutorialStep.learnPrestige:
+      case TutorialStep.learnPrestigeDetails:
+      case TutorialStep.goodLuck:
       case TutorialStep.done:
         return null;
     }
   }
 
-  // Clears _holeRect immediately (so the current build sees null) then
-  // resolves the new rect after the next frame when widgets are laid out.
   void _updateHole(TutorialStep step) {
-    _holeRect = null; // cleared synchronously; build reads null this frame
+    _holeRect = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final key = _keyForStep(step);
       final ctx = key?.currentContext;
-      if (ctx == null) return; // still null — caption stays centered
+      if (ctx == null) return;
       final renderObject = ctx.findRenderObject();
       if (renderObject is! RenderBox || !renderObject.hasSize) return;
       final box = renderObject;
@@ -109,50 +124,151 @@ class _TutorialOverlayState extends State<TutorialOverlay>
         final step = gameState.tutorialStep;
         final category = gameState.selectedUpgradeCategory;
 
-        // Re-resolve the hole when step OR upgrade category changes so that
-        // category-switching steps (buyAutoClicker, buyProbabilityStrike)
-        // correctly highlight the newly visible row.
         if (step != _lastStep || category != _lastCategory) {
           _lastStep = step;
           _lastCategory = category;
-          _updateHole(step); // also clears _holeRect synchronously
+          _updateHole(step);
         }
 
         final media = MediaQuery.of(context);
         final size = media.size;
         final hole = _holeRect;
-        final isWelcomeStep = step == TutorialStep.welcomeTap;
+
+        final isTapToContinue = step == TutorialStep.welcome ||
+            step == TutorialStep.exploreUpgrades ||
+            step == TutorialStep.learnPrestige ||
+            step == TutorialStep.learnPrestigeDetails ||
+            step == TutorialStep.prestigeMultiplierHint ||
+            step == TutorialStep.prestigeGainHint ||
+            step == TutorialStep.goodLuck;
+        final isWatchIdle = step == TutorialStep.watchIdle;
+        final isNavStep = step == TutorialStep.navUpgrades ||
+            step == TutorialStep.navGenerators ||
+            step == TutorialStep.navUpgradesForClick;
 
         final titleBody = _copyForStep(step);
-        final onWelcomeTap = isWelcomeStep
-            ? () => context.read<GameState>().onTutorialWelcomeTap()
+        final onTapContinue = isTapToContinue
+            ? () => context.read<GameState>().onTutorialTapToContinue()
             : () {};
 
+        // watchIdle: floating card only — no dim, no blocking
+        if (isWatchIdle) {
+          if (titleBody == null) return const SizedBox.shrink();
+          return Material(
+            type: MaterialType.transparency,
+            child: Stack(
+              children: [
+                _CaptionCard(
+                  title: titleBody.$1,
+                  body: titleBody.$2,
+                  hole: null,
+                  screenSize: size,
+                  padding: media.padding,
+                  centerOnScreen: false,
+                  positionTop: media.padding.top + 80,
+                  showTopContinueHint: false,
+                  continueHintOverride: null,
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Nav steps: no dim at all — taps pass through to nav bar.
+        // MaterialType.transparency sets absorbHitTest=false so the Material
+        // does NOT intercept taps in areas with no child widget.
+        if (isNavStep) {
+          return Material(
+            type: MaterialType.transparency,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                if (hole != null && hole.width > 0 && hole.height > 0)
+                  Positioned(
+                    left: hole.left,
+                    top: hole.top,
+                    width: hole.width,
+                    height: hole.height,
+                    child: IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: _pulseController,
+                        builder: (context, child) {
+                          final t = Curves.easeInOut
+                              .transform(_pulseController.value);
+                          return DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: 0.35 + t * 0.45),
+                                width: 2,
+                              ),
+                            ),
+                            child: child,
+                          );
+                        },
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  ),
+                if (titleBody != null)
+                  _CaptionCard(
+                    title: titleBody.$1,
+                    body: titleBody.$2,
+                    hole: hole,
+                    screenSize: size,
+                    padding: media.padding,
+                    centerOnScreen: hole == null,
+                    showTopContinueHint: false,
+                    continueHintOverride: null,
+                  ),
+                Positioned(
+                  right: 12,
+                  top: media.padding.top + 8,
+                  child: TextButton(
+                    onPressed: () =>
+                        context.read<GameState>().skipTutorial(),
+                    child: Text(
+                      'SKIP',
+                      style:
+                          Theme.of(context).textTheme.labelSmall?.copyWith(
+                                letterSpacing: 2,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         return Material(
-          color: Colors.transparent,
+          type: MaterialType.transparency,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              // Dim overlay — four bars around the hole, or a full dim when
-              // no hole is resolved yet.
+              // Dim overlay
               if (hole != null && hole.width > 0 && hole.height > 0) ...[
                 _DimBar(
                   rect: Rect.fromLTWH(0, 0, size.width, hole.top),
-                  onBlock: onWelcomeTap,
+                  onBlock: onTapContinue,
                 ),
                 _DimBar(
                   rect: Rect.fromLTWH(
                       0, hole.bottom, size.width, size.height - hole.bottom),
-                  onBlock: onWelcomeTap,
+                  onBlock: onTapContinue,
                 ),
                 _DimBar(
                   rect: Rect.fromLTWH(0, hole.top, hole.left, hole.height),
-                  onBlock: onWelcomeTap,
+                  onBlock: onTapContinue,
                 ),
                 _DimBar(
-                  rect: Rect.fromLTWH(
-                      hole.right, hole.top, size.width - hole.right, hole.height),
-                  onBlock: onWelcomeTap,
+                  rect: Rect.fromLTWH(hole.right, hole.top,
+                      size.width - hole.right, hole.height),
+                  onBlock: onTapContinue,
                 ),
                 // Pulsing border around the hole
                 Positioned(
@@ -184,38 +300,44 @@ class _TutorialOverlayState extends State<TutorialOverlay>
                     child: const SizedBox.expand(),
                   ),
                 ),
-              ] else
+              ] else if (isTapToContinue)
+                // For tap-to-continue steps (welcome, etc.) with no hole,
+                // show the dim and capture the tap.
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: onWelcomeTap,
+                    onTap: onTapContinue,
                     child: ColoredBox(
                       color: Colors.black.withValues(alpha: 0.58),
                     ),
                   ),
-                ),
+                )
+              else
+                // For action steps with no hole yet (transitional frame),
+                // don't block — let the underlying UI receive taps.
+                const SizedBox.shrink(),
 
-              // Caption card — always shown (centered when hole is not yet
-              // resolved so the user always has guidance).
+              // Caption card (_CaptionCard is Positioned and handles IgnorePointer internally)
               if (titleBody != null)
-                IgnorePointer(
-                  child: _CaptionCard(
-                    title: titleBody.$1,
-                    body: titleBody.$2,
-                    hole: hole,
-                    screenSize: size,
-                    padding: media.padding,
-                    centerOnScreen: isWelcomeStep || hole == null,
-                    showTopContinueHint: isWelcomeStep,
-                  ),
+                _CaptionCard(
+                  title: titleBody.$1,
+                  body: titleBody.$2,
+                  hole: hole,
+                  screenSize: size,
+                  padding: media.padding,
+                  centerOnScreen: (isTapToContinue && step != TutorialStep.prestigeMultiplierHint && step != TutorialStep.prestigeGainHint) || hole == null,
+                  showTopContinueHint: isTapToContinue,
+                  continueHintOverride: step == TutorialStep.learnPrestige
+                      ? 'TAP ANYWHERE TO START PLAYING'
+                      : null,
                 ),
 
-              // Full-screen tap detector for the welcome step only.
-              if (isWelcomeStep)
+              // Full-screen tap detector for tap-to-continue steps
+              if (isTapToContinue)
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
-                    onTap: onWelcomeTap,
+                    onTap: onTapContinue,
                     child: const SizedBox.expand(),
                   ),
                 ),
@@ -271,11 +393,13 @@ class _DimBar extends StatelessWidget {
 class _CaptionCard extends StatelessWidget {
   final String title;
   final String body;
-  final Rect? hole; // nullable — null while target widget is being resolved
+  final Rect? hole;
   final Size screenSize;
   final EdgeInsets padding;
   final bool centerOnScreen;
   final bool showTopContinueHint;
+  final String? continueHintOverride;
+  final double? positionTop;
 
   const _CaptionCard({
     required this.title,
@@ -285,43 +409,61 @@ class _CaptionCard extends StatelessWidget {
     required this.padding,
     this.centerOnScreen = false,
     this.showTopContinueHint = false,
+    this.continueHintOverride,
+    this.positionTop,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    const cardWidth = 320.0;
+    const cardWidth = 280.0;
+    const hMargin = 24.0;
     double top;
     double left;
 
-    if (centerOnScreen || hole == null) {
-      top = (screenSize.height / 2 - 110).clamp(
+    if (positionTop != null) {
+      top = positionTop!;
+      left = ((screenSize.width - cardWidth) / 2)
+          .clamp(hMargin, screenSize.width - cardWidth - hMargin);
+    } else if (centerOnScreen || hole == null) {
+      top = ((screenSize.height - 200) / 2).clamp(
         padding.top + 52.0,
-        screenSize.height - 240,
+        screenSize.height - 260,
       );
       left = ((screenSize.width - cardWidth) / 2)
-          .clamp(16.0, screenSize.width - cardWidth - 16);
+          .clamp(hMargin, screenSize.width - cardWidth - hMargin);
     } else {
       final h = hole!;
-      top = h.bottom + 16;
-      if (top + 200 > screenSize.height - padding.bottom - 24) {
-        top = h.top - 16 - 200;
-        if (top < padding.top + 48) {
-          top = (h.center.dy - 100).clamp(
-            padding.top + 52.0,
-            screenSize.height - 220,
-          );
+      // Large hole (e.g. full play field): pin card to top of hole.
+      if (h.height > screenSize.height * 0.4) {
+        top = (h.top + 24).clamp(padding.top + 52.0, screenSize.height - 220);
+        left = ((screenSize.width - cardWidth) / 2)
+            .clamp(hMargin, screenSize.width - cardWidth - hMargin);
+      } else {
+        top = h.bottom + 16;
+        if (top + 200 > screenSize.height - padding.bottom - 24) {
+          top = h.top - 16 - 200;
+          if (top < padding.top + 48) {
+            top = (h.center.dy - 100).clamp(
+              padding.top + 52.0,
+              screenSize.height - 220,
+            );
+          }
         }
+        left = h.center.dx - cardWidth / 2;
+        left = left.clamp(hMargin, screenSize.width - cardWidth - hMargin);
       }
-      left = h.center.dx - cardWidth / 2;
-      left = left.clamp(16.0, screenSize.width - cardWidth - 16);
     }
+
+    final hintText = continueHintOverride ??
+        (showTopContinueHint ? 'TAP ANYWHERE TO CONTINUE' : null);
 
     return Positioned(
       left: left,
       top: top,
       width: cardWidth,
-      child: TweenAnimationBuilder<double>(
+      child: IgnorePointer(
+        child: TweenAnimationBuilder<double>(
         key: ValueKey('$title$centerOnScreen'),
         tween: Tween(begin: 0, end: 1),
         duration: const Duration(milliseconds: 280),
@@ -354,9 +496,9 @@ class _CaptionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (showTopContinueHint) ...[
+                if (hintText != null) ...[
                   Text(
-                    'TAP ANYWHERE TO CONTINUE',
+                    hintText,
                     style: theme.textTheme.labelSmall?.copyWith(
                       letterSpacing: 1.3,
                       color: theme.colorScheme.primary,
@@ -383,46 +525,92 @@ class _CaptionCard extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
 
 (String, String)? _copyForStep(TutorialStep step) {
   switch (step) {
-    case TutorialStep.welcomeTap:
+    case TutorialStep.welcome:
       return (
-        'WELCOME TO NUMBERFLUTTER',
-        'You generate Numbers by tapping the playfield, then spend them on upgrades to grow faster.'
+        'WELCOME TO NUMBER',
+        'Your goal: collect the biggest number possible. Tap the play field to generate numbers, spend them on upgrades to grow faster, and prestige for permanent multipliers.',
+      );
+    case TutorialStep.clickToFifty:
+      return (
+        'GENERATORS',
+        'Tap anywhere on the play field to generate numbers! Every tap adds to your count. Keep clicking — reach 50 to unlock your first upgrade.',
       );
     case TutorialStep.navUpgrades:
       return (
-        'UPGRADES',
-        'Tap UPGRADES in the bar below. That\'s where you spend Numbers on permanent boosts.'
+        'NICE WORK!',
+        'You hit 50! Your first upgrade is within reach. Open UPGRADES below.',
       );
-    case TutorialStep.buyClickPower:
+    case TutorialStep.selectIdle:
       return (
-        'CLICK POWER',
-        'Buy Click Power first. Each level adds more Numbers every time you tap.'
+        'IDLE UPGRADES',
+        'Switch to the IDLE tab. Idle upgrades generate numbers automatically — even when you\'re not tapping.',
       );
     case TutorialStep.buyAutoClicker:
       return (
         'AUTO-CLICKER',
-        'Buy Auto-Clicker so Numbers tick in automatically every second.'
+        'Buy the Auto-Clicker! Each level adds +1 number per second automatically.',
       );
-    case TutorialStep.buyProbabilityStrike:
+    case TutorialStep.navGenerators:
       return (
-        'SPECIAL CLICKS',
-        'Special upgrades like Probability Strike add new mechanics. Numbers have been credited — buy one level now.'
+        'SEE IT WORK',
+        'Great purchase! Head back to GENERATORS and watch your numbers climb on their own.',
+      );
+    case TutorialStep.watchIdle:
+      return (
+        'IDLE INCOME',
+        'Your numbers are growing by themselves now. You can still click for extra gains. Reach 100 to continue!',
+      );
+    case TutorialStep.navUpgradesForClick:
+      return (
+        'POWER UP YOUR CLICKS',
+        'Nice grind! Head to UPGRADES again — this time we\'ll boost your click power.',
+      );
+    case TutorialStep.buyClickPower:
+      return (
+        'CLICK POWER',
+        'Buy Click Power! Each level increases how much every tap earns you.',
+      );
+    case TutorialStep.exploreUpgrades:
+      return (
+        'EXPLORE',
+        'There are many more upgrades to discover — idle generators, click multipliers, and special mechanics. Experiment to find what works best!',
+      );
+    case TutorialStep.learnPrestige:
+      return (
+        'PRESTIGE',
+        'Reset your progress to earn a permanent multiplier that boosts all future gains. The bigger your number when you prestige, the stronger your multiplier!',
       );
     case TutorialStep.navPrestige:
       return (
-        'PRESTIGE',
-        'Eventually you reset your run for a permanent multiplier. Open PRESTIGE when you\'re ready for the next lesson.'
+        'TIME TO PRESTIGE',
+        'Open the PRESTIGE tab to start your first prestige and unlock the Nexus.',
       );
-    case TutorialStep.initiatePrestige:
+    case TutorialStep.learnPrestigeDetails:
       return (
-        'INITIATE PRESTIGE',
-        'You\'ve got enough Numbers for your first prestige. Confirm the ritual — afterwards you\'ll start fresh with a permanent boost.'
+        'HOW PRESTIGE WORKS',
+        'Reset your current run to earn a permanent Prestige Multiplier. This multiplier applies to ALL future gains — it grows stronger with each prestige!',
+      );
+    case TutorialStep.prestigeMultiplierHint:
+      return (
+        'YOUR PRESTIGE MULTIPLIER',
+        'This is your permanent boost that multiplies everything: clicks, idle gains, and upgrades. The more you prestige, the larger this multiplier becomes.',
+      );
+    case TutorialStep.prestigeGainHint:
+      return (
+        'PRESTIGE COST & GAIN',
+        'You need to reach the "Required number" shown here. When you prestige, you\'ll earn the multiplier shown above. The bigger your current number, the bigger your next multiplier!',
+      );
+    case TutorialStep.goodLuck:
+      return (
+        'YOU\'RE READY!',
+        'You\'ve learned the basics. Now go grind, prestige, and climb the leaderboards. Good luck!',
       );
     case TutorialStep.done:
       return null;

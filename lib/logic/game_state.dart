@@ -57,6 +57,10 @@ class GameState extends ChangeNotifier {
   /// How many prestiges completed (used for incremental gains).
   int prestigeCount = 0;
 
+  /// Whether the nexus has been stabilized (persisted).
+  bool _nexusStabilized = false;
+  bool get nexusStabilized => _nexusStabilized;
+
   int buyAmount = 1; // 1, 10, 100, -2 (NEXT), -1 (MAX)
   String selectedUpgradeCategory = clickCategory;
 
@@ -83,18 +87,28 @@ class GameState extends ChangeNotifier {
   List<ResearchNode> researchNodes = NexusData.allNodes();
 
   // ── Tutorial ───────────────────────────────────────────────────────────
-  TutorialStep _tutorialStep = TutorialStep.welcomeTap;
+  TutorialStep _tutorialStep = TutorialStep.welcome;
   bool _tutorialCompleted = false;
   bool _tutorialNeedsCloudSync = false;
+  VoidCallback? _onTutorialResetCallback;
 
   TutorialStep get tutorialStep => _tutorialStep;
   bool get tutorialCompleted => _tutorialCompleted;
   bool get isTutorialActive =>
       !_tutorialCompleted && _tutorialStep != TutorialStep.done;
 
+  void registerTutorialResetCallback(VoidCallback cb) {
+    _onTutorialResetCallback = cb;
+  }
+
   void setPrestigeAnimating(bool value) {
     isPrestigeAnimating = value;
     notifyListeners();
+  }
+
+  void stabilizeNexus() {
+    _nexusStabilized = true;
+    _scheduleStateSave();
   }
 
   Timer? _ticker;
@@ -395,6 +409,8 @@ class GameState extends ChangeNotifier {
         _tutorialStep = TutorialStep.done;
       }
 
+      _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
+
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
       _calculateOfflineProgress(lastPlayed);
@@ -438,6 +454,7 @@ class GameState extends ChangeNotifier {
           int added = _idleAccumulator.floor();
           number += BigInt.from(added);
           _updateHighestNumber();
+          _advanceTutorialOnNumberReached();
           _idleAccumulator -= added;
           hasStateChange = true;
 
@@ -714,6 +731,7 @@ class GameState extends ChangeNotifier {
     final gained = BigInt.from(gain.floor());
     number += gained;
     _updateHighestNumber();
+    _advanceTutorialOnNumberReached();
     final personalBestReached = highestNumber > previousHighest;
 
     // Only notify if momentum or overclock changed, number update is handled by Selector
@@ -753,6 +771,9 @@ class GameState extends ChangeNotifier {
     if (category != clickCategory && category != idleCategory) return;
     if (selectedUpgradeCategory == category) return;
     selectedUpgradeCategory = category;
+    if (_tutorialStep == TutorialStep.selectIdle && category == idleCategory) {
+      _tutorialStep = TutorialStep.buyAutoClicker;
+    }
     notifyListeners();
   }
 
@@ -891,7 +912,7 @@ class GameState extends ChangeNotifier {
   /// Calculates how many prestige points would be earned on prestige
   double get prestigePointsOnPrestige => nextPrestigeReward;
 
-  Future<void> hardReset() async {
+  Future<void> hardReset({bool preserveTutorial = false}) async {
     number = BigInt.zero;
     clickPower = BigInt.from(50);
     autoClickRate = 0.0;
@@ -908,6 +929,7 @@ class GameState extends ChangeNotifier {
     prestigeCurrency = 0.0;
     prestigeMultiplier = 1.0;
     prestigeCount = 0;
+    _nexusStabilized = false;
     buyAmount = 1;
     selectedUpgradeCategory = clickCategory;
 
@@ -917,9 +939,11 @@ class GameState extends ChangeNotifier {
     for (var n in researchNodes) {
       n.level = 0;
     }
-    _tutorialCompleted = false;
-    _tutorialStep = TutorialStep.welcomeTap;
-    _tutorialNeedsCloudSync = false;
+    if (!preserveTutorial) {
+      _tutorialCompleted = false;
+      _tutorialStep = TutorialStep.welcome;
+      _tutorialNeedsCloudSync = false;
+    }
     _recalculateDerivedStatsFromUpgrades();
 
     await _storageService.clearAllData();
@@ -930,6 +954,9 @@ class GameState extends ChangeNotifier {
     }
 
     notifyListeners();
+    if (!preserveTutorial) {
+      _onTutorialResetCallback?.call();
+    }
   }
 
   void _updateHighestNumber() {
@@ -1062,6 +1089,7 @@ class GameState extends ChangeNotifier {
         for (final node in researchNodes) node.id: node.level,
       },
       tutorialCompleted: _tutorialCompleted,
+      nexusStabilized: _nexusStabilized,
     );
     _lastSavedAt = DateTime.now();
 
@@ -1087,11 +1115,14 @@ class GameState extends ChangeNotifier {
   // ── Tutorial methods ───────────────────────────────────────────────────
 
   void setTutorialCompletionFromProfile(bool completed) {
-    if (completed && !_tutorialCompleted) {
-      _tutorialCompleted = true;
+    if (completed == _tutorialCompleted) return;
+    _tutorialCompleted = completed;
+    if (completed) {
       _tutorialStep = TutorialStep.done;
-      notifyListeners();
+    } else {
+      _tutorialStep = TutorialStep.welcome;
     }
+    notifyListeners();
   }
 
   Future<void> syncTutorialCompletedToProfileIfNeeded() async {
@@ -1121,10 +1152,28 @@ class GameState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  void onTutorialWelcomeTap() {
-    if (_tutorialStep != TutorialStep.welcomeTap) return;
-    _tutorialStep = TutorialStep.navUpgrades;
-    notifyListeners();
+  void onTutorialTapToContinue() {
+    if (_tutorialStep == TutorialStep.welcome) {
+      _tutorialStep = TutorialStep.clickToFifty;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.exploreUpgrades) {
+      _tutorialStep = TutorialStep.learnPrestige;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.learnPrestige) {
+      _tutorialStep = TutorialStep.navPrestige;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.learnPrestigeDetails) {
+      _tutorialStep = TutorialStep.prestigeMultiplierHint;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.prestigeMultiplierHint) {
+      _tutorialStep = TutorialStep.prestigeGainHint;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.prestigeGainHint) {
+      _tutorialStep = TutorialStep.goodLuck;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.goodLuck) {
+      unawaited(completeTutorialAndReset());
+    }
   }
 
   void skipTutorial() {
@@ -1138,50 +1187,62 @@ class GameState extends ChangeNotifier {
 
   void onMainTabChanged(int index) {
     if (_tutorialStep == TutorialStep.navUpgrades && index == 1) {
-      _tutorialStep = TutorialStep.buyClickPower;
+      _tutorialStep = TutorialStep.selectIdle;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.navGenerators && index == 0) {
+      _tutorialStep = TutorialStep.watchIdle;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.navUpgradesForClick &&
+        index == 1) {
       selectedUpgradeCategory = clickCategory;
+      _tutorialStep = TutorialStep.buyClickPower;
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.navPrestige && index == 2) {
-      // Grant enough numbers to reach first prestige requirement
-      final req = prestigeRequirement;
-      if (number < req) number = req + BigInt.from(500);
-      _updateHighestNumber();
-      _tutorialStep = TutorialStep.initiatePrestige;
+      _tutorialStep = TutorialStep.learnPrestigeDetails;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.goodLuck && index == 0) {
+      // User navigated back to main screen during final tutorial
+      _tutorialStep = TutorialStep.goodLuck;
       notifyListeners();
     }
   }
 
   void _advanceTutorialOnPurchase(String upgradeId) {
-    if (_tutorialStep == TutorialStep.buyClickPower &&
-        upgradeId == clickPowerId) {
-      _tutorialStep = TutorialStep.buyAutoClicker;
-      selectedUpgradeCategory = idleCategory;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyAutoClicker &&
+    if (_tutorialStep == TutorialStep.buyAutoClicker &&
         upgradeId == autoClickerId) {
-      // Grant enough to afford Probability Strike base cost
-      const probStrikeCost = 2500;
-      if (number < BigInt.from(probStrikeCost)) {
-        number = BigInt.from(probStrikeCost + 500);
-        _updateHighestNumber();
-      }
-      _tutorialStep = TutorialStep.buyProbabilityStrike;
-      selectedUpgradeCategory = clickCategory;
+      _tutorialStep = TutorialStep.navGenerators;
       notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyProbabilityStrike &&
-        upgradeId == probabilityStrikeId) {
-      _tutorialStep = TutorialStep.navPrestige;
+    } else if (_tutorialStep == TutorialStep.buyClickPower &&
+        upgradeId == clickPowerId) {
+      _tutorialStep = TutorialStep.exploreUpgrades;
       notifyListeners();
     }
   }
 
-  void _completeTutorialOnPrestige() {
-    if (_tutorialStep == TutorialStep.initiatePrestige) {
-      _tutorialCompleted = true;
-      _tutorialStep = TutorialStep.done;
-      _tutorialNeedsCloudSync = true;
-      unawaited(syncTutorialCompletedToProfileIfNeeded());
+  void _advanceTutorialOnNumberReached() {
+    if (_tutorialStep == TutorialStep.clickToFifty &&
+        number >= BigInt.from(50)) {
+      _tutorialStep = TutorialStep.navUpgrades;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.watchIdle &&
+        number >= BigInt.from(100)) {
+      _tutorialStep = TutorialStep.navUpgradesForClick;
+      notifyListeners();
     }
+  }
+
+  Future<void> completeTutorialAndReset() async {
+    _tutorialCompleted = true;
+    _tutorialStep = TutorialStep.done;
+    _tutorialNeedsCloudSync = true;
+    notifyListeners();
+    _onTutorialResetCallback?.call();
+    await hardReset(preserveTutorial: true);
+    unawaited(syncTutorialCompletedToProfileIfNeeded());
+  }
+
+  void _completeTutorialOnPrestige() {
+    // Prestige no longer ends the tutorial — kept as no-op for safety.
   }
 
   @override

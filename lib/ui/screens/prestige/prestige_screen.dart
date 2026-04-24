@@ -10,7 +10,14 @@ import 'nexus_screen.dart';
 
 class PrestigeScreen extends StatefulWidget {
   final GlobalKey? initiateButtonKey;
-  const PrestigeScreen({super.key, this.initiateButtonKey});
+  final GlobalKey? prestigeMultiplierKey;
+  final GlobalKey? prestigeGainCardKey;
+  const PrestigeScreen({
+    super.key,
+    this.initiateButtonKey,
+    this.prestigeMultiplierKey,
+    this.prestigeGainCardKey,
+  });
 
   @override
   State<PrestigeScreen> createState() => _PrestigeScreenState();
@@ -263,12 +270,15 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    child: PrestigeStatBlock(
-                                      icon: Icons.stars,
-                                      label: 'PRESTIGE MULTIPLIER',
-                                      value:
-                                          'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
-                                      theme: theme,
+                                    child: Container(
+                                      key: widget.prestigeMultiplierKey,
+                                      child: PrestigeStatBlock(
+                                        icon: Icons.stars,
+                                        label: 'PRESTIGE MULTIPLIER',
+                                        value:
+                                            'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
+                                        theme: theme,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 16),
@@ -285,10 +295,13 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                                 ],
                               ),
                               const SizedBox(height: 20),
-                              PrestigeGainCard(
-                                prestigeRequirement: requirement,
-                                multiplierAfterPrestige:
-                                    gameState.prestigeMultiplierAfterNext,
+                              Container(
+                                key: widget.prestigeGainCardKey,
+                                child: PrestigeGainCard(
+                                  prestigeRequirement: requirement,
+                                  multiplierAfterPrestige:
+                                      gameState.prestigeMultiplierAfterNext,
+                                ),
                               ),
                               const SizedBox(height: 20),
                               if (canPrestige)

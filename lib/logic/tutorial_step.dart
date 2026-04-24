@@ -1,26 +1,53 @@
 /// Ordered steps for the first-time interactive tutorial.
 enum TutorialStep {
-  /// Tap the main number area at least once.
-  welcomeTap,
+  /// Centered welcome card — tap anywhere to continue.
+  welcome,
 
-  /// Open the Upgrades tab from the bottom nav.
+  /// Spotlight on the tap area — click until number reaches 50.
+  clickToFifty,
+
+  /// Spotlight on the UPGRADES nav button — tap it.
   navUpgrades,
 
-  /// Purchase Click Power (CLICK tab).
-  buyClickPower,
+  /// Spotlight on the IDLE segment button — tap it.
+  selectIdle,
 
-  /// Purchase Auto-Clicker (IDLE tab).
+  /// Spotlight on the Auto-Clicker row — purchase it.
   buyAutoClicker,
 
-  /// Purchase Probability Strike after a number grant (CLICK tab).
-  buyProbabilityStrike,
+  /// Spotlight on the GENERATORS nav button — tap it.
+  navGenerators,
 
-  /// Open Prestige from the bottom nav (funds granted when tab opens).
+  /// Card only (no dim) — watch idle accumulate until number reaches 100.
+  watchIdle,
+
+  /// Spotlight on the UPGRADES nav button — tap it (for click power).
+  navUpgradesForClick,
+
+  /// Spotlight on the Click Power row — purchase it.
+  buyClickPower,
+
+  /// Centered card — tap anywhere to continue to prestige lesson.
+  exploreUpgrades,
+
+  /// Centered card — tap anywhere to finish tutorial and factory-reset.
+  learnPrestige,
+
+  /// Spotlight on the PRESTIGE nav button — tap it.
   navPrestige,
 
-  /// Initiate prestige; on success the game resets to a fresh state.
-  initiatePrestige,
+  /// Explanation of prestige system on the prestige screen.
+  learnPrestigeDetails,
 
-  /// Tutorial finished or skipped.
+  /// Spotlight on the prestige multiplier stat block.
+  prestigeMultiplierHint,
+
+  /// Spotlight on the prestige gain card showing cost and multiplier.
+  prestigeGainHint,
+
+  /// Final "good luck" message on main screen.
+  goodLuck,
+
+  /// Tutorial finished or skipped — overlay hidden.
   done,
 }

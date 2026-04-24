@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
+import '../../logic/tutorial_step.dart';
 import '../../logic/supabase_service.dart';
 import '../../utils/network_error_utils.dart';
 import '../widgets/app_background.dart';
@@ -14,6 +15,7 @@ import 'prestige/prestige_screen.dart';
 import 'leaderboard_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../widgets/tutorial_overlay.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -41,6 +43,9 @@ class _MainLayoutState extends State<MainLayout> {
     GameState.probabilityStrikeId: GlobalKey(),
   };
   final GlobalKey _prestigeInitiateKey = GlobalKey();
+  final GlobalKey _prestigeMultiplierKey = GlobalKey();
+  final GlobalKey _prestigeGainCardKey = GlobalKey();
+  final GlobalKey _idleCategoryKey = GlobalKey();
 
   late final List<Widget> _screens;
 
@@ -49,11 +54,20 @@ class _MainLayoutState extends State<MainLayout> {
     super.initState();
     _screens = [
       MainGameScreen(tapAreaKey: _tapAreaKey),
-      UpgradesScreen(upgradeRowKeys: _upgradeRowKeys),
-      PrestigeScreen(initiateButtonKey: _prestigeInitiateKey),
+      UpgradesScreen(upgradeRowKeys: _upgradeRowKeys, idleCategoryKey: _idleCategoryKey),
+      PrestigeScreen(
+        initiateButtonKey: _prestigeInitiateKey,
+        prestigeMultiplierKey: _prestigeMultiplierKey,
+        prestigeGainCardKey: _prestigeGainCardKey,
+      ),
       const LeaderboardScreen(),
       const SettingsScreen(),
     ];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<GameState>().registerTutorialResetCallback(() {
+        if (mounted) setState(() => _currentIndex = 0);
+      });
+    });
   }
 
   void _maybePromptForLocation() {
@@ -184,8 +198,15 @@ class _MainLayoutState extends State<MainLayout> {
     _maybePromptForLocation();
     final isPrestigeAnimating =
         context.select<GameState, bool>((gs) => gs.isPrestigeAnimating);
+    final tutorialStep =
+        context.select<GameState, TutorialStep>((gs) => gs.tutorialStep);
     if (isPrestigeAnimating && _prestigeNoticeVisible) {
       _removePrestigeNotice();
+    }
+    if (tutorialStep == TutorialStep.goodLuck && _currentIndex != 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _currentIndex = 0);
+      });
     }
     final cloudError =
         context.select<GameState, String?>((gs) => gs.lastCloudSyncError);
@@ -244,6 +265,15 @@ class _MainLayoutState extends State<MainLayout> {
                   },
                 ),
               ),
+            TutorialOverlay(
+              tapAreaKey: _tapAreaKey,
+              navKeys: _navKeys,
+              upgradeRowKeys: _upgradeRowKeys,
+              prestigeButtonKey: _prestigeInitiateKey,
+              prestigeMultiplierKey: _prestigeMultiplierKey,
+              prestigeGainCardKey: _prestigeGainCardKey,
+              idleCategoryKey: _idleCategoryKey,
+            ),
           ],
         ),
       ),
