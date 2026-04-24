@@ -56,7 +56,7 @@ IconData _navIcon(int i) {
     case 3:
       return Icons.leaderboard;
     default:
-      return Icons.settings;
+      return Icons.more_horiz;
   }
 }
 
@@ -71,7 +71,7 @@ String _navLabel(int i) {
     case 3:
       return 'RANKS';
     default:
-      return 'SYSTEM';
+      return 'MORE';
   }
 }
 

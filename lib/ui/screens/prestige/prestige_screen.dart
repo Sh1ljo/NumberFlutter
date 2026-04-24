@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/game_state.dart';
+import '../../../logic/supabase_service.dart';
 import '../../../utils/number_formatter.dart';
+import '../../widgets/profile_editor_dialog.dart';
+import '../player_stats_screen.dart';
 import 'prestige_constants.dart';
 import 'widgets/prestige_gain_card.dart';
 import 'widgets/prestige_overlay.dart';
 import 'widgets/prestige_stat_block.dart';
-import 'nexus_screen.dart';
+import '../nexus/nexus_screen.dart';
 
 class PrestigeScreen extends StatefulWidget {
   final GlobalKey? initiateButtonKey;
@@ -30,6 +33,40 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   bool _isAnimating = false;
   bool _prestigeCalled = false;
   double _pendingPrestigeMultiplier = 0.0;
+  bool _profileActionBusy = false;
+
+  Future<void> _openStatsScreen() async {
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
+  }
+
+  Future<void> _openProfileEditor() async {
+    if (_profileActionBusy) return;
+    final supabase = SupabaseService.instance;
+    if (!supabase.isConfigured || !supabase.isInitialized) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Profile editing needs Supabase configured in assets/.env.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _profileActionBusy = true;
+    });
+
+    try {
+      await ProfileEditorDialog.show(context);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _profileActionBusy = false;
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -204,6 +241,20 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                               ?.copyWith(fontSize: 24),
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Stats',
+                            onPressed: _openStatsScreen,
+                            icon: const Icon(Icons.bar_chart),
+                          ),
+                          IconButton(
+                            tooltip: 'Profile',
+                            onPressed: _openProfileEditor,
+                            icon: const Icon(Icons.account_circle_outlined),
+                          ),
+                        ],
                       ),
                     ],
                   ),

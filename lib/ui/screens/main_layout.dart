@@ -14,6 +14,8 @@ import 'upgrades_screen.dart';
 import 'prestige/prestige_screen.dart';
 import 'leaderboard_screen.dart';
 import 'settings_screen.dart';
+import 'shop_screen.dart';
+import 'more_menu_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/tutorial_overlay.dart';
 
@@ -61,6 +63,7 @@ class _MainLayoutState extends State<MainLayout> {
         prestigeGainCardKey: _prestigeGainCardKey,
       ),
       const LeaderboardScreen(),
+      const ShopScreen(),
       const SettingsScreen(),
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -187,6 +190,24 @@ class _MainLayoutState extends State<MainLayout> {
     _prestigeNoticeVisible = false;
   }
 
+  void _showMoreMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => MoreMenuScreen(
+        onMenuItemSelected: (index) {
+          Navigator.of(ctx).pop();
+          if (index == _currentIndex) return;
+          setState(() {
+            _currentIndex = index;
+          });
+          context.read<GameState>().onMainTabChanged(index);
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _removePrestigeNotice();
@@ -257,6 +278,11 @@ class _MainLayoutState extends State<MainLayout> {
                   currentIndex: _currentIndex,
                   itemKeys: _navKeys,
                   onIndexChanged: (index) {
+                    // Handle "More" menu button
+                    if (index == 4) {
+                      _showMoreMenu(context);
+                      return;
+                    }
                     if (index == _currentIndex) return;
                     setState(() {
                       _currentIndex = index;
