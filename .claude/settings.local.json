@@ -3,7 +3,8 @@
     "allow": [
       "Bash(xargs grep *)",
       "Bash(dart analyze *)",
-      "Bash(flutter analyze *)"
+      "Bash(flutter analyze *)",
+      "Bash(flutter pub *)"
     ]
   }
 }

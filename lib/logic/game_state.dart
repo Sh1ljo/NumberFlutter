@@ -867,12 +867,29 @@ class GameState extends ChangeNotifier {
     }
   }
 
-  void prestige() {
+  Future<void> prestige() async {
     final netWorthBeforePrestige = number;
     final pointsToEarn = calculatePrestigePoints(number);
     if (pointsToEarn <= 0.0) return;
-    prestigeCurrency += pointsToEarn;
 
+    final userId = _syncService.currentUserId;
+
+    // Archive the current session before resetting if cloud sync is available
+    if (userId != null && _syncService.isAvailable) {
+      _updateHighestNumber();
+      final sessionSnapshot = _buildLocalProgress(userId);
+      try {
+        await SupabaseService.instance.archiveSession(
+          userId: userId,
+          sessionProgress: sessionSnapshot,
+        );
+      } catch (e) {
+        // Log error but don't prevent prestige
+        debugPrint('Failed to archive session: $e');
+      }
+    }
+
+    prestigeCurrency += pointsToEarn;
     prestigeMultiplier += nextPrestigeDelta;
     prestigeCount += 1;
 

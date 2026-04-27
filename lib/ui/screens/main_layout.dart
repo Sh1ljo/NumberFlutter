@@ -13,9 +13,11 @@ import 'main_game_screen.dart';
 import 'upgrades_screen.dart';
 import 'prestige/prestige_screen.dart';
 import 'leaderboard_screen.dart';
+import 'neural_network_screen.dart';
 import 'settings_screen.dart';
 import 'shop_screen.dart';
 import 'more_menu_screen.dart';
+import 'auth_screen.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../widgets/tutorial_overlay.dart';
 
@@ -62,7 +64,7 @@ class _MainLayoutState extends State<MainLayout> {
         prestigeMultiplierKey: _prestigeMultiplierKey,
         prestigeGainCardKey: _prestigeGainCardKey,
       ),
-      const LeaderboardScreen(),
+      const NeuralNetworkScreen(),
       const ShopScreen(),
       const SettingsScreen(),
     ];
@@ -70,7 +72,55 @@ class _MainLayoutState extends State<MainLayout> {
       context.read<GameState>().registerTutorialResetCallback(() {
         if (mounted) setState(() => _currentIndex = 0);
       });
+      _maybeShowLoginPrompt();
     });
+  }
+
+  void _maybeShowLoginPrompt() {
+    final supabase = SupabaseService.instance;
+    if (!supabase.isConfigured || !supabase.isInitialized) return;
+    if (supabase.currentSession != null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showLoginPrompt();
+    });
+  }
+
+  void _showLoginPrompt() {
+    final theme = Theme.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: const Text('Save Your Progress'),
+        content: Text(
+          'Create an account or sign in to save your progress to the cloud and compete on leaderboards.',
+          style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('LATER'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+              );
+            },
+            icon: const Icon(Icons.login),
+            label: const Text('SIGN IN'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _maybePromptForLocation() {

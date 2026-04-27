@@ -307,4 +307,26 @@ class SupabaseService {
       return List<Map<String, dynamic>>.from(rows);
     }
   }
+
+  Future<void> archiveSession({
+    required String userId,
+    required PlayerProgress sessionProgress,
+  }) async {
+    if (!_initialized) return;
+    final sessionNumber = sessionProgress.prestigeCount + 1;
+    await _client.from('session_archive').insert({
+      'user_id': userId,
+      'session_number': sessionNumber,
+      'number_numeric': sessionProgress.number.toString(),
+      'click_power_numeric': sessionProgress.clickPower.toString(),
+      'auto_click_rate': sessionProgress.autoClickRate,
+      'prestige_currency': sessionProgress.prestigeCurrency,
+      'prestige_multiplier': sessionProgress.prestigeMultiplier,
+      'prestige_count': sessionProgress.prestigeCount,
+      'upgrade_levels': sessionProgress.upgradeLevels,
+      'nexus_levels': sessionProgress.nexusLevels,
+      'highest_number_numeric': sessionProgress.highestNumber.toString(),
+      'progress_score': sessionProgress.progressScore,
+    });
+  }
 }

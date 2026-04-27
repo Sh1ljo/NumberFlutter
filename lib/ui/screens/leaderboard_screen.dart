@@ -5,6 +5,7 @@ import '../widgets/system_loading_indicator.dart';
 import '../../models/user_profile.dart';
 import '../../utils/number_formatter.dart';
 import '../../utils/network_error_utils.dart';
+import 'auth_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -101,36 +102,84 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _titleForScope(),
-                style: theme.textTheme.displayLarge?.copyWith(fontSize: 42),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _titleForScope(),
+                    style: theme.textTheme.displayLarge?.copyWith(fontSize: 32),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              const SizedBox(height: 20),
-              Expanded(
-                child: !supabase.isConfigured || !supabase.isInitialized
-                    ? Center(
-                        child: Text(
-                          'Leaderboard needs Supabase in assets/.env. You can still play offline from other tabs.',
-                          style: theme.textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    : StreamBuilder(
+            ),
+            Container(height: 2, color: theme.colorScheme.surfaceContainerLow),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 20),
+                    Expanded(
+                      child: !supabase.isConfigured || !supabase.isInitialized
+                          ? Center(
+                              child: Text(
+                                'Leaderboard needs Supabase in assets/.env. You can still play offline from other tabs.',
+                                style: theme.textTheme.bodyLarge,
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : StreamBuilder(
                         stream: supabase.authStateChanges(),
                         builder: (context, _) {
                           final session = supabase.currentSession;
                           if (session == null) {
                             return Center(
-                              child: Text(
-                                'Sign in under System to view global rankings. Your local progress is unchanged.',
-                                style: theme.textTheme.bodyLarge,
-                                textAlign: TextAlign.center,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'Sign in to view global rankings',
+                                    style: theme.textTheme.titleLarge,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Your local progress is unchanged. Create an account to compete on leaderboards.',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.outline,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 28),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => const AuthScreen(),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.login),
+                                    label: const Text('SIGN IN OR SIGN UP'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 32,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           }
@@ -310,9 +359,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           );
                         },
                       ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

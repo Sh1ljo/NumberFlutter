@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/game_state.dart';
@@ -83,7 +84,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
           _controller.value >= kPrestigeFirePoint &&
           mounted) {
         _prestigeCalled = true;
-        context.read<GameState>().prestige();
+        unawaited(context.read<GameState>().prestige());
       }
     });
 

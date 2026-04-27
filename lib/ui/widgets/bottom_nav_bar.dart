@@ -54,7 +54,7 @@ IconData _navIcon(int i) {
     case 2:
       return Icons.auto_awesome;
     case 3:
-      return Icons.leaderboard;
+      return Icons.share_outlined;
     default:
       return Icons.more_horiz;
   }
@@ -69,7 +69,7 @@ String _navLabel(int i) {
     case 2:
       return 'PRESTIGE';
     case 3:
-      return 'RANKS';
+      return 'NEURAL';
     default:
       return 'MORE';
   }
@@ -92,7 +92,8 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = isActive ? theme.colorScheme.primary : theme.colorScheme.outlineVariant;
+    final color =
+        isActive ? theme.colorScheme.primary : theme.colorScheme.outlineVariant;
     final scale = isActive ? 1.1 : 1.0;
 
     return GestureDetector(

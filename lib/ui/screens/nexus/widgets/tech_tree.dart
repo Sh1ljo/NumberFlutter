@@ -26,7 +26,7 @@ class TechTree extends StatelessWidget {
 
       final t1Y = nodeSize / 2;
       final t2Y = nodeSize + rowGap + nodeSize / 2;
-      final t3Y = nodeSize * 2 + rowGap * 2 + nodeSize / 2;
+      final t3Y = nodeSize * 2 + rowGap * 1.7 + nodeSize / 2;
 
       final positions = <String, Offset>{
         'opt_protocol': Offset(leftX, t1Y),

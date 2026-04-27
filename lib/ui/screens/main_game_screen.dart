@@ -8,6 +8,8 @@ import '../widgets/floating_tap_text.dart';
 import '../widgets/profile_editor_dialog.dart';
 import 'auth_screen.dart';
 import 'player_stats_screen.dart';
+import 'profile_screen.dart';
+import 'leaderboard_screen.dart';
 import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
@@ -105,7 +107,9 @@ class _MainGameScreenState extends State<MainGameScreen> {
         );
       }
       if (!mounted || supabase.currentSession == null) return;
-      await ProfileEditorDialog.show(context);
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -118,6 +122,12 @@ class _MainGameScreenState extends State<MainGameScreen> {
   Future<void> _openStatsScreen() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()),
+    );
+  }
+
+  Future<void> _openLeaderboard() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
     );
   }
 
@@ -160,9 +170,9 @@ class _MainGameScreenState extends State<MainGameScreen> {
                           Row(
                             children: [
                               IconButton(
-                                tooltip: 'Stats',
-                                onPressed: _openStatsScreen,
-                                icon: const Icon(Icons.bar_chart),
+                                tooltip: 'Ranks',
+                                onPressed: _openLeaderboard,
+                                icon: const Icon(Icons.emoji_events_outlined),
                               ),
                               IconButton(
                                 tooltip: 'Profile',
