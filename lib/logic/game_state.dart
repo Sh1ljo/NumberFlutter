@@ -5,6 +5,7 @@ import '../models/upgrade.dart';
 import '../models/research_node.dart';
 import '../models/player_progress.dart';
 import '../data/nexus_data.dart';
+import '../models/neural_network.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
 import 'supabase_service.dart';
@@ -85,6 +86,9 @@ class GameState extends ChangeNotifier {
   String? get lastCloudSyncError => _lastCloudSyncError;
 
   List<ResearchNode> researchNodes = NexusData.allNodes();
+
+  NeuralNetwork neuralNetwork = NeuralNetwork.initial();
+  bool get neuralNetworkUnlocked => true; // hardcoded; replace with nexus check later
 
   // ── Tutorial ───────────────────────────────────────────────────────────
   TutorialStep _tutorialStep = TutorialStep.welcome;
@@ -293,6 +297,66 @@ class GameState extends ChangeNotifier {
 
   /// ── end NEXUS ──────────────────────────────────────────────────────────
 
+  // ── Neural Network ─────────────────────────────────────────────────────
+
+  bool upgradeNeuronGradient(String neuronId) {
+    final neuron = neuralNetwork.findNeuron(neuronId);
+    if (neuron == null || neuron.isGradientMaxed) return false;
+    final cost = neuron.gradientUpgradeCost;
+    if (number < cost) return false;
+    number -= cost;
+    neuron.gradientLevel++;
+    notifyListeners();
+    _scheduleStateSave();
+    return true;
+  }
+
+  bool changeNeuronActivation(String neuronId, String fn) {
+    final neuron = neuralNetwork.findNeuron(neuronId);
+    if (neuron == null || neuron.activationFn == fn) return false;
+    final cost = neuron.activationChangeCost(fn);
+    if (cost > BigInt.zero && number < cost) return false;
+    if (cost > BigInt.zero) number -= cost;
+    neuron.activationFn = fn;
+    notifyListeners();
+    _scheduleStateSave();
+    return true;
+  }
+
+  bool addNeuralLayer() {
+    final cost = neuralNetwork.addLayerCost(neuralNetwork.layers.length);
+    if (number < cost) return false;
+    number -= cost;
+    final idx = neuralNetwork.layers.length;
+    neuralNetwork.layers.add(NeuralLayer(
+      index: idx,
+      neurons: [
+        NeuralNeuron(id: 'layer_${idx}_neuron_0'),
+        NeuralNeuron(id: 'layer_${idx}_neuron_1'),
+      ],
+    ));
+    notifyListeners();
+    _scheduleStateSave();
+    return true;
+  }
+
+  bool unlockNeuralNetwork() {
+    if (neuralNetwork.unlocked || number < BigInt.from(1000000)) return false;
+    number -= BigInt.from(1000000);
+    neuralNetwork.unlocked = true;
+    neuralNetwork.layers = [
+      NeuralLayer(
+        index: 0,
+        neurons: [NeuralNeuron(id: 'layer_0_neuron_0')],
+      ),
+    ];
+    notifyListeners();
+    _scheduleStateSave();
+    return true;
+  }
+
+  // ── end Neural Network ────────────────────────────────────────────────
+
   /// Increment added on the prestige with index [prestigeIndex] (0 = first prestige).
   static double prestigeDeltaAtIndex(int prestigeIndex) {
     const base = 0.028;
@@ -410,6 +474,15 @@ class GameState extends ChangeNotifier {
       }
 
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
+
+      final nnJson = data['neuralNetwork'] as String?;
+      if (nnJson != null) {
+        try {
+          neuralNetwork = NeuralNetwork.fromJsonString(nnJson);
+        } catch (_) {
+          neuralNetwork = NeuralNetwork.initial();
+        }
+      }
 
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
@@ -956,6 +1029,7 @@ class GameState extends ChangeNotifier {
     for (var n in researchNodes) {
       n.level = 0;
     }
+    neuralNetwork = NeuralNetwork.initial();
     if (!preserveTutorial) {
       _tutorialCompleted = false;
       _tutorialStep = TutorialStep.welcome;
@@ -1107,6 +1181,7 @@ class GameState extends ChangeNotifier {
       },
       tutorialCompleted: _tutorialCompleted,
       nexusStabilized: _nexusStabilized,
+      neuralNetworkJson: neuralNetwork.toJsonString(),
     );
     _lastSavedAt = DateTime.now();
 

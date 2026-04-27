@@ -15,6 +15,7 @@ class StorageService {
   static const String _keyNexusLevels = 'nexus_levels';
   static const String _keyTutorialCompleted = 'tutorialCompleted';
   static const String _keyNexusStabilized = 'nexusStabilized';
+  static const String _keyNeuralNetwork = 'neural_network';
 
   Future<void> saveGame({
     required BigInt number,
@@ -28,6 +29,7 @@ class StorageService {
     required Map<String, int> nexusLevels,
     required bool tutorialCompleted,
     required bool nexusStabilized,
+    String? neuralNetworkJson,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -42,6 +44,9 @@ class StorageService {
     await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
     await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
     await prefs.setBool(_keyNexusStabilized, nexusStabilized);
+    if (neuralNetworkJson != null) {
+      await prefs.setString(_keyNeuralNetwork, neuralNetworkJson);
+    }
     await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
@@ -99,6 +104,7 @@ class StorageService {
       'nexusLevels': nexusLevels,
       'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
+      'neuralNetwork': prefs.getString(_keyNeuralNetwork),
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,
@@ -119,5 +125,6 @@ class StorageService {
     await prefs.remove(_keyHighestNumber);
     await prefs.remove(_keyNexusLevels);
     await prefs.remove(_keyTutorialCompleted);
+    await prefs.remove(_keyNeuralNetwork);
   }
 }

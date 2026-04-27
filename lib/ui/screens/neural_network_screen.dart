@@ -6,6 +6,8 @@ import '../../utils/number_formatter.dart';
 import 'profile_screen.dart';
 import 'leaderboard_screen.dart';
 import 'auth_screen.dart';
+import 'neural_network/neural_canvas.dart';
+import 'neural_network/neural_unlock_screen.dart';
 
 class NeuralNetworkScreen extends StatefulWidget {
   const NeuralNetworkScreen({super.key});
@@ -62,6 +64,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -69,6 +72,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Top bar ──────────────────────────────────────────────────
             RepaintBoundary(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -78,7 +82,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.toll, color: theme.colorScheme.primary),
+                        Icon(Icons.toll, color: cs.primary),
                         const SizedBox(width: 8),
                         Selector<GameState, BigInt>(
                           selector: (_, state) => state.number,
@@ -110,13 +114,51 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                 ),
               ),
             ),
-            Container(height: 2, color: theme.colorScheme.surfaceContainerLow),
+            Container(height: 2, color: cs.surfaceContainerLow),
+
+            // ── Title ────────────────────────────────────────────────────
             Padding(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-              child: Text(
-                'NEURAL NETWORK',
-                style: theme.textTheme.displayLarge?.copyWith(fontSize: 48),
+                  const EdgeInsets.only(left: 24, right: 24, top: 16, bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'NEURAL',
+                    style: theme.textTheme.displayLarge?.copyWith(fontSize: 42),
+                  ),
+                  Text(
+                    'NETWORK',
+                    style: theme.textTheme.displayLarge?.copyWith(
+                      fontSize: 42,
+                      color: cs.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'TAP A NEURON TO UPGRADE',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      letterSpacing: 2.0,
+                      color: cs.outlineVariant,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Container(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
+
+            // ── Neural canvas ─────────────────────────────────────────────
+            Expanded(
+              child: Consumer<GameState>(
+                builder: (context, state, _) {
+                  if (!state.neuralNetwork.unlocked) {
+                    return const NeuralUnlockScreen();
+                  }
+                  return NeuralCanvas(network: state.neuralNetwork);
+                },
               ),
             ),
           ],

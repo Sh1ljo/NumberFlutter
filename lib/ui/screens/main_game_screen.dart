@@ -42,17 +42,6 @@ class _MainGameScreenState extends State<MainGameScreen> {
     // Remove taps older than 1 second
     _recentTaps.removeWhere((tap) => now.difference(tap).inMilliseconds > 1000);
     if (_recentTaps.length >= 30) {
-      if (now.difference(_lastWarningTime).inSeconds > 3) {
-        _lastWarningTime = now;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content:
-                Text("You really thought you could autoclick?... No chance"),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
       return;
     }
     _recentTaps.add(now);
