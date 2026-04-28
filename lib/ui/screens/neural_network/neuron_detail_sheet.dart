@@ -9,6 +9,156 @@ class NeuronDetailSheet extends StatelessWidget {
 
   const NeuronDetailSheet({super.key, required this.neuron});
 
+  Widget _buildArchitectureBody({
+    required BuildContext context,
+    required ThemeData theme,
+    required ColorScheme cs,
+    required NeuralNeuron neuron,
+    required NeuronBranchBlock? blockReason,
+    required bool canAffordBranch,
+    required BigInt branchCost,
+    required int activeLayerIdx,
+  }) {
+    if (blockReason == NeuronBranchBlock.alreadyBranched) {
+      return _statusPill(
+        theme: theme,
+        cs: cs,
+        text: 'BRANCHED ✓',
+        accent: true,
+      );
+    }
+    if (blockReason == NeuronBranchBlock.terminal ||
+        blockReason == NeuronBranchBlock.networkComplete) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _statusPill(
+            theme: theme,
+            cs: cs,
+            text: blockReason == NeuronBranchBlock.networkComplete
+                ? 'NETWORK COMPLETE'
+                : 'TERMINAL NEURON',
+            accent: false,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            blockReason == NeuronBranchBlock.networkComplete
+                ? 'The pyramid is fully expanded — no more layers can be added.'
+                : 'This neuron sits at a position that does not branch in the pyramid.',
+            style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+          ),
+        ],
+      );
+    }
+    if (blockReason == NeuronBranchBlock.previousLayerIncomplete) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _statusPill(
+            theme: theme,
+            cs: cs,
+            text: 'LAYER LOCKED',
+            accent: false,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Finish branching layer $activeLayerIdx before this layer can be expanded.',
+            style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+          ),
+        ],
+      );
+    }
+
+    // Eligible to branch.
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Branch this neuron to expand the network.',
+                style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Cost: ${NumberFormatter.format(branchCost)}',
+                style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        OutlinedButton(
+          onPressed: canAffordBranch
+              ? () {
+                  final ok = context
+                      .read<GameState>()
+                      .branchNeuron(neuron.id);
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    if (!ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Not enough currency.'),
+                        ),
+                      );
+                    }
+                  }
+                }
+              : null,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: cs.primary,
+            disabledForegroundColor: cs.outline.withValues(alpha: 0.5),
+            side: BorderSide(
+              color: canAffordBranch ? cs.primary : cs.outlineVariant,
+              width: 1,
+            ),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(2)),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          child: const Text(
+            'BRANCH',
+            style: TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+                fontSize: 11),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _statusPill({
+    required ThemeData theme,
+    required ColorScheme cs,
+    required String text,
+    required bool accent,
+  }) {
+    final color = accent ? cs.primary : cs.outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+        borderRadius: BorderRadius.circular(2),
+        color: accent
+            ? cs.primary.withValues(alpha: 0.06)
+            : cs.surfaceContainerLow.withValues(alpha: 0.5),
+      ),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.5,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
   static void show(BuildContext context, NeuralNeuron neuron) {
     showModalBottomSheet<void>(
       context: context,
@@ -34,9 +184,18 @@ class NeuronDetailSheet extends StatelessWidget {
         final gradientCost = currentNeuron.gradientUpgradeCost;
         final canAffordGradient =
             !currentNeuron.isGradientMaxed && state.number >= gradientCost;
-        final layerCost =
+
+        final canBranch = state.neuralNetwork.canNeuronBranch(currentNeuron.id);
+        final blockReason =
+            state.neuralNetwork.branchBlockReason(currentNeuron.id);
+        final branchCost =
             state.neuralNetwork.addLayerCost(state.neuralNetwork.layers.length);
-        final canAffordLayer = state.number >= layerCost;
+        final canAffordBranch = canBranch && state.number >= branchCost;
+        final activeLayerIdx = state.neuralNetwork.activeExpansionLayerIndex;
+
+        final selectedFn = currentNeuron.activationFn;
+        final fnDescription =
+            activationFunctionDescriptions[selectedFn] ?? '';
 
         return Container(
           decoration: BoxDecoration(
@@ -146,7 +305,6 @@ class NeuronDetailSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // Level dots
                     Row(
                       children: List.generate(5, (i) {
                         final filled = i < currentNeuron.gradientLevel;
@@ -168,7 +326,6 @@ class NeuronDetailSheet extends StatelessWidget {
                           ),
                         );
                       }),
-                      // Remaining text
                     ),
                     const SizedBox(height: 8),
                     if (!currentNeuron.isGradientMaxed)
@@ -250,7 +407,7 @@ class NeuronDetailSheet extends StatelessWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: activationFunctions.map((fn) {
-                        final selected = fn == currentNeuron.activationFn;
+                        final selected = fn == selectedFn;
                         final cost = currentNeuron.activationChangeCost(fn);
                         final canAfford =
                             cost == BigInt.zero || state.number >= cost;
@@ -329,6 +486,15 @@ class NeuronDetailSheet extends StatelessWidget {
                         );
                       }).toList(),
                     ),
+                    // Description of the selected activation function
+                    const SizedBox(height: 10),
+                    Text(
+                      fnDescription,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.outline,
+                        height: 1.5,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -353,70 +519,15 @@ class NeuronDetailSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Adds 2 neurons to a new hidden layer on the right',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: cs.outline),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Cost: ${NumberFormatter.format(layerCost)}',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: cs.outline),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton(
-                          onPressed: canAffordLayer
-                              ? () {
-                                  final ok = context
-                                      .read<GameState>()
-                                      .addNeuralLayer();
-                                  if (context.mounted) {
-                                    Navigator.of(context).pop();
-                                    if (!ok) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content:
-                                                Text('Not enough currency.')),
-                                      );
-                                    }
-                                  }
-                                }
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: cs.primary,
-                            disabledForegroundColor:
-                                cs.outline.withValues(alpha: 0.5),
-                            side: BorderSide(
-                              color: canAffordLayer
-                                  ? cs.primary
-                                  : cs.outlineVariant,
-                              width: 1,
-                            ),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(2)),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                          ),
-                          child: const Text(
-                            'ADD LAYER',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.5,
-                                fontSize: 11),
-                          ),
-                        ),
-                      ],
+                    _buildArchitectureBody(
+                      context: context,
+                      theme: theme,
+                      cs: cs,
+                      neuron: currentNeuron,
+                      blockReason: blockReason,
+                      canAffordBranch: canAffordBranch,
+                      branchCost: branchCost,
+                      activeLayerIdx: activeLayerIdx,
                     ),
                   ],
                 ),

@@ -39,7 +39,7 @@ class GameState extends ChangeNotifier {
   Future<void> get ready => _readyCompleter.future;
 
   BigInt number = BigInt.zero;
-  BigInt clickPower = BigInt.from(50);
+  BigInt clickPower = BigInt.from(500);
   Object _prestigeCurrency = 0.0;
   double get prestigeCurrency {
     final value = _prestigeCurrency;
@@ -88,7 +88,9 @@ class GameState extends ChangeNotifier {
   List<ResearchNode> researchNodes = NexusData.allNodes();
 
   NeuralNetwork neuralNetwork = NeuralNetwork.initial();
-  bool get neuralNetworkUnlocked => true; // hardcoded; replace with nexus check later
+  // TESTING: Neural Network unlocked by default. Re-enable upgrade gate when ready.
+  bool get neuralNetworkUnlocked => true;
+  // bool get neuralNetworkUnlocked => _nexusLevel('neural_genesis') >= 1;
 
   // ── Tutorial ───────────────────────────────────────────────────────────
   TutorialStep _tutorialStep = TutorialStep.welcome;
@@ -291,6 +293,15 @@ class GameState extends ChangeNotifier {
     if (prestigeCurrency < cost) return;
     prestigeCurrency -= cost;
     node.level++;
+    if (nodeId == 'neural_genesis' && !neuralNetwork.unlocked) {
+      neuralNetwork.unlocked = true;
+      neuralNetwork.layers = [
+        NeuralLayer(
+          index: 0,
+          neurons: [NeuralNeuron(id: 'layer_0_neuron_0')],
+        ),
+      ];
+    }
     notifyListeners();
     _saveState();
   }
@@ -323,33 +334,61 @@ class GameState extends ChangeNotifier {
     return true;
   }
 
-  bool addNeuralLayer() {
+  bool branchNeuron(String neuronId) {
+    if (!neuralNetwork.canNeuronBranch(neuronId)) return false;
     final cost = neuralNetwork.addLayerCost(neuralNetwork.layers.length);
     if (number < cost) return false;
-    number -= cost;
-    final idx = neuralNetwork.layers.length;
-    neuralNetwork.layers.add(NeuralLayer(
-      index: idx,
-      neurons: [
-        NeuralNeuron(id: 'layer_${idx}_neuron_0'),
-        NeuralNeuron(id: 'layer_${idx}_neuron_1'),
-      ],
-    ));
-    notifyListeners();
-    _scheduleStateSave();
-    return true;
-  }
 
-  bool unlockNeuralNetwork() {
-    if (neuralNetwork.unlocked || number < BigInt.from(1000000)) return false;
-    number -= BigInt.from(1000000);
-    neuralNetwork.unlocked = true;
-    neuralNetwork.layers = [
-      NeuralLayer(
-        index: 0,
-        neurons: [NeuralNeuron(id: 'layer_0_neuron_0')],
-      ),
-    ];
+    final neuron = neuralNetwork.findNeuron(neuronId);
+    final layer = neuralNetwork.findNeuronLayer(neuronId);
+    if (neuron == null || layer == null) return false;
+
+    number -= cost;
+    neuron.hasBranched = true;
+
+    // Spawn this parent's slice of the next layer immediately, so children
+    // appear as each sibling branches rather than all at once at the end.
+    final nextIdx = layer.index + 1;
+    final targetNext = NeuralNetwork.targetNeuronCountForLayer(nextIdx);
+    if (targetNext > 0) {
+      int eligibleCount = 0;
+      int eligibleIndexOfParent = -1;
+      for (int i = 0; i < layer.neurons.length; i++) {
+        if (!NeuralNetwork.isEligibleParentIndex(layer.index, i)) continue;
+        if (layer.neurons[i].id == neuron.id) {
+          eligibleIndexOfParent = eligibleCount;
+        }
+        eligibleCount++;
+      }
+
+      if (eligibleCount > 0 && eligibleIndexOfParent >= 0) {
+        NeuralLayer? nextLayer = neuralNetwork.layers
+            .where((l) => l.index == nextIdx)
+            .firstOrNull;
+        if (nextLayer == null) {
+          nextLayer = NeuralLayer(index: nextIdx, neurons: []);
+          neuralNetwork.layers.add(nextLayer);
+        }
+
+        final perParent = targetNext ~/ eligibleCount;
+        final startSlot = eligibleIndexOfParent * perParent;
+        final existingIds = nextLayer.neurons.map((n) => n.id).toSet();
+        for (int c = 0; c < perParent; c++) {
+          final slot = startSlot + c;
+          final id = 'layer_${nextIdx}_neuron_$slot';
+          if (!existingIds.contains(id)) {
+            nextLayer.neurons.add(NeuralNeuron(id: id));
+          }
+        }
+        // Keep neurons ordered by slot so the painter draws stable positions.
+        nextLayer.neurons.sort((a, b) {
+          final aSlot = int.tryParse(a.id.split('_').last) ?? 0;
+          final bSlot = int.tryParse(b.id.split('_').last) ?? 0;
+          return aSlot.compareTo(bSlot);
+        });
+      }
+    }
+
     notifyListeners();
     _scheduleStateSave();
     return true;
@@ -483,6 +522,17 @@ class GameState extends ChangeNotifier {
           neuralNetwork = NeuralNetwork.initial();
         }
       }
+      // TESTING: force unlock loaded save and seed a starter neuron if empty.
+      // Remove this block when the Neural Genesis upgrade gate is re-enabled.
+      neuralNetwork.unlocked = true;
+      if (neuralNetwork.layers.isEmpty) {
+        neuralNetwork.layers = [
+          NeuralLayer(
+            index: 0,
+            neurons: [NeuralNeuron(id: 'layer_0_neuron_0')],
+          ),
+        ];
+      }
 
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
@@ -577,7 +627,7 @@ class GameState extends ChangeNotifier {
   }
 
   void _recalculateDerivedStatsFromUpgrades() {
-    clickPower = BigInt.from(50);
+    clickPower = BigInt.from(500);
     autoClickRate = 0.0;
 
     for (final upgrade in upgrades) {
@@ -967,7 +1017,7 @@ class GameState extends ChangeNotifier {
     prestigeCount += 1;
 
     number = BigInt.zero;
-    clickPower = BigInt.from(50);
+    clickPower = BigInt.from(500);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -1004,7 +1054,7 @@ class GameState extends ChangeNotifier {
 
   Future<void> hardReset({bool preserveTutorial = false}) async {
     number = BigInt.zero;
-    clickPower = BigInt.from(50);
+    clickPower = BigInt.from(500);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;

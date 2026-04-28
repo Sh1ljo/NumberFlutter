@@ -4,8 +4,15 @@ import '../../../models/neural_network.dart';
 class NeuronWidget extends StatefulWidget {
   final NeuralNeuron neuron;
   final VoidCallback onTap;
+  // When true, the neuron is eligible for branching and should be highlighted.
+  final bool highlight;
 
-  const NeuronWidget({super.key, required this.neuron, required this.onTap});
+  const NeuronWidget({
+    super.key,
+    required this.neuron,
+    required this.onTap,
+    this.highlight = false,
+  });
 
   @override
   State<NeuronWidget> createState() => _NeuronWidgetState();
@@ -46,7 +53,8 @@ class _NeuronWidgetState extends State<NeuronWidget>
 
     // Outer ring opacity increases with gradient level
     final ringBaseOpacity = 0.20 + level * 0.08;
-    final innerAlpha = level == 0 ? 0.45 : (0.55 + level * 0.09).clamp(0.0, 1.0);
+    final innerAlpha =
+        level == 0 ? 0.45 : (0.55 + level * 0.09).clamp(0.0, 1.0);
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -83,8 +91,8 @@ class _NeuronWidgetState extends State<NeuronWidget>
                   Transform.scale(
                     scale: _scale.value * 0.8,
                     child: Opacity(
-                      opacity:
-                          (_opacity.value * 0.5 * ((level - 2) / 3)).clamp(0.0, 1.0),
+                      opacity: (_opacity.value * 0.5 * ((level - 2) / 3))
+                          .clamp(0.0, 1.0),
                       child: Container(
                         width: 28,
                         height: 28,
@@ -109,6 +117,23 @@ class _NeuronWidgetState extends State<NeuronWidget>
                         : cs.primary.withValues(alpha: innerAlpha),
                   ),
                 ),
+                // Highlight overlay for branchable neurons
+                if (widget.highlight)
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      // Subtle accent that respects the current theme.
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.secondary.withValues(alpha: 0.25),
+                          spreadRadius: 2,
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
           },

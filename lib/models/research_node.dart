@@ -64,4 +64,5 @@ abstract class ResearchEffect {
   static const String momentumCap = 'momentum_cap';
   static const String idleMult = 'idle_mult';
   static const String prestigePointsMult = 'prestige_points_mult';
+  static const String neuralUnlock = 'neural_unlock';
 }

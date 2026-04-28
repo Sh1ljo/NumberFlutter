@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/game_state.dart';
-import '../../../utils/number_formatter.dart';
 
 class NeuralUnlockScreen extends StatefulWidget {
   const NeuralUnlockScreen({super.key});
@@ -36,7 +35,19 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
 
     return Consumer<GameState>(
       builder: (context, state, _) {
-        final canUnlock = state.number >= BigInt.from(1000000);
+        final resonance =
+            state.researchNodes.where((n) => n.id == 'resonance_core').firstOrNull;
+        final echo =
+            state.researchNodes.where((n) => n.id == 'echo_protocol').firstOrNull;
+        final genesis =
+            state.researchNodes.where((n) => n.id == 'neural_genesis').firstOrNull;
+
+        final resonanceLevel = resonance?.level ?? 0;
+        final echoLevel = echo?.level ?? 0;
+        final resonanceMet = resonanceLevel >= 5;
+        final echoMet = echoLevel >= 5;
+        final genesisAvailable =
+            genesis != null && genesis.prereqsMet(state.researchNodes);
 
         return Center(
           child: SingleChildScrollView(
@@ -44,27 +55,28 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Animated pulsing locked neuron
                 AnimatedBuilder(
                   animation: _pulseCtrl,
                   builder: (_, __) {
                     final scale = Tween<double>(begin: 1.0, end: 1.2)
-                        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut))
+                        .animate(CurvedAnimation(
+                            parent: _pulseCtrl, curve: Curves.easeInOut))
                         .value;
                     final opacity = Tween<double>(begin: 0.3, end: 0.8)
-                        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut))
+                        .animate(CurvedAnimation(
+                            parent: _pulseCtrl, curve: Curves.easeInOut))
                         .value;
 
                     return Transform.scale(
                       scale: scale,
                       child: Container(
-                        width: 120,
-                        height: 120,
+                        width: 60,
+                        height: 60,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: cs.primary,
-                            width: 2.0 * scale,
+                            width: 1.5 * scale,
                           ),
                         ),
                         child: Stack(
@@ -73,20 +85,20 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                             Opacity(
                               opacity: opacity,
                               child: Container(
-                                width: 80,
-                                height: 80,
+                                width: 40,
+                                height: 40,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: cs.primary,
-                                    width: 1.5,
+                                    width: 1.0,
                                   ),
                                 ),
                               ),
                             ),
                             Container(
-                              width: 40,
-                              height: 40,
+                              width: 20,
+                              height: 20,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: cs.primary.withValues(alpha: opacity),
@@ -109,7 +121,7 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Unlock the power of neural networks to evolve your number generation.',
+                  'Locked. Awaken this system from the NEXUS.',
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: cs.outline,
                   ),
@@ -119,90 +131,52 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 12,
+                    vertical: 14,
                   ),
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: canUnlock ? cs.primary : cs.outlineVariant,
+                      color: genesisAvailable ? cs.primary : cs.outlineVariant,
                       width: 1,
                     ),
                     borderRadius: BorderRadius.circular(2),
                     color: cs.surfaceContainerLow.withValues(alpha: 0.5),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'UNLOCK COST',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              letterSpacing: 2.0,
-                              color: cs.outline,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            NumberFormatter.format(BigInt.from(1000000)),
-                            style: theme.textTheme.titleLarge,
-                          ),
-                        ],
-                      ),
-                      if (canUnlock)
-                        Text(
-                          '✓ Ready',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: cs.primary,
-                            letterSpacing: 1.5,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11,
-                          ),
-                        )
-                      else
-                        Text(
-                          '${NumberFormatter.format(BigInt.from(1000000) - state.number)} more',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: cs.outlineVariant,
-                            letterSpacing: 1.0,
-                            fontSize: 10,
-                          ),
+                      Text(
+                        'NEXUS REQUIREMENT',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          letterSpacing: 2.0,
+                          color: cs.outline,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      _PrereqRow(
+                        label: 'Resonance Core',
+                        current: resonanceLevel,
+                        target: 5,
+                        met: resonanceMet,
+                      ),
+                      const SizedBox(height: 6),
+                      _PrereqRow(
+                        label: 'Echo Protocol',
+                        current: echoLevel,
+                        target: 5,
+                        met: echoMet,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        genesisAvailable
+                            ? 'Purchase NEURAL GENESIS in the Nexus to begin.'
+                            : 'Both prerequisites must reach Lv 5 to reveal Neural Genesis.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: genesisAvailable ? cs.primary : cs.outlineVariant,
+                        ),
+                      ),
                     ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: canUnlock
-                        ? () {
-                            context
-                                .read<GameState>()
-                                .unlockNeuralNetwork();
-                          }
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: cs.primary,
-                      disabledBackgroundColor: cs.surfaceContainerHigh,
-                      foregroundColor: cs.onPrimary,
-                      disabledForegroundColor:
-                          cs.outline.withValues(alpha: 0.5),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    child: Text(
-                      canUnlock ? 'UNLOCK NETWORK' : 'KEEP BUILDING',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2.0,
-                        fontSize: 13,
-                      ),
-                    ),
                   ),
                 ),
               ],
@@ -210,6 +184,53 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _PrereqRow extends StatelessWidget {
+  final String label;
+  final int current;
+  final int target;
+  final bool met;
+
+  const _PrereqRow({
+    required this.label,
+    required this.current,
+    required this.target,
+    required this.met,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final color = met ? cs.primary : cs.outlineVariant;
+
+    return Row(
+      children: [
+        Icon(
+          met ? Icons.check_circle_outline : Icons.radio_button_unchecked,
+          size: 16,
+          color: color,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(color: color),
+          ),
+        ),
+        Text(
+          'Lv $current / $target',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: color,
+            letterSpacing: 1.5,
+            fontWeight: FontWeight.w700,
+            fontSize: 10,
+          ),
+        ),
+      ],
     );
   }
 }

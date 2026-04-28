@@ -124,5 +124,22 @@ abstract class NexusData {
           baseCostPerLevel: 4.0,
           costsScale: true,
         ),
+
+        // ── TIER IV ─────────────────────────────────────────────────────────
+
+        ResearchNode(
+          id: 'neural_genesis',
+          name: 'Neural Genesis',
+          description:
+              'Awakens the Neural Network. Unlocks a new system where you can grow and tune neurons.',
+          icon: Icons.psychology,
+          tier: 4,
+          prereqLevels: {'resonance_core': 5, 'echo_protocol': 5},
+          effectType: ResearchEffect.neuralUnlock,
+          effectPerLevel: 1.0,
+          maxLevel: 1,
+          baseCostPerLevel: 50.0,
+          costsScale: false,
+        ),
       ];
 }

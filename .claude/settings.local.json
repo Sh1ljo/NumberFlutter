@@ -4,7 +4,8 @@
       "Bash(xargs grep *)",
       "Bash(dart analyze *)",
       "Bash(flutter analyze *)",
-      "Bash(flutter pub *)"
+      "Bash(flutter pub *)",
+      "Bash(grep -E \"\\\\.dart$\")"
     ]
   }
 }

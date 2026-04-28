@@ -27,6 +27,7 @@ class TechTree extends StatelessWidget {
       final t1Y = nodeSize / 2;
       final t2Y = nodeSize + rowGap + nodeSize / 2;
       final t3Y = nodeSize * 2 + rowGap * 1.7 + nodeSize / 2;
+      final t4Y = nodeSize * 3 + rowGap * 2.4 + nodeSize / 2;
 
       final positions = <String, Offset>{
         'opt_protocol': Offset(leftX, t1Y),
@@ -37,6 +38,7 @@ class TechTree extends StatelessWidget {
         'kinetic_surge': Offset(kineticX, t2Y),
         'resonance_core': Offset(leftX, t3Y),
         'echo_protocol': Offset(rightX, t3Y),
+        'neural_genesis': Offset(centerX, t4Y),
       };
 
       final connections = [
@@ -45,9 +47,11 @@ class TechTree extends StatelessWidget {
         ['surge_protocol', 'kinetic_surge'],
         ['idle_foundation', 'resonance_core'],
         ['enhanced_extraction', 'echo_protocol'],
+        ['resonance_core', 'neural_genesis'],
+        ['echo_protocol', 'neural_genesis'],
       ];
 
-      final totalH = nodeSize * 3 + rowGap * 2;
+      final totalH = nodeSize * 4 + rowGap * 3;
 
       return SizedBox(
         width: W,

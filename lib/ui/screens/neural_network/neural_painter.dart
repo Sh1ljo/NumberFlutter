@@ -47,9 +47,16 @@ class NeuralPainter extends CustomPainter {
           linePaint.color = cs.primary.withValues(alpha: 0.12);
           canvas.drawLine(from, to, linePaint);
 
-          // Animated pulse dot travelling along the line
-          final phase =
-              (lineIndex / math.max(totalLines, 1) + animationValue) % 1.0;
+          // Animated pulse dot travelling along the line.
+          // Introduce a per‑connection random offset so not all dots move in lock‑step.
+          // We derive a deterministic pseudo‑random offset from the line index to keep
+          // the animation stable across rebuilds without storing extra state.
+          // The offset range is [0, 0.5) to keep the variation subtle.
+          final lineOffset = ((lineIndex * 73) % 100) / 200.0; // 0‑0.495 step
+          final phase = (lineIndex / math.max(totalLines, 1) +
+                  animationValue +
+                  lineOffset) %
+              1.0;
           final pulsePos = Offset(
             from.dx + (to.dx - from.dx) * phase,
             from.dy + (to.dy - from.dy) * phase,
