@@ -55,26 +55,40 @@ class SyncService {
       return SyncResult(resolved: local, winner: SyncWinner.local);
     }
 
+    final mergedLowestLoss = remote.neuralLowestLoss < local.neuralLowestLoss
+        ? remote.neuralLowestLoss
+        : local.neuralLowestLoss;
+
+    SyncResult buildResult(PlayerProgress base, SyncWinner winner) {
+      // Always carry the lifetime-best lowestLoss across both sides — it's a
+      // monotonic achievement, not a per-snapshot stat, so it shouldn't get
+      // overwritten when the other side happens to win the timestamp race.
+      return SyncResult(
+        resolved: base.copyWith(neuralLowestLoss: mergedLowestLoss),
+        winner: winner,
+      );
+    }
+
     if (remote.updatedAt.isAfter(local.updatedAt)) {
-      return SyncResult(resolved: remote, winner: SyncWinner.remote);
+      return buildResult(remote, SyncWinner.remote);
     }
     if (local.updatedAt.isAfter(remote.updatedAt)) {
-      return SyncResult(resolved: local, winner: SyncWinner.local);
+      return buildResult(local, SyncWinner.local);
     }
 
     if (remote.normalizedHighestNumber > local.normalizedHighestNumber) {
-      return SyncResult(resolved: remote, winner: SyncWinner.remote);
+      return buildResult(remote, SyncWinner.remote);
     }
     if (remote.normalizedHighestNumber < local.normalizedHighestNumber) {
-      return SyncResult(resolved: local, winner: SyncWinner.local);
+      return buildResult(local, SyncWinner.local);
     }
 
     if (remote.progressScore > local.progressScore) {
-      return SyncResult(resolved: remote, winner: SyncWinner.remote);
+      return buildResult(remote, SyncWinner.remote);
     }
     if (remote.progressScore < local.progressScore) {
-      return SyncResult(resolved: local, winner: SyncWinner.local);
+      return buildResult(local, SyncWinner.local);
     }
-    return SyncResult(resolved: local, winner: SyncWinner.local);
+    return buildResult(local, SyncWinner.local);
   }
 }

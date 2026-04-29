@@ -300,6 +300,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       height: 1, color: theme.colorScheme.surfaceContainerLow),
                   const SizedBox(height: 32),
 
+                  // Category: Testing
+                  _buildSectionTitle(context, '02. TESTING'),
+                  Container(
+                    decoration: BoxDecoration(
+                        border: Border.all(
+                            color: theme.colorScheme.surfaceContainerLow)),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Add Prestige Points',
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontSize: 20)),
+                        const SizedBox(height: 4),
+                        Text('For testing purposes only',
+                            style: theme.textTheme.labelSmall
+                                ?.copyWith(fontSize: 10)),
+                        const SizedBox(height: 24),
+                        OutlinedButton(
+                          onPressed: () {
+                            gameState.addPrestigePointsForTesting(500);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Added 500 prestige points'),
+                              ),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: theme.colorScheme.primary,
+                            side: BorderSide(
+                                color: theme.colorScheme.primary, width: 1.5),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(2)),
+                          ),
+                          child: const Text('ADD 500 PRESTIGE POINTS'),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+                  Container(
+                      height: 1, color: theme.colorScheme.surfaceContainerLow),
+                  const SizedBox(height: 32),
+
                   // Category: Legal & Info
                   _buildSectionTitle(context, '03. INFORMATION'),
                   _buildInfoRow(context, 'Software Version', '0.01'),

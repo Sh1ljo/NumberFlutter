@@ -30,6 +30,9 @@ class GameState extends ChangeNotifier {
   static const String clickPowerId = 'click_power';
   static const String autoClickerId = 'idle_auto_clicker';
   static const String quantumMultiplierId = 'idle_quantum_multiplier';
+  static const String dimensionalTapId = 'click_dimensional_tap';
+  static const String cascadeResonatorId = 'idle_cascade_resonator';
+  static const String temporalCollapseId = 'click_temporal_collapse';
 
   final StorageService _storageService = StorageService();
   final SyncService _syncService = SyncService();
@@ -39,8 +42,8 @@ class GameState extends ChangeNotifier {
   Future<void> get ready => _readyCompleter.future;
 
   BigInt number = BigInt.zero;
-  BigInt clickPower = BigInt.from(500);
-  Object _prestigeCurrency = 0.0;
+  BigInt clickPower = BigInt.from(10000);
+  Object _prestigeCurrency = 10000.0;
   double get prestigeCurrency {
     final value = _prestigeCurrency;
     if (value is num) return value.toDouble();
@@ -56,7 +59,7 @@ class GameState extends ChangeNotifier {
   double prestigeMultiplier = 1.0;
 
   /// How many prestiges completed (used for incremental gains).
-  int prestigeCount = 0;
+  int prestigeCount = 500;
 
   /// Whether the nexus has been stabilized (persisted).
   bool _nexusStabilized = false;
@@ -73,8 +76,11 @@ class GameState extends ChangeNotifier {
   double _momentumMultiplier = 1.0;
   double _momentumProgress = 0.0;
   bool _overclockActive = false;
+  bool _temporalCollapseActive = false;
+  bool _temporalCollapseCoolingDown = false;
 
   BigInt offlineGainsThisSession = BigInt.zero;
+  double offlineAccuracyGain = 0.0;
   BigInt highestNumber = BigInt.zero;
   DateTime? _lastSavedAt;
   DateTime? _lastCloudPushAt;
@@ -88,20 +94,24 @@ class GameState extends ChangeNotifier {
   List<ResearchNode> researchNodes = NexusData.allNodes();
 
   NeuralNetwork neuralNetwork = NeuralNetwork.initial();
-  // TESTING: Neural Network unlocked by default. Re-enable upgrade gate when ready.
-  bool get neuralNetworkUnlocked => true;
-  // bool get neuralNetworkUnlocked => _nexusLevel('neural_genesis') >= 1;
+  bool get neuralNetworkUnlocked => _nexusLevel('neural_genesis') >= 1;
 
   // ── Tutorial ───────────────────────────────────────────────────────────
   TutorialStep _tutorialStep = TutorialStep.welcome;
   bool _tutorialCompleted = false;
   bool _tutorialNeedsCloudSync = false;
+  // Secondary tutorials run after the main onboarding ends. They reuse the
+  // same overlay and step machine but each has its own "seen" flag so they
+  // fire exactly once and don't roundtrip through cloud profile sync.
+  bool _nexusTutorialSeen = false;
+  bool _neuralTutorialSeen = false;
   VoidCallback? _onTutorialResetCallback;
 
   TutorialStep get tutorialStep => _tutorialStep;
   bool get tutorialCompleted => _tutorialCompleted;
-  bool get isTutorialActive =>
-      !_tutorialCompleted && _tutorialStep != TutorialStep.done;
+  bool get isTutorialActive => _tutorialStep != TutorialStep.done;
+  bool get nexusTutorialSeen => _nexusTutorialSeen;
+  bool get neuralTutorialSeen => _neuralTutorialSeen;
 
   void registerTutorialResetCallback(VoidCallback cb) {
     _onTutorialResetCallback = cb;
@@ -114,12 +124,18 @@ class GameState extends ChangeNotifier {
 
   void stabilizeNexus() {
     _nexusStabilized = true;
+    if (!_nexusTutorialSeen && _tutorialStep == TutorialStep.done) {
+      _tutorialStep = TutorialStep.nexusIntro;
+    }
+    notifyListeners();
     _scheduleStateSave();
   }
 
   Timer? _ticker;
   Timer? _overclockTimer;
   Timer? _saveDebounceTimer;
+  Timer? _temporalCollapseActiveTimer;
+  Timer? _temporalCollapseCooldownTimerRef;
   static const Duration _saveDebounceDuration = Duration(milliseconds: 350);
 
   // Upgrades
@@ -235,6 +251,38 @@ class GameState extends ChangeNotifier {
       effectType: idleCategory,
       effectValue: 1000000.0,
     ),
+    Upgrade(
+      id: dimensionalTapId,
+      name: 'Dimensional Tap',
+      description:
+          'Each level adds click power equal to 500× your prestige multiplier. Scales with every prestige. Requires 1 prestige.',
+      baseCost: BigInt.from(500000000),
+      costMultiplier: 2.10,
+      effectType: clickCategory,
+      effectValue: 0,
+    ),
+    Upgrade(
+      id: cascadeResonatorId,
+      name: 'Cascade Resonator',
+      description:
+          'Doubles your total idle rate per level (×2, ×4, ×8…). Requires 5 prestiges.',
+      baseCost: BigInt.from(5000000000),
+      costMultiplier: 4.0,
+      maxLevel: 5,
+      effectType: idleCategory,
+      effectValue: 0.0,
+    ),
+    Upgrade(
+      id: temporalCollapseId,
+      name: 'Temporal Collapse',
+      description:
+          'Active: collapses 60s of idle into an instant burst and doubles your prestige multiplier for a short time. Cooldown decreases per level. Requires 8 prestiges.',
+      baseCost: BigInt.from(50000000000),
+      costMultiplier: 3.5,
+      maxLevel: 5,
+      effectType: clickCategory,
+      effectValue: 0,
+    ),
   ];
 
   GameState() {
@@ -302,6 +350,11 @@ class GameState extends ChangeNotifier {
         ),
       ];
     }
+    if (nodeId == 'neural_genesis' &&
+        !_neuralTutorialSeen &&
+        _tutorialStep == TutorialStep.done) {
+      _tutorialStep = TutorialStep.neuralUnlocked;
+    }
     notifyListeners();
     _saveState();
   }
@@ -329,6 +382,7 @@ class GameState extends ChangeNotifier {
     if (cost > BigInt.zero && number < cost) return false;
     if (cost > BigInt.zero) number -= cost;
     neuron.activationFn = fn;
+    if (fn != 'linear') neuron.unlockedActivations.add(fn);
     notifyListeners();
     _scheduleStateSave();
     return true;
@@ -398,8 +452,8 @@ class GameState extends ChangeNotifier {
 
   /// Increment added on the prestige with index [prestigeIndex] (0 = first prestige).
   static double prestigeDeltaAtIndex(int prestigeIndex) {
-    const base = 0.028;
-    const perStep = 0.011;
+    const base = 0.20;
+    const perStep = 0.05;
     return base + prestigeIndex * perStep;
   }
 
@@ -430,7 +484,7 @@ class GameState extends ChangeNotifier {
   /// Starts at 10,000 and increases exponentially each prestige.
   static BigInt prestigeRequirementAtCount(int count) {
     const baseRequirement = 10000.0;
-    const growthPerPrestige = 1.32;
+    const growthPerPrestige = 2.5;
     final scaled = baseRequirement * math.pow(growthPerPrestige, count);
     return BigInt.from(scaled.floor());
   }
@@ -438,8 +492,8 @@ class GameState extends ChangeNotifier {
   /// Fixed prestige point reward for the next prestige (independent of current number).
   /// First prestige gives 1.0 point, then grows exponentially.
   static double prestigeRewardAtCount(int count) {
-    const baseReward = 1.0;
-    const growthPerPrestige = 1.18;
+    const baseReward = 3.0;
+    const growthPerPrestige = 1.35;
     return baseReward * math.pow(growthPerPrestige, count);
   }
 
@@ -448,6 +502,12 @@ class GameState extends ChangeNotifier {
     final requirement = prestigeRequirement;
     if (currentNumber < requirement) return 0.0;
     return nextPrestigeReward * prestigePointsMultiplier;
+  }
+
+  // Testing utility: add prestige currency directly
+  void addPrestigePointsForTesting(int amount) {
+    prestigeCurrency = (prestigeCurrency as double) + amount;
+    notifyListeners();
   }
 
   Future<void> _init() async {
@@ -511,6 +571,8 @@ class GameState extends ChangeNotifier {
       if (_tutorialCompleted) {
         _tutorialStep = TutorialStep.done;
       }
+      _nexusTutorialSeen = (data['nexusTutorialSeen'] as bool?) ?? false;
+      _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
 
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
@@ -521,17 +583,6 @@ class GameState extends ChangeNotifier {
         } catch (_) {
           neuralNetwork = NeuralNetwork.initial();
         }
-      }
-      // TESTING: force unlock loaded save and seed a starter neuron if empty.
-      // Remove this block when the Neural Genesis upgrade gate is re-enabled.
-      neuralNetwork.unlocked = true;
-      if (neuralNetwork.layers.isEmpty) {
-        neuralNetwork.layers = [
-          NeuralLayer(
-            index: 0,
-            neurons: [NeuralNeuron(id: 'layer_0_neuron_0')],
-          ),
-        ];
       }
 
       final lastPlayed = data['lastPlayed'] as DateTime?;
@@ -548,20 +599,38 @@ class GameState extends ChangeNotifier {
   }
 
   void _calculateOfflineProgress(DateTime? lastPlayed) {
-    if (lastPlayed != null && totalIdleRate > 0) {
+    if (lastPlayed != null) {
       final diff = DateTime.now().difference(lastPlayed).inSeconds;
       if (diff > 0) {
-        final offlineGains = totalIdleRate * diff * offlineGainMultiplier;
-        offlineGainsThisSession = BigInt.from(offlineGains.floor());
-        number += offlineGainsThisSession;
-        _updateHighestNumber();
-        _idleAccumulator += offlineGains - offlineGains.floor();
+        if (totalIdleRate > 0) {
+          final offlineGains = totalIdleRate * diff * offlineGainMultiplier;
+          offlineGainsThisSession = BigInt.from(offlineGains.floor());
+          number += offlineGainsThisSession;
+          _updateHighestNumber();
+          _idleAccumulator += offlineGains - offlineGains.floor();
+        }
+
+        if (neuralNetworkUnlocked && neuralNetwork.loss > _neuralMinLoss) {
+          final s = neuralNetwork.computeStrength();
+          if (s > 0) {
+            final oldAccuracy = neuralNetwork.accuracy;
+            final newLoss =
+                neuralNetwork.loss * math.exp(-_neuralDecayK * s * diff);
+            neuralNetwork.loss =
+                newLoss < _neuralMinLoss ? _neuralMinLoss : newLoss;
+            if (neuralNetwork.loss < neuralNetwork.lowestLossEver) {
+              neuralNetwork.lowestLossEver = neuralNetwork.loss;
+            }
+            offlineAccuracyGain = neuralNetwork.accuracy - oldAccuracy;
+          }
+        }
       }
     }
   }
 
   void clearOfflineGains() {
     offlineGainsThisSession = BigInt.zero;
+    offlineAccuracyGain = 0.0;
     notifyListeners();
   }
 
@@ -580,12 +649,41 @@ class GameState extends ChangeNotifier {
           _advanceTutorialOnNumberReached();
           _idleAccumulator -= added;
           hasStateChange = true;
-
-          // Periodically save
-          if (timer.tick % 50 == 0) {
-            _saveState();
-          }
         }
+      }
+
+      // Neural network loss decay — runs every tick when unlocked, regardless
+      // of whether the player has an auto-clicker. Loss generally decays
+      // (driven by network strength) but includes realistic training noise.
+      if (neuralNetworkUnlocked && neuralNetwork.loss > _neuralMinLoss) {
+        final s = neuralNetwork.computeStrength();
+        if (s > 0) {
+          final next = neuralNetwork.loss * math.exp(-_neuralDecayK * s * _neuralDt);
+
+          // Add training noise: ~5% of ticks get a small upward jitter
+          // to simulate mini-batch noise in real SGD. This creates realistic
+          // fluctuation while keeping the overall trend downward.
+          final noiseChance = _rng.nextDouble();
+          double noisedLoss = next;
+          if (noiseChance < 0.05) {
+            // Add a small random increase (up to 2% of current loss)
+            final noiseAmount = next * (0.005 + _rng.nextDouble() * 0.015);
+            noisedLoss = next + noiseAmount;
+          }
+
+          neuralNetwork.loss = noisedLoss.clamp(_neuralMinLoss, 1.0);
+          if (neuralNetwork.loss < neuralNetwork.lowestLossEver) {
+            neuralNetwork.lowestLossEver = neuralNetwork.loss;
+          }
+          hasStateChange = true;
+        }
+      }
+
+      // Periodically persist — pulled out of the autoClickRate>0 block so
+      // loss decay and lowestLossEver still get saved for players without
+      // an auto-clicker yet.
+      if (timer.tick % 50 == 0) {
+        _saveState();
       }
 
       // Only notify if there's an actual change that affects UI
@@ -595,19 +693,65 @@ class GameState extends ChangeNotifier {
     });
   }
 
+  // ── Neural network decay tuning ────────────────────────────────────────
+  // First-pass values; revisit by playtest. Goal: a fully tuned network
+  // (all neurons gradient 5, preferred activations) reaches loss ≈ 0.01 in
+  // roughly 24h of continuous play.
+  static const double _neuralDt = 0.1; // ticker period in seconds
+  static const double _neuralDecayK = 0.00008;
+  static const double _neuralMinLoss = 1e-6;
+  static const double _neuralBoostScale = 50.0;
+  static const double _neuralSoftCapPerPrestige = 5.0;
+
   bool get isOverclockActive => _overclockActive;
   double get momentumMultiplier => _momentumMultiplier;
   double get momentumProgress => _momentumProgress;
   bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
+  int get _cascadeResonatorLevel {
+    final idx = upgrades.indexWhere((u) => u.id == cascadeResonatorId);
+    return idx == -1 ? 0 : upgrades[idx].level;
+  }
+
   double get totalIdleRate {
     double idleRate = (autoClickRate + permanentIdleBonus) *
         prestigeMultiplier *
-        resonanceMultiplier;
+        resonanceMultiplier *
+        neuralLossMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
+    final cascadeLvl = _cascadeResonatorLevel;
+    if (cascadeLvl > 0) {
+      idleRate *= math.pow(2.0, cascadeLvl);
+    }
     return idleRate;
+  }
+
+  /// Raw (uncapped) multiplier from the network's current loss. Exposed so
+  /// the HUD can detect when the soft cap is the binding constraint without
+  /// having to know `_neuralBoostScale` itself.
+  double get neuralLossRawMultiplier {
+    if (!neuralNetworkUnlocked) return 1.0;
+    final raw = 1.0 + (1.0 - neuralNetwork.loss) * _neuralBoostScale;
+    return raw < 1.0 ? 1.0 : raw;
+  }
+
+  /// Multiplier applied to all number gain (idle + click) based on how well
+  /// the neural network is trained. Loss=1.0 → 1.0× (no boost). Loss→0 →
+  /// up to 1 + (1 − loss) × scale, soft-capped by prestigeCount so a returning
+  /// player can't trivialize the early prestige curve.
+  double get neuralLossMultiplier {
+    if (!neuralNetworkUnlocked) return 1.0;
+    final raw = neuralLossRawMultiplier;
+    final softCap = 1.0 + prestigeCount * _neuralSoftCapPerPrestige;
+    return raw < softCap ? raw : softCap;
+  }
+
+  /// Live decay rate (loss-units per second per current loss) for HUD display.
+  double get neuralDecayRate {
+    if (!neuralNetworkUnlocked) return 0.0;
+    return _neuralDecayK * neuralNetwork.computeStrength();
   }
 
   int upgradeMilestoneMultiplierForLevel(int level) {
@@ -627,11 +771,20 @@ class GameState extends ChangeNotifier {
   }
 
   void _recalculateDerivedStatsFromUpgrades() {
-    clickPower = BigInt.from(500);
+    clickPower = BigInt.from(10000);
     autoClickRate = 0.0;
 
     for (final upgrade in upgrades) {
       if (upgrade.level <= 0) continue;
+      if (upgrade.id == cascadeResonatorId) continue; // handled in totalIdleRate
+      if (upgrade.id == temporalCollapseId) continue; // active ability only
+
+      if (upgrade.id == dimensionalTapId) {
+        // Prestige-synergy: each level adds 500 × prestigeMultiplier to click power
+        final bonus = (prestigeMultiplier * upgrade.level * 500).floor();
+        clickPower += BigInt.from(bonus);
+        continue;
+      }
 
       final milestoneMultiplier = upgradeMilestoneMultiplier(upgrade);
       if (upgrade.effectType == idleCategory && upgrade.effectValue is double) {
@@ -842,7 +995,10 @@ class GameState extends ChangeNotifier {
         _isUpgradeActive(probabilityStrikeId) &&
             _rng.nextDouble() < _probabilityStrikeChance;
 
-    final baseClickGain = clickPower.toDouble() * prestigeMultiplier;
+    final baseClickGain =
+        clickPower.toDouble() * prestigeMultiplier * neuralLossMultiplier;
+    // kineticBonus inherits neuralLossMultiplier via totalIdleRate, so we
+    // don't multiply it again here.
     final kineticBonus = totalIdleRate * _kineticSynergyShare;
 
     double gain = (baseClickGain + kineticBonus) * _momentumMultiplier;
@@ -882,6 +1038,64 @@ class GameState extends ChangeNotifier {
     _overclockTimer = Timer(Duration(seconds: durationSeconds), () {
       _overclockActive = false;
       notifyListeners();
+    });
+  }
+
+  // ── Temporal Collapse active ability ──────────────────────────────────────
+
+  bool get isTemporalCollapseActive => _temporalCollapseActive;
+  bool get isTemporalCollapseCoolingDown => _temporalCollapseCoolingDown;
+
+  int get _temporalCollapseLevel {
+    final idx = upgrades.indexWhere((u) => u.id == temporalCollapseId);
+    return idx == -1 ? 0 : upgrades[idx].level;
+  }
+
+  int get temporalCollapseDurationSeconds {
+    final lvl = _temporalCollapseLevel;
+    return 30 + lvl * 15;
+  }
+
+  int get temporalCollapseCooldownSeconds {
+    final lvl = _temporalCollapseLevel;
+    return math.max(80, 180 - lvl * 20);
+  }
+
+  bool get canActivateTemporalCollapse =>
+      _temporalCollapseLevel > 0 &&
+      !_temporalCollapseActive &&
+      !_temporalCollapseCoolingDown;
+
+  void activateTemporalCollapse() {
+    if (!canActivateTemporalCollapse) return;
+
+    final level = _temporalCollapseLevel;
+    // Instant burst: level × 60 seconds of current idle production
+    final burst = BigInt.from((totalIdleRate * 60 * level).floor());
+    number += burst;
+    _updateHighestNumber();
+
+    // Temporarily double prestige multiplier for the duration
+    prestigeMultiplier *= 2.0;
+    _temporalCollapseActive = true;
+    _recalculateDerivedStatsFromUpgrades();
+    notifyListeners();
+
+    _temporalCollapseActiveTimer?.cancel();
+    _temporalCollapseActiveTimer =
+        Timer(Duration(seconds: temporalCollapseDurationSeconds), () {
+      prestigeMultiplier /= 2.0;
+      _temporalCollapseActive = false;
+      _temporalCollapseCoolingDown = true;
+      _recalculateDerivedStatsFromUpgrades();
+      notifyListeners();
+
+      _temporalCollapseCooldownTimerRef?.cancel();
+      _temporalCollapseCooldownTimerRef =
+          Timer(Duration(seconds: temporalCollapseCooldownSeconds), () {
+        _temporalCollapseCoolingDown = false;
+        notifyListeners();
+      });
     });
   }
 
@@ -972,9 +1186,17 @@ class GameState extends ChangeNotifier {
     return (cost: totalCost, amount: finalAmount);
   }
 
+  int minPrestigeForUpgrade(String id) {
+    if (id == dimensionalTapId) return 1;
+    if (id == cascadeResonatorId) return 5;
+    if (id == temporalCollapseId) return 8;
+    return 0;
+  }
+
   void buyUpgrade(String id) {
     final upgrade = upgrades.firstWhere((u) => u.id == id);
     if (upgrade.isMaxed) return;
+    if (prestigeCount < minPrestigeForUpgrade(id)) return;
 
     final info = getPurchaseInfo(upgrade);
 
@@ -1017,7 +1239,7 @@ class GameState extends ChangeNotifier {
     prestigeCount += 1;
 
     number = BigInt.zero;
-    clickPower = BigInt.from(500);
+    clickPower = BigInt.from(10000);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -1027,6 +1249,10 @@ class GameState extends ChangeNotifier {
     _momentumProgress = 0.0;
     _overclockActive = false;
     _overclockTimer?.cancel();
+    _temporalCollapseActive = false;
+    _temporalCollapseCoolingDown = false;
+    _temporalCollapseActiveTimer?.cancel();
+    _temporalCollapseCooldownTimerRef?.cancel();
 
     for (var u in upgrades) {
       u.level = 0;
@@ -1054,7 +1280,7 @@ class GameState extends ChangeNotifier {
 
   Future<void> hardReset({bool preserveTutorial = false}) async {
     number = BigInt.zero;
-    clickPower = BigInt.from(500);
+    clickPower = BigInt.from(10000);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -1064,6 +1290,10 @@ class GameState extends ChangeNotifier {
     _momentumProgress = 0.0;
     _overclockActive = false;
     _overclockTimer?.cancel();
+    _temporalCollapseActive = false;
+    _temporalCollapseCoolingDown = false;
+    _temporalCollapseActiveTimer?.cancel();
+    _temporalCollapseCooldownTimerRef?.cancel();
     offlineGainsThisSession = BigInt.zero;
     highestNumber = BigInt.zero;
     prestigeCurrency = 0.0;
@@ -1084,6 +1314,8 @@ class GameState extends ChangeNotifier {
       _tutorialCompleted = false;
       _tutorialStep = TutorialStep.welcome;
       _tutorialNeedsCloudSync = false;
+      _nexusTutorialSeen = false;
+      _neuralTutorialSeen = false;
     }
     _recalculateDerivedStatsFromUpgrades();
 
@@ -1132,6 +1364,8 @@ class GameState extends ChangeNotifier {
         prestigeCurrency: prestigeCurrency,
         upgradeLevels: upgradedLevels,
       ),
+      neuralLoss: neuralNetwork.loss,
+      neuralLowestLoss: neuralNetwork.lowestLossEver,
       updatedAt: _lastSavedAt?.toUtc() ?? now,
     );
   }
@@ -1160,6 +1394,18 @@ class GameState extends ChangeNotifier {
     for (final node in researchNodes) {
       node.level = (progress.nexusLevels[node.id] ?? 0).clamp(0, node.maxLevel);
     }
+
+    // Carry forward neural loss from the cloud — keep whichever loss is
+    // lower (more progress) so a stale upload can never wipe a better
+    // training run on a different device.
+    if (progress.neuralLoss < neuralNetwork.loss) {
+      neuralNetwork.loss = progress.neuralLoss.clamp(0.0, 1.0);
+    }
+    final remoteBest = progress.neuralLowestLoss.clamp(0.0, 1.0);
+    if (remoteBest < neuralNetwork.lowestLossEver) {
+      neuralNetwork.lowestLossEver = remoteBest;
+    }
+
     _recalculateDerivedStatsFromUpgrades();
 
     _idleAccumulator = 0.0;
@@ -1170,6 +1416,10 @@ class GameState extends ChangeNotifier {
     _momentumProgress = 0.0;
     _overclockActive = false;
     _overclockTimer?.cancel();
+    _temporalCollapseActive = false;
+    _temporalCollapseCoolingDown = false;
+    _temporalCollapseActiveTimer?.cancel();
+    _temporalCollapseCooldownTimerRef?.cancel();
   }
 
   Future<void> syncWithCloud({bool forceUpload = false}) async {
@@ -1230,6 +1480,8 @@ class GameState extends ChangeNotifier {
         for (final node in researchNodes) node.id: node.level,
       },
       tutorialCompleted: _tutorialCompleted,
+      nexusTutorialSeen: _nexusTutorialSeen,
+      neuralTutorialSeen: _neuralTutorialSeen,
       nexusStabilized: _nexusStabilized,
       neuralNetworkJson: neuralNetwork.toJsonString(),
     );
@@ -1315,10 +1567,69 @@ class GameState extends ChangeNotifier {
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.goodLuck) {
       unawaited(completeTutorialAndReset());
+    } else if (_tutorialStep == TutorialStep.nexusIntro) {
+      _tutorialStep = TutorialStep.nexusUpgrades;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.nexusUpgrades) {
+      _tutorialStep = TutorialStep.nexusGoal;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.nexusGoal) {
+      _completeNexusTutorial();
+    } else if (_tutorialStep == TutorialStep.neuralUnlocked) {
+      _tutorialStep = TutorialStep.navNeural;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.neuralIntro) {
+      _tutorialStep = TutorialStep.neuralUpgradeHint;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.neuralUpgradeHint) {
+      _tutorialStep = TutorialStep.neuralBranchHint;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.neuralBranchHint) {
+      _tutorialStep = TutorialStep.neuralTrainHint;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.neuralTrainHint) {
+      _completeNeuralTutorial();
     }
   }
 
+  bool _isNexusTutorialStep(TutorialStep step) {
+    return step == TutorialStep.nexusIntro ||
+        step == TutorialStep.nexusUpgrades ||
+        step == TutorialStep.nexusGoal;
+  }
+
+  bool _isNeuralTutorialStep(TutorialStep step) {
+    return step == TutorialStep.neuralUnlocked ||
+        step == TutorialStep.navNeural ||
+        step == TutorialStep.neuralIntro ||
+        step == TutorialStep.neuralUpgradeHint ||
+        step == TutorialStep.neuralBranchHint ||
+        step == TutorialStep.neuralTrainHint;
+  }
+
+  void _completeNexusTutorial() {
+    _nexusTutorialSeen = true;
+    _tutorialStep = TutorialStep.done;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  void _completeNeuralTutorial() {
+    _neuralTutorialSeen = true;
+    _tutorialStep = TutorialStep.done;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
   void skipTutorial() {
+    if (_isNexusTutorialStep(_tutorialStep)) {
+      _completeNexusTutorial();
+      return;
+    }
+    if (_isNeuralTutorialStep(_tutorialStep)) {
+      _completeNeuralTutorial();
+      return;
+    }
     _tutorialCompleted = true;
     _tutorialStep = TutorialStep.done;
     _tutorialNeedsCloudSync = true;
@@ -1341,6 +1652,9 @@ class GameState extends ChangeNotifier {
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.navPrestige && index == 2) {
       _tutorialStep = TutorialStep.learnPrestigeDetails;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.navNeural && index == 3) {
+      _tutorialStep = TutorialStep.neuralIntro;
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.goodLuck && index == 0) {
       // User navigated back to main screen during final tutorial
@@ -1391,6 +1705,8 @@ class GameState extends ChangeNotifier {
   void dispose() {
     _ticker?.cancel();
     _overclockTimer?.cancel();
+    _temporalCollapseActiveTimer?.cancel();
+    _temporalCollapseCooldownTimerRef?.cancel();
     _saveDebounceTimer?.cancel();
     super.dispose();
   }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/game_state.dart';
@@ -196,6 +197,37 @@ class NeuronDetailSheet extends StatelessWidget {
         final selectedFn = currentNeuron.activationFn;
         final fnDescription =
             activationFunctionDescriptions[selectedFn] ?? '';
+
+        // Per-neuron strength contribution. Mirrors NeuralNetwork.computeStrength
+        // exactly so the value here is meaningful next to the network total.
+        final layer = state.neuralNetwork.findNeuronLayer(currentNeuron.id);
+        final layerIndex = layer?.index ?? 0;
+        final preferredFn = preferredActivationByLayer[layerIndex];
+        final activationMatchesPreferred =
+            preferredFn != null && currentNeuron.activationFn == preferredFn;
+        final depthBonus = 1.0 + 0.25 * layerIndex;
+        final activationBonus = activationMatchesPreferred ? 1.10 : 1.0;
+        final neuronContribution =
+            (currentNeuron.gradientLevel + 1) * depthBonus * activationBonus;
+        final networkStrength = state.neuralNetwork.computeStrength();
+        // Contribution to the *log-shaped* strength, so the player sees the
+        // marginal impact this neuron has on the actual decay multiplier.
+        // Computed as: ln(1 + total) - ln(1 + total - this)
+        // Falls back to 0 if the neuron's contribution exceeds the running sum
+        // (shouldn't happen, but safe).
+        double sumContributions = 0.0;
+        for (final l in state.neuralNetwork.layers) {
+          final db = 1.0 + 0.25 * l.index;
+          final pf = preferredActivationByLayer[l.index];
+          for (final n in l.neurons) {
+            final ab = (pf != null && n.activationFn == pf) ? 1.10 : 1.0;
+            sumContributions += (n.gradientLevel + 1) * db * ab;
+          }
+        }
+        final remaining = sumContributions - neuronContribution;
+        final marginalStrength = remaining > 0
+            ? networkStrength - math.log(1.0 + remaining)
+            : networkStrength;
 
         return Container(
           decoration: BoxDecoration(
@@ -494,6 +526,93 @@ class NeuronDetailSheet extends StatelessWidget {
                         color: cs.outline,
                         height: 1.5,
                       ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Container(
+                  height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
+
+              // ── Strength contribution section ─────────────────────────────
+              // Shows what *this* neuron is adding to the network's total
+              // strength right now, plus the marginal effect on the (log-shaped)
+              // strength score that drives loss decay. Gives players direct
+              // feedback on whether a gradient or activation tweak is worth it.
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'STRENGTH CONTRIBUTION',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 2.0,
+                        color: cs.outline,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Raw',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: cs.outline,
+                                  fontSize: 9,
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                neuronContribution.toStringAsFixed(2),
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 18, color: cs.primary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Marginal Δstrength',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: cs.outline,
+                                  fontSize: 9,
+                                  letterSpacing: 1.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '+${marginalStrength.toStringAsFixed(4)}',
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 18, color: cs.primary),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      activationMatchesPreferred
+                          ? '× ${depthBonus.toStringAsFixed(2)} depth × 1.10 activation '
+                              '(matches preferred $preferredFn for L$layerIndex)'
+                          : '× ${depthBonus.toStringAsFixed(2)} depth × 1.00 activation '
+                              '(L$layerIndex prefers ${preferredFn ?? '—'} for a 10% bonus)',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: cs.outline, height: 1.4),
                     ),
                   ],
                 ),

@@ -86,17 +86,28 @@ class _NeuralCanvasState extends State<NeuralCanvas>
       ..scale(scale);
   }
 
+  /// Position a neuron by its *slot* (parsed from the id) within the layer's
+  /// *target* neuron count, not its current count. This keeps existing
+  /// neurons anchored as siblings appear, and makes new children of a
+  /// branched parent show up directly under that parent's column rather
+  /// than drifting through the centre of the canvas.
   Map<String, Offset> _buildPositions(List<NeuralLayer> layers, Size canvas) {
     final positions = <String, Offset>{};
     final canvasCenterY = canvas.height / 2;
 
     for (final layer in layers) {
       final x = _canvasPadding + layer.index * _layerSpacing + _neuronSize / 2;
-      final n = layer.neurons.length;
-      final totalH = (n - 1) * _neuronSpacing;
+      final target = NeuralNetwork.targetNeuronCountForLayer(layer.index);
+      final slots = target > 0 ? target : layer.neurons.length;
+      final totalH = (slots - 1) * _neuronSpacing;
       final startY = canvasCenterY - totalH / 2;
-      for (int i = 0; i < n; i++) {
-        positions[layer.neurons[i].id] = Offset(x, startY + i * _neuronSpacing);
+      for (int i = 0; i < layer.neurons.length; i++) {
+        final neuron = layer.neurons[i];
+        final parsed = int.tryParse(neuron.id.split('_').last);
+        final slot = (parsed != null && parsed >= 0 && parsed < slots)
+            ? parsed
+            : i;
+        positions[neuron.id] = Offset(x, startY + slot * _neuronSpacing);
       }
     }
     return positions;
@@ -110,11 +121,17 @@ class _NeuralCanvasState extends State<NeuralCanvas>
         layers.map((l) => l.index).reduce((a, b) => a > b ? a : b);
     final w = _canvasPadding * 2 + maxLayerIndex * _layerSpacing + _neuronSize;
 
-    // Height: enough for the layer with the most neurons
-    final maxNeurons =
-        layers.map((l) => l.neurons.length).reduce((a, b) => a > b ? a : b);
+    // Height: enough for the widest layer at full target capacity, so the
+    // canvas doesn't grow each time a new neuron is branched in.
+    int maxSlots = 0;
+    for (final l in layers) {
+      final target = NeuralNetwork.targetNeuronCountForLayer(l.index);
+      final slots = target > 0 ? target : l.neurons.length;
+      if (slots > maxSlots) maxSlots = slots;
+    }
+    if (maxSlots < 1) maxSlots = 1;
     final h =
-        _canvasPadding * 2 + (maxNeurons - 1) * _neuronSpacing + _neuronSize;
+        _canvasPadding * 2 + (maxSlots - 1) * _neuronSpacing + _neuronSize;
 
     return Size(w.clamp(400, double.infinity), h.clamp(400, double.infinity));
   }

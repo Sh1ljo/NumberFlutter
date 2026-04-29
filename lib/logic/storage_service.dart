@@ -14,6 +14,8 @@ class StorageService {
   static const String _keyHighestNumber = 'highestNumber';
   static const String _keyNexusLevels = 'nexus_levels';
   static const String _keyTutorialCompleted = 'tutorialCompleted';
+  static const String _keyNexusTutorialSeen = 'nexusTutorialSeen';
+  static const String _keyNeuralTutorialSeen = 'neuralTutorialSeen';
   static const String _keyNexusStabilized = 'nexusStabilized';
   static const String _keyNeuralNetwork = 'neural_network';
 
@@ -28,6 +30,8 @@ class StorageService {
     required BigInt highestNumber,
     required Map<String, int> nexusLevels,
     required bool tutorialCompleted,
+    required bool nexusTutorialSeen,
+    required bool neuralTutorialSeen,
     required bool nexusStabilized,
     String? neuralNetworkJson,
   }) async {
@@ -43,6 +47,8 @@ class StorageService {
     await prefs.setString(_keyHighestNumber, highestNumber.toString());
     await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
     await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
+    await prefs.setBool(_keyNexusTutorialSeen, nexusTutorialSeen);
+    await prefs.setBool(_keyNeuralTutorialSeen, neuralTutorialSeen);
     await prefs.setBool(_keyNexusStabilized, nexusStabilized);
     if (neuralNetworkJson != null) {
       await prefs.setString(_keyNeuralNetwork, neuralNetworkJson);
@@ -103,6 +109,8 @@ class StorageService {
           BigInt.zero,
       'nexusLevels': nexusLevels,
       'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
+      'nexusTutorialSeen': prefs.getBool(_keyNexusTutorialSeen) ?? false,
+      'neuralTutorialSeen': prefs.getBool(_keyNeuralTutorialSeen) ?? false,
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
       'neuralNetwork': prefs.getString(_keyNeuralNetwork),
       'lastPlayed': lastPlayedMs != null
@@ -125,6 +133,9 @@ class StorageService {
     await prefs.remove(_keyHighestNumber);
     await prefs.remove(_keyNexusLevels);
     await prefs.remove(_keyTutorialCompleted);
+    await prefs.remove(_keyNexusTutorialSeen);
+    await prefs.remove(_keyNeuralTutorialSeen);
+    await prefs.remove(_keyNexusStabilized);
     await prefs.remove(_keyNeuralNetwork);
   }
 }

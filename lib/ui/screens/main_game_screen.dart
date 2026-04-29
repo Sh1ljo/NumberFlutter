@@ -243,6 +243,27 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                 },
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            Selector<GameState,
+                                ({bool show, bool active, bool cooling})>(
+                              selector: (_, s) => (
+                                show: s.canActivateTemporalCollapse ||
+                                    s.isTemporalCollapseActive ||
+                                    s.isTemporalCollapseCoolingDown,
+                                active: s.isTemporalCollapseActive,
+                                cooling: s.isTemporalCollapseCoolingDown,
+                              ),
+                              builder: (context, data, child) {
+                                if (!data.show) return const SizedBox.shrink();
+                                return _TemporalCollapseButton(
+                                  active: data.active,
+                                  coolingDown: data.cooling,
+                                  onTap: () => context
+                                      .read<GameState>()
+                                      .activateTemporalCollapse(),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -309,6 +330,56 @@ class _MomentumProgressBar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _TemporalCollapseButton extends StatelessWidget {
+  final bool active;
+  final bool coolingDown;
+  final VoidCallback onTap;
+
+  const _TemporalCollapseButton({
+    required this.active,
+    required this.coolingDown,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final Color color;
+    final String label;
+    if (active) {
+      color = Colors.deepPurple;
+      label = 'COLLAPSING…';
+    } else if (coolingDown) {
+      color = Colors.grey;
+      label = 'TEMPORAL COLLAPSE (cooldown)';
+    } else {
+      color = Colors.deepPurpleAccent;
+      label = 'TEMPORAL COLLAPSE';
+    }
+
+    return GestureDetector(
+      onTap: (active || coolingDown) ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: active ? 0.3 : 0.15),
+          border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            letterSpacing: 1.5,
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -277,10 +277,14 @@ class SupabaseService {
     int limit = 50,
     String? country,
     String? city,
+    // 'number' (default) ranks DESC by highest_number_numeric.
+    // 'loss'             ranks ASC by neural_lowest_loss (lower = better).
+    String metric = 'number',
   }) async {
     if (!_initialized) return <Map<String, dynamic>>[];
     final normalizedCountry = country?.trim();
     final normalizedCity = city?.trim();
+    final normalizedMetric = metric == 'loss' ? 'loss' : 'number';
     try {
       final rows = await _client.rpc(
         'get_leaderboard',
@@ -291,11 +295,13 @@ class SupabaseService {
           'scope_city':
               (normalizedCity?.isNotEmpty ?? false) ? normalizedCity : null,
           'row_limit': limit,
+          'metric': normalizedMetric,
         },
       );
       return List<Map<String, dynamic>>.from(rows);
     } catch (_) {
-      // Graceful fallback if function is not deployed yet.
+      // Graceful fallback if RPC isn't deployed (or metric param not yet
+      // applied) — query the view and order client-side.
       var query = _client.from('leaderboard_view').select();
       if (normalizedCountry?.isNotEmpty ?? false) {
         query = query.eq('country', normalizedCountry!);
@@ -303,7 +309,11 @@ class SupabaseService {
       if (normalizedCity?.isNotEmpty ?? false) {
         query = query.eq('city', normalizedCity!);
       }
-      final rows = await query.limit(limit);
+      final rows = normalizedMetric == 'loss'
+          ? await query
+              .order('neural_lowest_loss', ascending: true)
+              .limit(limit)
+          : await query.limit(limit);
       return List<Map<String, dynamic>>.from(rows);
     }
   }

@@ -5,7 +5,10 @@
       "Bash(dart analyze *)",
       "Bash(flutter analyze *)",
       "Bash(flutter pub *)",
-      "Bash(grep -E \"\\\\.dart$\")"
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(where supabase *)",
+      "Bash(supabase --version)",
+      "Bash(npx supabase *)"
     ]
   }
 }

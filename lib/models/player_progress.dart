@@ -12,6 +12,8 @@ class PlayerProgress {
   final Map<String, int> nexusLevels;
   final BigInt highestNumber;
   final int progressScore;
+  final double neuralLoss;
+  final double neuralLowestLoss;
   final DateTime updatedAt;
 
   const PlayerProgress({
@@ -26,6 +28,8 @@ class PlayerProgress {
     this.nexusLevels = const {},
     required this.highestNumber,
     required this.progressScore,
+    this.neuralLoss = 1.0,
+    this.neuralLowestLoss = 1.0,
     required this.updatedAt,
   });
 
@@ -65,6 +69,8 @@ class PlayerProgress {
     Map<String, int>? nexusLevels,
     BigInt? highestNumber,
     int? progressScore,
+    double? neuralLoss,
+    double? neuralLowestLoss,
     DateTime? updatedAt,
   }) {
     return PlayerProgress(
@@ -79,6 +85,8 @@ class PlayerProgress {
       nexusLevels: nexusLevels ?? this.nexusLevels,
       highestNumber: highestNumber ?? this.highestNumber,
       progressScore: progressScore ?? this.progressScore,
+      neuralLoss: neuralLoss ?? this.neuralLoss,
+      neuralLowestLoss: neuralLowestLoss ?? this.neuralLowestLoss,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -96,6 +104,8 @@ class PlayerProgress {
       'nexus_levels': nexusLevels,
       'highest_number_numeric': normalizedHighestNumber.toString(),
       'progress_score': progressScore,
+      'neural_loss': neuralLoss,
+      'neural_lowest_loss': neuralLowestLoss,
       'updated_at': updatedAt.toUtc().toIso8601String(),
     };
   }
@@ -137,6 +147,8 @@ class PlayerProgress {
                 (row['prestige_currency'] as num?)?.toDouble() ?? 0.0,
             upgradeLevels: upgradeLevels,
           ),
+      neuralLoss: (row['neural_loss'] as num?)?.toDouble() ?? 1.0,
+      neuralLowestLoss: (row['neural_lowest_loss'] as num?)?.toDouble() ?? 1.0,
       updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );

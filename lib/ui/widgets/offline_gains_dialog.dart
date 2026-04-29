@@ -3,17 +3,20 @@ import '../../utils/number_formatter.dart';
 
 class OfflineGainsDialog extends StatelessWidget {
   final BigInt gains;
+  final double accuracyGain;
   final VoidCallback onAcknowledge;
 
   const OfflineGainsDialog({
     super.key,
     required this.gains,
+    this.accuracyGain = 0.0,
     required this.onAcknowledge,
   });
 
   static Future<void> show(
     BuildContext context,
     BigInt gains, {
+    double accuracyGain = 0.0,
     required VoidCallback onAcknowledge,
   }) {
     return showDialog(
@@ -21,6 +24,7 @@ class OfflineGainsDialog extends StatelessWidget {
       barrierColor: Colors.black87,
       builder: (_) => OfflineGainsDialog(
         gains: gains,
+        accuracyGain: accuracyGain,
         onAcknowledge: onAcknowledge,
       ),
     );
@@ -64,6 +68,23 @@ class OfflineGainsDialog extends StatelessWidget {
                 color: theme.colorScheme.primary,
               ),
             ),
+            if (accuracyGain > 0) ...[
+              const SizedBox(height: 24),
+              Text(
+                'Neural network training continued:',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '+${(accuracyGain * 100).toStringAsFixed(2)}% accuracy',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: Colors.greenAccent,
+                ),
+              ),
+            ],
             const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,

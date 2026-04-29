@@ -295,21 +295,27 @@ class _MainLayoutState extends State<MainLayout> {
     final offlineGains = context.select<GameState, BigInt>(
       (gs) => gs.offlineGainsThisSession,
     );
+    final offlineAccuracy = context.select<GameState, double>(
+      (gs) => gs.offlineAccuracyGain,
+    );
+    final hasOfflineProgress =
+        offlineGains > BigInt.zero || offlineAccuracy > 0;
 
-    if (offlineGains > BigInt.zero && !_offlineDialogQueued) {
+    if (hasOfflineProgress && !_offlineDialogQueued) {
       _offlineDialogQueued = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         OfflineGainsDialog.show(
           context,
           offlineGains,
+          accuracyGain: offlineAccuracy,
           onAcknowledge: () {
             if (!mounted) return;
             context.read<GameState>().clearOfflineGains();
           },
         );
       });
-    } else if (offlineGains == BigInt.zero && _offlineDialogQueued) {
+    } else if (!hasOfflineProgress && _offlineDialogQueued) {
       _offlineDialogQueued = false;
     }
 

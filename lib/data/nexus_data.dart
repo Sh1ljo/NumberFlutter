@@ -14,7 +14,7 @@ abstract class NexusData {
           effectType: ResearchEffect.costReduction,
           effectPerLevel: 0.01,
           maxLevel: 10,
-          baseCostPerLevel: 1.0,
+          baseCostPerLevel: 3.0,
           costsScale: true,
         ),
 
@@ -28,7 +28,7 @@ abstract class NexusData {
           effectType: ResearchEffect.surgeSeconds,
           effectPerLevel: 30.0,
           maxLevel: 5,
-          baseCostPerLevel: 2.0,
+          baseCostPerLevel: 6.0,
           costsScale: true,
         ),
 
@@ -42,7 +42,7 @@ abstract class NexusData {
           effectType: ResearchEffect.prestigeDeltaMult,
           effectPerLevel: 0.10,
           maxLevel: 5,
-          baseCostPerLevel: 2.0,
+          baseCostPerLevel: 6.0,
           costsScale: true,
         ),
 
@@ -59,7 +59,7 @@ abstract class NexusData {
           effectType: ResearchEffect.idleBonus,
           effectPerLevel: 1.0,
           maxLevel: 10,
-          baseCostPerLevel: 2.0,
+          baseCostPerLevel: 6.0,
           costsScale: true,
         ),
 
@@ -74,7 +74,7 @@ abstract class NexusData {
           effectType: ResearchEffect.offlineMult,
           effectPerLevel: 0.10,
           maxLevel: 5,
-          baseCostPerLevel: 3.0,
+          baseCostPerLevel: 9.0,
           costsScale: true,
         ),
 
@@ -89,7 +89,7 @@ abstract class NexusData {
           effectType: ResearchEffect.momentumCap,
           effectPerLevel: 0.1,
           maxLevel: 3,
-          baseCostPerLevel: 3.0,
+          baseCostPerLevel: 9.0,
           costsScale: true,
         ),
 
@@ -106,7 +106,7 @@ abstract class NexusData {
           effectType: ResearchEffect.idleMult,
           effectPerLevel: 0.05,
           maxLevel: 5,
-          baseCostPerLevel: 5.0,
+          baseCostPerLevel: 15.0,
           costsScale: true,
         ),
 
@@ -121,7 +121,7 @@ abstract class NexusData {
           effectType: ResearchEffect.prestigePointsMult,
           effectPerLevel: 0.10,
           maxLevel: 5,
-          baseCostPerLevel: 4.0,
+          baseCostPerLevel: 12.0,
           costsScale: true,
         ),
 
@@ -138,7 +138,7 @@ abstract class NexusData {
           effectType: ResearchEffect.neuralUnlock,
           effectPerLevel: 1.0,
           maxLevel: 1,
-          baseCostPerLevel: 50.0,
+          baseCostPerLevel: 200.0,
           costsScale: false,
         ),
       ];

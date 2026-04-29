@@ -72,12 +72,22 @@ class _TutorialOverlayState extends State<TutorialOverlay>
         return widget.prestigeMultiplierKey;
       case TutorialStep.prestigeGainHint:
         return widget.prestigeGainCardKey;
+      case TutorialStep.navNeural:
+        return widget.navKeys.length > 3 ? widget.navKeys[3] : null;
       case TutorialStep.welcome:
       case TutorialStep.watchIdle:
       case TutorialStep.exploreUpgrades:
       case TutorialStep.learnPrestige:
       case TutorialStep.learnPrestigeDetails:
       case TutorialStep.goodLuck:
+      case TutorialStep.nexusIntro:
+      case TutorialStep.nexusUpgrades:
+      case TutorialStep.nexusGoal:
+      case TutorialStep.neuralUnlocked:
+      case TutorialStep.neuralIntro:
+      case TutorialStep.neuralUpgradeHint:
+      case TutorialStep.neuralBranchHint:
+      case TutorialStep.neuralTrainHint:
       case TutorialStep.done:
         return null;
     }
@@ -140,11 +150,20 @@ class _TutorialOverlayState extends State<TutorialOverlay>
             step == TutorialStep.learnPrestigeDetails ||
             step == TutorialStep.prestigeMultiplierHint ||
             step == TutorialStep.prestigeGainHint ||
-            step == TutorialStep.goodLuck;
+            step == TutorialStep.goodLuck ||
+            step == TutorialStep.nexusIntro ||
+            step == TutorialStep.nexusUpgrades ||
+            step == TutorialStep.nexusGoal ||
+            step == TutorialStep.neuralUnlocked ||
+            step == TutorialStep.neuralIntro ||
+            step == TutorialStep.neuralUpgradeHint ||
+            step == TutorialStep.neuralBranchHint ||
+            step == TutorialStep.neuralTrainHint;
         final isWatchIdle = step == TutorialStep.watchIdle;
         final isNavStep = step == TutorialStep.navUpgrades ||
             step == TutorialStep.navGenerators ||
-            step == TutorialStep.navUpgradesForClick;
+            step == TutorialStep.navUpgradesForClick ||
+            step == TutorialStep.navNeural;
 
         final titleBody = _copyForStep(step);
         final onTapContinue = isTapToContinue
@@ -611,6 +630,51 @@ class _CaptionCard extends StatelessWidget {
       return (
         'YOU\'RE READY!',
         'You\'ve learned the basics. Now go grind, prestige, and climb the leaderboards. Good luck!',
+      );
+    case TutorialStep.nexusIntro:
+      return (
+        'THE NEXUS',
+        'You stabilized the Nexus — your hub for permanent upgrades. Each prestige earns Prestige Points (PP); spend them on research that survives every reset.',
+      );
+    case TutorialStep.nexusUpgrades:
+      return (
+        'PERMANENT RESEARCH',
+        'Tap a node to spend PP. Tier I (Optimization, Surge, Enhanced Extraction) opens Tier II (Idle Foundation, Quick Resume, Kinetic Surge), then Tier III (Resonance Core, Echo Protocol). Each level stacks forever.',
+      );
+    case TutorialStep.nexusGoal:
+      return (
+        'YOUR GOAL',
+        'Climb the tree all the way down to Neural Genesis. Unlocking it awakens the Neural Network — the deepest layer of the game.',
+      );
+    case TutorialStep.neuralUnlocked:
+      return (
+        'NEURAL GENESIS',
+        'Neural Genesis is online — your first neuron just spawned. Let\'s take a quick tour of the most complex system in the game.',
+      );
+    case TutorialStep.navNeural:
+      return (
+        'OPEN NEURAL',
+        'Tap NEURAL below to view your network.',
+      );
+    case TutorialStep.neuralIntro:
+      return (
+        'YOUR NETWORK',
+        'This is your living neural network. As it trains, its loss drops — and a lower loss multiplies ALL your number gains (clicks AND idle), soft-capped per prestige.',
+      );
+    case TutorialStep.neuralUpgradeHint:
+      return (
+        'TAP A NEURON',
+        'Tap any neuron to upgrade it. Each gradient level (max 5) makes it stronger. You can also pick an activation function — linear, ReLU, sigmoid, or tanh. Each layer has a preferred activation that grants a +10% strength bonus.',
+      );
+    case TutorialStep.neuralBranchHint:
+      return (
+        'BRANCH TO GROW',
+        'Highlighted neurons can be branched to spawn the next layer. The network grows in a pyramid (1 → 2 → 4 → 8 → 4 → 2 → 1). Deeper layers contribute more strength, and each new layer costs more.',
+      );
+    case TutorialStep.neuralTrainHint:
+      return (
+        'LOWER THE LOSS',
+        'Strength = stronger gradients × deeper layers × matched activations. Higher strength means faster loss decay. Loss keeps falling even when you\'re offline — train it for the long haul to maximize your global multiplier.',
       );
     case TutorialStep.done:
       return null;

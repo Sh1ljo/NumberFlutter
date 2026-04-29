@@ -150,19 +150,121 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
 
             Container(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
-            // ── Neural canvas ─────────────────────────────────────────────
+            // ── Neural canvas (with loss HUD on top) ─────────────────────
             Expanded(
               child: Consumer<GameState>(
                 builder: (context, state, _) {
                   if (!state.neuralNetwork.unlocked) {
                     return const NeuralUnlockScreen();
                   }
-                  return NeuralCanvas(network: state.neuralNetwork);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _NeuralLossHud(state: state),
+                      Expanded(
+                        child: NeuralCanvas(network: state.neuralNetwork),
+                      ),
+                    ],
+                  );
                 },
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Compact HUD that surfaces the live network training metrics:
+///   - Accuracy% (1 - loss) — the headline number a player chases.
+///   - Multiplier — the gain boost the network is currently granting.
+///   - Decay rate — k * strength, so players see *why* upgrades help.
+///
+/// Rebuilds every tick because the parent `Consumer` of [GameState] rebuilds
+/// when the ticker calls notifyListeners().
+class _NeuralLossHud extends StatelessWidget {
+  const _NeuralLossHud({required this.state});
+
+  final GameState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final accuracyPct = state.neuralNetwork.accuracy * 100.0;
+    final multiplier = state.neuralLossMultiplier;
+    final decay = state.neuralDecayRate;
+    // Soft cap is binding when the effective multiplier is strictly less
+    // than the raw (uncapped) one — i.e. the prestigeCount-based cap is
+    // currently clamping the boost.
+    final softCapHit = multiplier < state.neuralLossRawMultiplier;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: cs.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ACCURACY',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    letterSpacing: 2.0,
+                    color: cs.outlineVariant,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${accuracyPct.toStringAsFixed(2)}%',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontSize: 22,
+                    color: cs.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                softCapHit
+                    ? 'MULT × (capped)'
+                    : 'MULT ×',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 1.5,
+                  color: cs.outlineVariant,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                multiplier.toStringAsFixed(2),
+                style: theme.textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'decay ${decay.toStringAsFixed(5)}/s',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.outline,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

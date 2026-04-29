@@ -209,6 +209,9 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
                   .where((upgrade) => upgrade.effectType == selectedCategory)
+                  .where((upgrade) =>
+                      gameState.prestigeCount >=
+                      gameState.minPrestigeForUpgrade(upgrade.id))
                   .toList();
               final entries = filteredUpgrades.map((upgrade) {
                 final info = gameState.getPurchaseInfo(upgrade);

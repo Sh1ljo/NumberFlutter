@@ -48,6 +48,19 @@ enum TutorialStep {
   /// Final "good luck" message on main screen.
   goodLuck,
 
+  /// ── Nexus tutorial (fires once, after first stabilization) ────────────
+  nexusIntro,
+  nexusUpgrades,
+  nexusGoal,
+
+  /// ── Neural tutorial (fires once, after Neural Genesis purchase) ───────
+  neuralUnlocked,
+  navNeural,
+  neuralIntro,
+  neuralUpgradeHint,
+  neuralBranchHint,
+  neuralTrainHint,
+
   /// Tutorial finished or skipped — overlay hidden.
   done,
 }
