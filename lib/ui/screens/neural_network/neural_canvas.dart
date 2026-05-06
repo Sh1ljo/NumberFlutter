@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../logic/game_state.dart';
 import '../../../models/neural_network.dart';
 import 'neural_painter.dart';
 import 'neuron_widget.dart';
@@ -6,8 +8,13 @@ import 'neuron_detail_sheet.dart';
 
 class NeuralCanvas extends StatefulWidget {
   final NeuralNetwork network;
+  final GlobalKey? neuralNeuronKey;
 
-  const NeuralCanvas({super.key, required this.network});
+  const NeuralCanvas({
+    super.key,
+    required this.network,
+    this.neuralNeuronKey,
+  });
 
   @override
   State<NeuralCanvas> createState() => _NeuralCanvasState();
@@ -40,6 +47,15 @@ class _NeuralCanvasState extends State<NeuralCanvas>
   }
 
   @override
+  void activate() {
+    super.activate();
+    // Reset centering state so the next build re-centers the network.
+    // This fires whenever the Neural tab becomes visible (e.g. tab switch).
+    _lastViewport = null;
+    _lastCanvas = null;
+  }
+
+  @override
   void dispose() {
     _connCtrl.dispose();
     _transformCtrl.dispose();
@@ -50,17 +66,29 @@ class _NeuralCanvasState extends State<NeuralCanvas>
     if (viewport.width <= 0 || viewport.height <= 0) return;
     if (layers.isEmpty) return;
 
-    final positions = _buildPositions(layers, canvas);
-    if (positions.isEmpty) return;
+    // Use TARGET slot counts for bounds, not actual neurons. This ensures the
+    // view always fits the full intended layout even as neurons are added later
+    // (canvas size doesn't change between neuron additions, so this callback
+    // only fires when layers are added — we must already show future slots).
+    final canvasCenterY = canvas.height / 2;
 
     double minX = double.infinity, maxX = -double.infinity;
     double minY = double.infinity, maxY = -double.infinity;
-    for (final pos in positions.values) {
-      if (pos.dx < minX) minX = pos.dx;
-      if (pos.dx > maxX) maxX = pos.dx;
-      if (pos.dy < minY) minY = pos.dy;
-      if (pos.dy > maxY) maxY = pos.dy;
+
+    for (final layer in layers) {
+      final x = _canvasPadding + layer.index * _layerSpacing + _neuronSize / 2;
+      final target = NeuralNetwork.targetNeuronCountForLayer(layer.index);
+      final slots = target > 0 ? target : (layer.neurons.isEmpty ? 1 : layer.neurons.length);
+      final totalH = (slots - 1) * _neuronSpacing;
+      final topY = canvasCenterY - totalH / 2;
+      final bottomY = topY + (slots - 1) * _neuronSpacing;
+
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (topY < minY) minY = topY;
+      if (bottomY > maxY) maxY = bottomY;
     }
+
     final r = _neuronSize / 2;
     minX -= r;
     maxX += r;
@@ -75,8 +103,7 @@ class _NeuralCanvasState extends State<NeuralCanvas>
 
     final scaleX = viewport.width / contentW;
     final scaleY = viewport.height / contentH;
-    final fitScale = scaleX < scaleY ? scaleX : scaleY;
-    final scale = fitScale.clamp(_minScale, _maxScale);
+    final scale = (scaleX < scaleY ? scaleX : scaleY).clamp(_minScale, _maxScale);
 
     final dx = viewport.width / 2 - centerX * scale;
     final dy = viewport.height / 2 - centerY * scale;
@@ -191,11 +218,16 @@ class _NeuralCanvasState extends State<NeuralCanvas>
                             left: positions[neuron.id]!.dx - _neuronSize / 2,
                             top: positions[neuron.id]!.dy - _neuronSize / 2,
                             child: NeuronWidget(
+                              key: neuron.id == 'layer_0_neuron_0'
+                                  ? widget.neuralNeuronKey
+                                  : null,
                               neuron: neuron,
                               highlight:
                                   widget.network.canNeuronBranch(neuron.id),
-                              onTap: () =>
-                                  NeuronDetailSheet.show(context, neuron),
+                              onTap: () {
+                                context.read<GameState>().onNeuronTapped();
+                                NeuronDetailSheet.show(context, neuron);
+                              },
                             ),
                           ),
                   ],

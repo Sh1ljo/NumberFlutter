@@ -88,13 +88,20 @@ class _SystemLoadingIndicatorState extends State<SystemLoadingIndicator>
                             (bars[index] + pulse * 0.20).clamp(0.18, 1.0);
                         final opacity = (0.45 + (pulse + 1) * 0.275)
                             .clamp(0.2, 1.0);
-                        return Container(
+                        return SizedBox(
                           width: 16,
-                          height: 44 * heightFactor,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary
-                                .withValues(alpha: opacity),
-                            borderRadius: BorderRadius.circular(1),
+                          height: 44,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              width: 16,
+                              height: 44 * heightFactor,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: opacity),
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
                           ),
                         );
                       }),

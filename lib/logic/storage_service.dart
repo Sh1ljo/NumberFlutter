@@ -16,8 +16,10 @@ class StorageService {
   static const String _keyTutorialCompleted = 'tutorialCompleted';
   static const String _keyNexusTutorialSeen = 'nexusTutorialSeen';
   static const String _keyNeuralTutorialSeen = 'neuralTutorialSeen';
+  static const String _keyUpgradeTutorialSeen = 'upgradeTutorialSeen';
   static const String _keyNexusStabilized = 'nexusStabilized';
   static const String _keyNeuralNetwork = 'neural_network';
+  static const String _keyTestEnvironmentEnabled = 'testEnvironmentEnabled';
 
   Future<void> saveGame({
     required BigInt number,
@@ -32,8 +34,10 @@ class StorageService {
     required bool tutorialCompleted,
     required bool nexusTutorialSeen,
     required bool neuralTutorialSeen,
+    required bool upgradeTutorialSeen,
     required bool nexusStabilized,
     String? neuralNetworkJson,
+    bool testEnvironmentEnabled = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNumber, number.toString());
@@ -49,7 +53,9 @@ class StorageService {
     await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
     await prefs.setBool(_keyNexusTutorialSeen, nexusTutorialSeen);
     await prefs.setBool(_keyNeuralTutorialSeen, neuralTutorialSeen);
+    await prefs.setBool(_keyUpgradeTutorialSeen, upgradeTutorialSeen);
     await prefs.setBool(_keyNexusStabilized, nexusStabilized);
+    await prefs.setBool(_keyTestEnvironmentEnabled, testEnvironmentEnabled);
     if (neuralNetworkJson != null) {
       await prefs.setString(_keyNeuralNetwork, neuralNetworkJson);
     }
@@ -111,7 +117,9 @@ class StorageService {
       'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
       'nexusTutorialSeen': prefs.getBool(_keyNexusTutorialSeen) ?? false,
       'neuralTutorialSeen': prefs.getBool(_keyNeuralTutorialSeen) ?? false,
+      'upgradeTutorialSeen': prefs.getBool(_keyUpgradeTutorialSeen) ?? false,
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
+      'testEnvironmentEnabled': prefs.getBool(_keyTestEnvironmentEnabled) ?? false,
       'neuralNetwork': prefs.getString(_keyNeuralNetwork),
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
@@ -135,6 +143,7 @@ class StorageService {
     await prefs.remove(_keyTutorialCompleted);
     await prefs.remove(_keyNexusTutorialSeen);
     await prefs.remove(_keyNeuralTutorialSeen);
+    await prefs.remove(_keyUpgradeTutorialSeen);
     await prefs.remove(_keyNexusStabilized);
     await prefs.remove(_keyNeuralNetwork);
   }

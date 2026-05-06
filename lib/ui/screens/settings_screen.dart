@@ -310,6 +310,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text('Test Environment',
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontSize: 20)),
+                        const SizedBox(height: 4),
+                        Text('Lower prestige requirements and high click power',
+                            style: theme.textTheme.labelSmall
+                                ?.copyWith(fontSize: 10)),
+                        const SizedBox(height: 24),
+                        _buildListTile(
+                          context,
+                          title: gameState.testEnvironmentEnabled ? 'ON' : 'OFF',
+                          subtitle: gameState.testEnvironmentEnabled
+                              ? 'Click: 10k, Prestige: 10k'
+                              : 'Click: 1, Prestige: 100M (real game)',
+                          trailing: _buildDummyToggle(
+                            context,
+                            gameState.testEnvironmentEnabled,
+                            (val) {
+                              gameState.setTestEnvironmentEnabled(val);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                        border: Border.all(
+                            color: theme.colorScheme.surfaceContainerLow)),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text('Add Prestige Points',
                             style: theme.textTheme.titleLarge
                                 ?.copyWith(fontSize: 20)),

@@ -13,6 +13,9 @@ class TutorialOverlay extends StatefulWidget {
   final GlobalKey? prestigeMultiplierKey;
   final GlobalKey? prestigeGainCardKey;
   final GlobalKey? idleCategoryKey;
+  final GlobalKey? momentumBarKey;
+  final GlobalKey? neuralNeuronKey;
+  final GlobalKey? neuralHudKey;
 
   const TutorialOverlay({
     super.key,
@@ -23,6 +26,9 @@ class TutorialOverlay extends StatefulWidget {
     this.prestigeMultiplierKey,
     this.prestigeGainCardKey,
     this.idleCategoryKey,
+    this.momentumBarKey,
+    this.neuralNeuronKey,
+    this.neuralHudKey,
   });
 
   @override
@@ -35,6 +41,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
   Rect? _holeRect;
   TutorialStep? _lastStep;
   String? _lastCategory;
+  int _holeUpdateGeneration = 0;
 
   @override
   void initState() {
@@ -74,9 +81,30 @@ class _TutorialOverlayState extends State<TutorialOverlay>
         return widget.prestigeGainCardKey;
       case TutorialStep.navNeural:
         return widget.navKeys.length > 3 ? widget.navKeys[3] : null;
+      case TutorialStep.neuralTapNeuron:
+        return widget.neuralNeuronKey;
+      case TutorialStep.neuralViewAccuracy:
+        return widget.neuralHudKey;
+      case TutorialStep.buyProbabilityStrike:
+        return widget.upgradeRowKeys[GameState.probabilityStrikeId];
+      case TutorialStep.navGeneratorsForStrike:
+        return widget.navKeys.isNotEmpty ? widget.navKeys[0] : null;
+      case TutorialStep.navUpgradesForMomentum:
+        return widget.navKeys.length > 1 ? widget.navKeys[1] : null;
+      case TutorialStep.buyMomentum:
+        return null; // floating card only — user finds and buys it themselves
+      case TutorialStep.navGeneratorsForMomentum:
+        return widget.navKeys.isNotEmpty ? widget.navKeys[0] : null;
+      case TutorialStep.demonstrateMomentum:
+        return widget.momentumBarKey;
+      case TutorialStep.navUpgradesForSpecial:
+        return widget.navKeys.length > 1 ? widget.navKeys[1] : null;
+      case TutorialStep.kineticSynergyIntro:
+        return widget.upgradeRowKeys[GameState.kineticSynergyId];
+      case TutorialStep.overclockIntro:
+        return widget.upgradeRowKeys[GameState.overclockId];
       case TutorialStep.welcome:
       case TutorialStep.watchIdle:
-      case TutorialStep.exploreUpgrades:
       case TutorialStep.learnPrestige:
       case TutorialStep.learnPrestigeDetails:
       case TutorialStep.goodLuck:
@@ -85,9 +113,15 @@ class _TutorialOverlayState extends State<TutorialOverlay>
       case TutorialStep.nexusGoal:
       case TutorialStep.neuralUnlocked:
       case TutorialStep.neuralIntro:
-      case TutorialStep.neuralUpgradeHint:
-      case TutorialStep.neuralBranchHint:
-      case TutorialStep.neuralTrainHint:
+      case TutorialStep.neuralUpgradeGradient:
+      case TutorialStep.neuralChangeActivation:
+      case TutorialStep.neuralBranchNeuron:
+      case TutorialStep.neuralAccuracyLimit:
+      case TutorialStep.upgradeIntro:
+      case TutorialStep.probabilityStrikeIntro:
+      case TutorialStep.triggerProbabilityStrike:
+      case TutorialStep.momentumIntro:
+      case TutorialStep.upgradesDone:
       case TutorialStep.done:
         return null;
     }
@@ -95,33 +129,69 @@ class _TutorialOverlayState extends State<TutorialOverlay>
 
   void _updateHole(TutorialStep step) {
     _holeRect = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    final gen = ++_holeUpdateGeneration;
+    _doHoleUpdate(step, gen, 0);
+  }
+
+  void _doHoleUpdate(TutorialStep step, int gen, int attempt) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _holeUpdateGeneration != gen) return;
       final key = _keyForStep(step);
       final ctx = key?.currentContext;
-      if (ctx == null) return;
-      final renderObject = ctx.findRenderObject();
-      if (renderObject is! RenderBox || !renderObject.hasSize) return;
-      final box = renderObject;
-      final offset = box.localToGlobal(Offset.zero);
+      if (ctx == null) {
+        // Item not rendered yet (lazy list) — retry up to 5 times
+        if (attempt < 5) {
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted && _holeUpdateGeneration == gen) {
+              _doHoleUpdate(step, gen, attempt + 1);
+            }
+          });
+        }
+        return;
+      }
+
+      // Scroll item into view; awaiting means we wait for the animation to
+      // finish (or resolve immediately if no scroll was needed).
+      try {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          alignment: 0.2,
+        );
+      } catch (_) {}
+
+      // One extra frame for layout to settle after the scroll.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      if (!mounted || _holeUpdateGeneration != gen) return;
+      final rObj = key?.currentContext?.findRenderObject();
+      if (rObj is! RenderBox || !rObj.hasSize) return;
+      final offset = rObj.localToGlobal(Offset.zero);
       const pad = 8.0;
       setState(() {
         _holeRect = Rect.fromLTWH(
           (offset.dx - pad).clamp(0.0, double.infinity),
           (offset.dy - pad).clamp(0.0, double.infinity),
-          box.size.width + pad * 2,
-          box.size.height + pad * 2,
+          rObj.size.width + pad * 2,
+          rObj.size.height + pad * 2,
         );
       });
-      try {
-        Scrollable.maybeOf(ctx)?.position.ensureVisible(
-              renderObject,
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-              alignment: 0.35,
-            );
-      } catch (_) {}
     });
+  }
+
+  /// Steps where the caption card must not appear until the hole is resolved.
+  /// Without this guard the card briefly centres on-screen (hole == null) and
+  /// then jumps to the correct position once the hole is found.
+  static bool _requiresHoleBeforeShow(TutorialStep step) {
+    switch (step) {
+      case TutorialStep.buyAutoClicker:
+      case TutorialStep.buyClickPower:
+      case TutorialStep.buyProbabilityStrike:
+        return true;
+      default:
+        return false;
+    }
   }
 
   @override
@@ -145,7 +215,6 @@ class _TutorialOverlayState extends State<TutorialOverlay>
         final hole = _holeRect;
 
         final isTapToContinue = step == TutorialStep.welcome ||
-            step == TutorialStep.exploreUpgrades ||
             step == TutorialStep.learnPrestige ||
             step == TutorialStep.learnPrestigeDetails ||
             step == TutorialStep.prestigeMultiplierHint ||
@@ -156,14 +225,30 @@ class _TutorialOverlayState extends State<TutorialOverlay>
             step == TutorialStep.nexusGoal ||
             step == TutorialStep.neuralUnlocked ||
             step == TutorialStep.neuralIntro ||
-            step == TutorialStep.neuralUpgradeHint ||
-            step == TutorialStep.neuralBranchHint ||
-            step == TutorialStep.neuralTrainHint;
-        final isWatchIdle = step == TutorialStep.watchIdle;
+            step == TutorialStep.neuralViewAccuracy ||
+            step == TutorialStep.neuralAccuracyLimit ||
+            step == TutorialStep.upgradeIntro ||
+            step == TutorialStep.probabilityStrikeIntro ||
+            step == TutorialStep.momentumIntro ||
+            step == TutorialStep.kineticSynergyIntro ||
+            step == TutorialStep.overclockIntro ||
+            step == TutorialStep.upgradesDone;
+        final isWatchIdle = step == TutorialStep.watchIdle ||
+            step == TutorialStep.triggerProbabilityStrike ||
+            step == TutorialStep.buyMomentum ||
+            step == TutorialStep.neuralUpgradeGradient ||
+            step == TutorialStep.neuralChangeActivation ||
+            step == TutorialStep.neuralBranchNeuron;
         final isNavStep = step == TutorialStep.navUpgrades ||
             step == TutorialStep.navGenerators ||
             step == TutorialStep.navUpgradesForClick ||
-            step == TutorialStep.navNeural;
+            step == TutorialStep.navNeural ||
+            step == TutorialStep.neuralTapNeuron ||
+            step == TutorialStep.navGeneratorsForStrike ||
+            step == TutorialStep.navUpgradesForMomentum ||
+            step == TutorialStep.navGeneratorsForMomentum ||
+            step == TutorialStep.demonstrateMomentum ||
+            step == TutorialStep.navUpgradesForSpecial;
 
         final titleBody = _copyForStep(step);
         final onTapContinue = isTapToContinue
@@ -336,15 +421,16 @@ class _TutorialOverlayState extends State<TutorialOverlay>
                 // don't block — let the underlying UI receive taps.
                 const SizedBox.shrink(),
 
-              // Caption card (_CaptionCard is Positioned and handles IgnorePointer internally)
-              if (titleBody != null)
+              // Caption card — suppressed until the hole is found for buy steps
+              // so the card never flashes centered and then jumps to the upgrade row.
+              if (titleBody != null && (!_requiresHoleBeforeShow(step) || hole != null))
                 _CaptionCard(
                   title: titleBody.$1,
                   body: titleBody.$2,
                   hole: hole,
                   screenSize: size,
                   padding: media.padding,
-                  centerOnScreen: (isTapToContinue && step != TutorialStep.prestigeMultiplierHint && step != TutorialStep.prestigeGainHint) || hole == null,
+                  centerOnScreen: (isTapToContinue && step != TutorialStep.prestigeMultiplierHint && step != TutorialStep.prestigeGainHint && step != TutorialStep.kineticSynergyIntro && step != TutorialStep.overclockIntro && step != TutorialStep.neuralViewAccuracy) || hole == null,
                   showTopContinueHint: isTapToContinue,
                   continueHintOverride: step == TutorialStep.learnPrestige
                       ? 'TAP ANYWHERE TO START PLAYING'
@@ -596,11 +682,6 @@ class _CaptionCard extends StatelessWidget {
         'CLICK POWER',
         'Buy Click Power! Each level increases how much every tap earns you.',
       );
-    case TutorialStep.exploreUpgrades:
-      return (
-        'EXPLORE',
-        'There are many more upgrades to discover — idle generators, click multipliers, and special mechanics. Experiment to find what works best!',
-      );
     case TutorialStep.learnPrestige:
       return (
         'PRESTIGE',
@@ -659,22 +740,98 @@ class _CaptionCard extends StatelessWidget {
     case TutorialStep.neuralIntro:
       return (
         'YOUR NETWORK',
-        'This is your living neural network. As it trains, its loss drops — and a lower loss multiplies ALL your number gains (clicks AND idle), soft-capped per prestige.',
+        'This is your neural network. As it trains, accuracy rises — and higher accuracy multiplies ALL your gains. Let\'s upgrade it step by step.',
       );
-    case TutorialStep.neuralUpgradeHint:
+    case TutorialStep.neuralTapNeuron:
       return (
-        'TAP A NEURON',
-        'Tap any neuron to upgrade it. Each gradient level (max 5) makes it stronger. You can also pick an activation function — linear, ReLU, sigmoid, or tanh. Each layer has a preferred activation that grants a +10% strength bonus.',
+        'TAP THE NEURON',
+        'That glowing node is your first neuron. Tap it to open the upgrade panel.',
       );
-    case TutorialStep.neuralBranchHint:
+    case TutorialStep.neuralUpgradeGradient:
+      return null; // handled inside NeuronDetailSheet
+    case TutorialStep.neuralChangeActivation:
+      return null; // handled inside NeuronDetailSheet
+    case TutorialStep.neuralBranchNeuron:
+      return null; // handled inside NeuronDetailSheet
+    case TutorialStep.neuralViewAccuracy:
       return (
-        'BRANCH TO GROW',
-        'Highlighted neurons can be branched to spawn the next layer. The network grows in a pyramid (1 → 2 → 4 → 8 → 4 → 2 → 1). Deeper layers contribute more strength, and each new layer costs more.',
+        'ACCURACY & MULTIPLIER',
+        'ACCURACY shows how well your network is trained. The MULT multiplier is derived directly from accuracy — the higher it climbs, the more all your gains are boosted.',
       );
-    case TutorialStep.neuralTrainHint:
+    case TutorialStep.neuralAccuracyLimit:
       return (
-        'LOWER THE LOSS',
-        'Strength = stronger gradients × deeper layers × matched activations. Higher strength means faster loss decay. Loss keeps falling even when you\'re offline — train it for the long haul to maximize your global multiplier.',
+        'ALWAYS TRAINING',
+        'Accuracy can never reach 100% — it approaches the limit asymptotically. Even 95% accuracy yields a massive multiplier. Keep upgrading neurons and branching layers to train faster.',
+      );
+    case TutorialStep.upgradeIntro:
+      return (
+        'EXPLORE SPECIAL UPGRADES',
+        'You\'ve got 100M to experiment! Let\'s explore some powerful upgrades and see them in action.',
+      );
+    case TutorialStep.probabilityStrikeIntro:
+      return (
+        'PROBABILITY STRIKE',
+        'Each click has a 5% chance to trigger a massive strike! The damage spikes are huge. Let\'s buy it and see strikes happen.',
+      );
+    case TutorialStep.buyProbabilityStrike:
+      return (
+        'BUY IT',
+        'Tap Probability Strike to purchase a level.',
+      );
+    case TutorialStep.navGeneratorsForStrike:
+      return (
+        'GO CLICK',
+        'Head back to GENERATORS and click multiple times. Watch for those huge damage spikes!',
+      );
+    case TutorialStep.triggerProbabilityStrike:
+      return (
+        'KEEP CLICKING',
+        'Click rapidly — every click has a 5% chance to trigger a massive strike. Watch those numbers explode!',
+      );
+    case TutorialStep.navUpgradesForMomentum:
+      return (
+        'NICE STRIKE!',
+        'You saw it! Now head to UPGRADES below — there\'s another upgrade that multiplies your damage the more you click.',
+      );
+    case TutorialStep.momentumIntro:
+      return (
+        'MOMENTUM',
+        'Each click builds a combo — your damage grows faster and faster as your streak continues. Let\'s buy it and watch the momentum bar climb.',
+      );
+    case TutorialStep.buyMomentum:
+      return (
+        'BUY MOMENTUM',
+        'Tap Momentum to purchase a level.',
+      );
+    case TutorialStep.navGeneratorsForMomentum:
+      return (
+        'GO CLICK!',
+        'Head to GENERATORS and click rapidly. Watch the momentum bar climb — the faster you click, the higher your multiplier!',
+      );
+    case TutorialStep.demonstrateMomentum:
+      return (
+        'WATCH IT GROW',
+        'Click rapidly and watch the momentum bar above climb! The faster you click, the higher it climbs.',
+      );
+    case TutorialStep.navUpgradesForSpecial:
+      return (
+        'BACK TO UPGRADES',
+        'Head to UPGRADES tab. We\'ll show you two more powerful upgrades.',
+      );
+    case TutorialStep.kineticSynergyIntro:
+      return (
+        'KINETIC SYNERGY',
+        'Each level adds 1% of your idle income to your clicks. This bridges idle and clicking together — they work as one!',
+      );
+    case TutorialStep.overclockIntro:
+      return (
+        'OVERCLOCK',
+        'Click fast enough and trigger a power surge that doubles your click power! This is your reward for intense clicking.',
+      );
+    case TutorialStep.upgradesDone:
+      return (
+        'MASTERY UNLOCKED',
+        'You\'ve explored all the special upgrades! Your earnings reset now — time to play for real and climb the ranks.',
       );
     case TutorialStep.done:
       return null;

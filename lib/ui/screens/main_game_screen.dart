@@ -230,11 +230,16 @@ class _MainGameScreenState extends State<MainGameScreen> {
                             ),
                             const SizedBox(height: 48),
                             RepaintBoundary(
-                              child: Selector<GameState, double>(
-                                selector: (_, state) => state.totalIdleRate,
-                                builder: (context, idleRate, child) {
+                              child: Selector<GameState, ({double auto, double total})>(
+                                selector: (_, state) => (
+                                  auto: state.autoClickRate,
+                                  total: state.totalIdleRate,
+                                ),
+                                builder: (context, rates, child) {
+                                  final shownRate =
+                                      rates.total > 0 ? rates.total : 0.0;
                                   return Text(
-                                    '+${NumberFormatter.formatDouble(idleRate)} / sec',
+                                    '+${NumberFormatter.formatDouble(shownRate)} / sec',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                       color: theme.colorScheme.primary
                                           .withValues(alpha: 0.5),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../../../../logic/game_state.dart';
 import '../widgets/dot_sphere_painter.dart';
+import '../widgets/nexus_disperse_painter.dart';
 import 'stabilized_view.dart';
 
 class UnstabilizedView extends StatefulWidget {
@@ -17,7 +19,10 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
     with TickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final AnimationController _stabilizeCtrl;
+  late final AnimationController _ambientCtrl;
   bool _isStabilizing = false;
+  double _disperseStartAngle = 0.0;
+  bool _disperseAngleCaptured = false;
 
   @override
   void initState() {
@@ -30,17 +35,35 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
       vsync: this,
       duration: const Duration(seconds: 5),
     );
+    _ambientCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    );
+    _stabilizeCtrl.addListener(_captureDisperse);
+  }
+
+  void _captureDisperse() {
+    if (!_disperseAngleCaptured && _stabilizeCtrl.value >= 0.45) {
+      final t = _stabilizeCtrl.value;
+      final p = (t / 0.45).clamp(0.0, 1.0);
+      final spinMultiplier = 1.0 + p * p * 6.0;
+      _disperseStartAngle = _ctrl.value * math.pi * 2 * spinMultiplier;
+      _disperseAngleCaptured = true;
+    }
   }
 
   @override
   void dispose() {
+    _stabilizeCtrl.removeListener(_captureDisperse);
     _ctrl.dispose();
     _stabilizeCtrl.dispose();
+    _ambientCtrl.dispose();
     super.dispose();
   }
 
   void _stabilizeNexus() {
     setState(() => _isStabilizing = true);
+    _ambientCtrl.repeat();
     _stabilizeCtrl.forward().then((_) {
       if (mounted) {
         context.read<GameState>().stabilizeNexus();
@@ -59,43 +82,48 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
         const ColoredBox(color: Colors.black),
         if (_isStabilizing)
           AnimatedBuilder(
-            animation: _stabilizeCtrl,
+            animation: Listenable.merge([_stabilizeCtrl, _ambientCtrl]),
             builder: (_, __) {
               final t = _stabilizeCtrl.value;
-              final spinMultiplier = 1.0 + (t * t * t) * 8.0;
-              final sphereExpand =
-                  1.0 + (t < 0.7 ? t * 1.2 : (0.7 - (t - 0.7)) * 1.2);
-              final sphereOpacity =
-                  ((-((t - 0.5) * 2.0).clamp(-1.0, 1.0)) + 1.0).clamp(0.0, 1.0)
-                      as double;
-              final contentOpacity =
-                  (t > 0.5 ? (t - 0.5) * 2.0 : 0.0).clamp(0.0, 1.0);
+
+              // Spin-up phase: sphere accelerates before disperse
+              if (t < 0.45) {
+                final p = t / 0.45;
+                final spinMultiplier = 1.0 + p * p * 6.0;
+                return Center(
+                  child: SizedBox(
+                    width: 180,
+                    height: 180,
+                    child: CustomPaint(
+                      painter: DotSpherePainter(
+                        angle: _ctrl.value * math.pi * 2 * spinMultiplier,
+                        primaryColor: cs.primary,
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              // Disperse + ambient drift phase
+              final contentOpacity = ((t - 0.80) / 0.20).clamp(0.0, 1.0);
 
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  Center(
-                    child: Opacity(
-                      opacity: sphereOpacity,
-                      child: SizedBox(
-                        width: 180 * sphereExpand,
-                        height: 180 * sphereExpand,
-                        child: CustomPaint(
-                          painter: DotSpherePainter(
-                            angle: _ctrl.value *
-                                3.14159265359 *
-                                2 *
-                                spinMultiplier,
-                            primaryColor: cs.primary,
-                          ),
-                        ),
-                      ),
+                  CustomPaint(
+                    painter: NexusDispersePainter(
+                      stabilizeT: t,
+                      sphereAngle: _disperseStartAngle,
+                      ambientT: _ambientCtrl.value * math.pi * 2,
+                      primary: cs.primary,
+                      outline: cs.outline,
                     ),
                   ),
-                  Opacity(
-                    opacity: contentOpacity,
-                    child: const StabilizedView(),
-                  ),
+                  if (contentOpacity > 0)
+                    Opacity(
+                      opacity: contentOpacity,
+                      child: const StabilizedView(),
+                    ),
                 ],
               );
             },

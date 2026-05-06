@@ -27,9 +27,6 @@ enum TutorialStep {
   /// Spotlight on the Click Power row — purchase it.
   buyClickPower,
 
-  /// Centered card — tap anywhere to continue to prestige lesson.
-  exploreUpgrades,
-
   /// Centered card — tap anywhere to finish tutorial and factory-reset.
   learnPrestige,
 
@@ -57,9 +54,34 @@ enum TutorialStep {
   neuralUnlocked,
   navNeural,
   neuralIntro,
-  neuralUpgradeHint,
-  neuralBranchHint,
-  neuralTrainHint,
+  /// Spotlight on the first neuron — user taps it to open the detail sheet.
+  neuralTapNeuron,
+  /// Guided inside NeuronDetailSheet — upgrade gradient.
+  neuralUpgradeGradient,
+  /// Guided inside NeuronDetailSheet — change activation function.
+  neuralChangeActivation,
+  /// Guided inside NeuronDetailSheet — branch the neuron.
+  neuralBranchNeuron,
+  /// Spotlight on the loss HUD — explains accuracy & multiplier.
+  neuralViewAccuracy,
+  /// Tap-to-continue — accuracy asymptote & multiplier explanation.
+  neuralAccuracyLimit,
+
+  /// ── Upgrade deep-dive tutorial (fires after prestige, before goodLuck) ──
+  upgradeIntro,
+  probabilityStrikeIntro,
+  buyProbabilityStrike,
+  navGeneratorsForStrike,
+  triggerProbabilityStrike,
+  navUpgradesForMomentum,
+  momentumIntro,
+  buyMomentum,
+  navGeneratorsForMomentum,
+  demonstrateMomentum,
+  navUpgradesForSpecial,
+  kineticSynergyIntro,
+  overclockIntro,
+  upgradesDone,
 
   /// Tutorial finished or skipped — overlay hidden.
   done,

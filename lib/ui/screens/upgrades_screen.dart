@@ -222,6 +222,9 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
 
               return Expanded(
                 child: ListView.builder(
+                  // Eagerly build all items so GlobalKeys are always valid
+                  // even before the user scrolls (needed for tutorial highlights).
+                  cacheExtent: 10000,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 24.0, vertical: 6.0),
                   itemCount: entries.length,

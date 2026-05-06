@@ -40,11 +40,16 @@ class _MainLayoutState extends State<MainLayout> {
   OverlayEntry? _prestigeNoticeEntry;
 
   final GlobalKey _tapAreaKey = GlobalKey();
+  final GlobalKey _neuralNeuronKey = GlobalKey();
+  final GlobalKey _neuralHudKey = GlobalKey();
   final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
   final Map<String, GlobalKey> _upgradeRowKeys = {
     GameState.clickPowerId: GlobalKey(),
     GameState.autoClickerId: GlobalKey(),
     GameState.probabilityStrikeId: GlobalKey(),
+    GameState.momentumId: GlobalKey(),
+    GameState.kineticSynergyId: GlobalKey(),
+    GameState.overclockId: GlobalKey(),
   };
   final GlobalKey _prestigeInitiateKey = GlobalKey();
   final GlobalKey _prestigeMultiplierKey = GlobalKey();
@@ -64,7 +69,10 @@ class _MainLayoutState extends State<MainLayout> {
         prestigeMultiplierKey: _prestigeMultiplierKey,
         prestigeGainCardKey: _prestigeGainCardKey,
       ),
-      const NeuralNetworkScreen(),
+      NeuralNetworkScreen(
+        neuralNeuronKey: _neuralNeuronKey,
+        neuralHudKey: _neuralHudKey,
+      ),
       const ShopScreen(),
       const SettingsScreen(),
     ];
@@ -355,6 +363,8 @@ class _MainLayoutState extends State<MainLayout> {
               prestigeMultiplierKey: _prestigeMultiplierKey,
               prestigeGainCardKey: _prestigeGainCardKey,
               idleCategoryKey: _idleCategoryKey,
+              neuralNeuronKey: _neuralNeuronKey,
+              neuralHudKey: _neuralHudKey,
             ),
           ],
         ),

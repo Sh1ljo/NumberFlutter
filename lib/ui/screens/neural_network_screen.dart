@@ -10,7 +10,14 @@ import 'neural_network/neural_canvas.dart';
 import 'neural_network/neural_unlock_screen.dart';
 
 class NeuralNetworkScreen extends StatefulWidget {
-  const NeuralNetworkScreen({super.key});
+  final GlobalKey? neuralNeuronKey;
+  final GlobalKey? neuralHudKey;
+
+  const NeuralNetworkScreen({
+    super.key,
+    this.neuralNeuronKey,
+    this.neuralHudKey,
+  });
 
   @override
   State<NeuralNetworkScreen> createState() => _NeuralNetworkScreenState();
@@ -160,9 +167,15 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _NeuralLossHud(state: state),
+                      _NeuralLossHud(
+                        key: widget.neuralHudKey,
+                        state: state,
+                      ),
                       Expanded(
-                        child: NeuralCanvas(network: state.neuralNetwork),
+                        child: NeuralCanvas(
+                          network: state.neuralNetwork,
+                          neuralNeuronKey: widget.neuralNeuronKey,
+                        ),
                       ),
                     ],
                   );
@@ -183,22 +196,44 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
 ///
 /// Rebuilds every tick because the parent `Consumer` of [GameState] rebuilds
 /// when the ticker calls notifyListeners().
-class _NeuralLossHud extends StatelessWidget {
-  const _NeuralLossHud({required this.state});
+class _NeuralLossHud extends StatefulWidget {
+  const _NeuralLossHud({super.key, required this.state});
 
   final GameState state;
+
+  @override
+  State<_NeuralLossHud> createState() => _NeuralLossHudState();
+}
+
+class _NeuralLossHudState extends State<_NeuralLossHud> {
+  static const double _emaAlpha = 0.22;
+  late double _smoothedAccuracyPct;
+
+  @override
+  void initState() {
+    super.initState();
+    _smoothedAccuracyPct = widget.state.neuralNetwork.accuracy * 100.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _NeuralLossHud oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextAccuracyPct = widget.state.neuralNetwork.accuracy * 100.0;
+    _smoothedAccuracyPct = (_smoothedAccuracyPct * (1.0 - _emaAlpha)) +
+        (nextAccuracyPct * _emaAlpha);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final accuracyPct = state.neuralNetwork.accuracy * 100.0;
-    final multiplier = state.neuralLossMultiplier;
-    final decay = state.neuralDecayRate;
+    final accuracyPct = _smoothedAccuracyPct;
+    final multiplier = widget.state.neuralLossMultiplier;
+    final decay = widget.state.neuralDecayRate;
     // Soft cap is binding when the effective multiplier is strictly less
     // than the raw (uncapped) one — i.e. the prestigeCount-based cap is
     // currently clamping the boost.
-    final softCapHit = multiplier < state.neuralLossRawMultiplier;
+    final softCapHit = multiplier < widget.state.neuralLossRawMultiplier;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),

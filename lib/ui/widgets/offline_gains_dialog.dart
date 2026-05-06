@@ -33,7 +33,8 @@ class OfflineGainsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final hasAccuracyGain = accuracyGain > 0;
+
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -58,7 +59,8 @@ class OfflineGainsDialog extends StatelessWidget {
             Text(
               'While you were away, your generators accumulated:',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.outlineVariant),
+              style: theme.textTheme.bodyLarge
+                  ?.copyWith(color: theme.colorScheme.outlineVariant),
             ),
             const SizedBox(height: 32),
             Text(
@@ -68,7 +70,17 @@ class OfflineGainsDialog extends StatelessWidget {
                 color: theme.colorScheme.primary,
               ),
             ),
-            if (accuracyGain > 0) ...[
+            if (!hasAccuracyGain && gains == BigInt.zero) ...[
+              const SizedBox(height: 12),
+              Text(
+                'No idle gains were generated this time.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ),
+            ],
+            if (hasAccuracyGain) ...[
               const SizedBox(height: 24),
               Text(
                 'Neural network training continued:',

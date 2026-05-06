@@ -173,8 +173,14 @@ class NeuralNetwork {
     return math.log(1.0 + sum);
   }
 
-  /// Convenience accessor for the UI: 0.0 .. 1.0
-  double get accuracy => (1.0 - loss).clamp(0.0, 1.0);
+  /// Log-shaped accuracy for display: fast early gains, asymptotes toward 1.0
+  /// but can never actually reach it. Uses log(1 + x*9)/log(10) to remap
+  /// the raw (1-loss) value so early upgrades feel impactful and the curve
+  /// always approaches 100% without ever touching it.
+  double get accuracy {
+    final x = (1.0 - loss).clamp(0.0, 1.0);
+    return math.log(1.0 + x * 9.0) / math.log(10.0);
+  }
 
   // Exponential layer cost: 1M for first branch, ×8 per additional layer.
   // 1M → 8M → 64M → 512M → ~4.1B → ~32.8B
