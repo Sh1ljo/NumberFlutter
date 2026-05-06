@@ -37,42 +37,7 @@ class ShopScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
 
-              // Boosts Section
-              Text(
-                'TEMPORARY BOOSTS',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 2.0,
-                  color: cs.outline,
-                  fontSize: 9,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: '2x Cash Boost',
-                description: '1 Hour Duration',
-                price: '\$0.99',
-                icon: Icons.trending_up,
-                theme: theme,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: '5x Cash Boost',
-                description: '24 Hours Duration',
-                price: '\$2.99',
-                icon: Icons.bolt,
-                theme: theme,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Speed Boost',
-                description: 'Double idle rate for 1 hour',
-                price: '\$0.99',
-                icon: Icons.speed,
-                theme: theme,
-              ),
-              const SizedBox(height: 28),
-
-              // Premium Section
+              // Permanent Upgrades Section
               Text(
                 'PERMANENT UPGRADES',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -80,6 +45,24 @@ class ShopScreen extends StatelessWidget {
                   color: cs.outline,
                   fontSize: 9,
                 ),
+              ),
+              const SizedBox(height: 12),
+              _ShopItem(
+                name: '2x Cash Boost Forever',
+                description: 'Double all cash gains permanently',
+                price: '\$4.99',
+                icon: Icons.attach_money,
+                theme: theme,
+                isPermanent: true,
+              ),
+              const SizedBox(height: 12),
+              _ShopItem(
+                name: 'Double Idle Rate Forever',
+                description: '2x idle generation rate permanently',
+                price: '\$4.99',
+                icon: Icons.bolt,
+                theme: theme,
+                isPermanent: true,
               ),
               const SizedBox(height: 12),
               _ShopItem(
@@ -98,34 +81,6 @@ class ShopScreen extends StatelessWidget {
                 icon: Icons.star,
                 theme: theme,
                 isPermanent: true,
-              ),
-              const SizedBox(height: 28),
-
-              // Bundles Section
-              Text(
-                'BUNDLES & PASSES',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 2.0,
-                  color: cs.outline,
-                  fontSize: 9,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Starter Pack',
-                description: 'Includes: 5x Boost + Speed Boost + 100 PP',
-                price: '\$9.99',
-                icon: Icons.card_giftcard,
-                theme: theme,
-                isFeatured: true,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Premium Pass (Monthly)',
-                description: 'Unlock daily rewards & exclusive boosts',
-                price: '\$4.99/mo',
-                icon: Icons.card_membership,
-                theme: theme,
               ),
               const SizedBox(height: 20),
             ],

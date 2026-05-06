@@ -26,6 +26,13 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
         .push(MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
   }
 
+  Future<void> _openLeaderboardScreen() async {
+    // TODO: Implement leaderboard screen
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Leaderboard coming soon!')),
+    );
+  }
+
   Future<void> _openProfileEditor() async {
     if (_profileActionBusy) return;
     final supabase = SupabaseService.instance;
@@ -97,9 +104,9 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   Row(
                     children: [
                       IconButton(
-                        tooltip: 'Stats',
-                        onPressed: _openStatsScreen,
-                        icon: const Icon(Icons.bar_chart),
+                        tooltip: 'Leaderboard',
+                        onPressed: _openLeaderboardScreen,
+                        icon: const Icon(Icons.emoji_events_outlined),
                       ),
                       IconButton(
                         tooltip: 'Profile',
