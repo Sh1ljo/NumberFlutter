@@ -6,6 +6,7 @@ import '../models/research_node.dart';
 import '../models/player_progress.dart';
 import '../data/nexus_data.dart';
 import '../models/neural_network.dart';
+import 'connectivity_service.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
 import 'backend_service.dart';
@@ -104,9 +105,35 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _cloudSyncInProgress = false;
   String? _lastCloudSyncError;
 
+  // ── Connectivity ──────────────────────────────────────────────────────
+  StreamSubscription<bool>? _connectivitySub;
+  bool _isOnline = true;
+  bool _wasEverOffline = false;
+  bool _justReconnected = false;
+
   bool isPrestigeAnimating = false;
   bool get cloudSyncInProgress => _cloudSyncInProgress;
   String? get lastCloudSyncError => _lastCloudSyncError;
+  bool get isOnline => _isOnline;
+
+  /// One-shot: true exactly once, right after connectivity comes back and a
+  /// reconnect attempt (and cloud sync, if signed in) has run.
+  bool consumeJustReconnected() {
+    final value = _justReconnected;
+    _justReconnected = false;
+    return value;
+  }
+
+  // ── Newly-unlocked upgrades ──────────────────────────────────────────────
+  // Prestige-gated upgrades (see minPrestigeForUpgrade) become visible the
+  // moment the player crosses their threshold. Queued here so the UI can pop
+  // a "new upgrade" notice without polling the upgrade list every frame.
+  final List<String> _pendingUnlockNotices = [];
+  List<String> get pendingUnlockedUpgradeIds =>
+      List.unmodifiable(_pendingUnlockNotices);
+  void dismissUnlockNotice(String upgradeId) {
+    _pendingUnlockNotices.remove(upgradeId);
+  }
 
   List<ResearchNode> researchNodes = NexusData.allNodes();
 
@@ -185,7 +212,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _saveDebounceTimer;
   Timer? _temporalCollapseActiveTimer;
   Timer? _temporalCollapseCooldownTimerRef;
+  Timer? _neuralSparkBoostTimer;
+  double _neuralSparkBoostMultiplier = 1.0;
   static const Duration _saveDebounceDuration = Duration(milliseconds: 350);
+
+  /// True while a caught "Neural Spark" click-power boost is active.
+  bool get isNeuralSparkBoostActive => _neuralSparkBoostMultiplier != 1.0;
 
   // Upgrades
   /// The upgrade catalog. Built fresh per call so each [GameState] owns its
@@ -779,6 +811,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _init() async {
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_initConnectivityMonitoring());
     try {
       final data = await _storageService.loadGame();
       number = data['number'] as BigInt;
@@ -1343,6 +1376,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (probabilityStrikeTriggered) {
       gain *= _probabilityStrikeMultiplier;
     }
+    if (_neuralSparkBoostMultiplier != 1.0) {
+      gain *= _neuralSparkBoostMultiplier;
+    }
 
     final previousHighest = highestNumber;
     final gained = BigInt.from(gain.floor());
@@ -1369,6 +1405,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       probabilityStrikeTriggered: probabilityStrikeTriggered,
       personalBestReached: personalBestReached,
     );
+  }
+
+  /// Called when the player catches a "Neural Spark" — the tap minigame
+  /// spawned by [MainGameScreen]. Grants a temporary click-power multiplier
+  /// so catching one rewards a short burst of active play, distinct from the
+  /// idle-focused Temporal Collapse ability.
+  void activateNeuralSparkBoost({
+    double multiplier = 2.0,
+    Duration duration = const Duration(seconds: 10),
+  }) {
+    _neuralSparkBoostTimer?.cancel();
+    _neuralSparkBoostMultiplier = multiplier;
+    notifyListeners();
+
+    _neuralSparkBoostTimer = Timer(duration, () {
+      _neuralSparkBoostMultiplier = 1.0;
+      notifyListeners();
+    });
   }
 
   void _activateOverclock() {
@@ -1605,9 +1659,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
+    final previousPrestigeCount = prestigeCount;
     prestigeCurrency += pointsToEarn;
     prestigeMultiplier += nextPrestigeDelta;
     prestigeCount += 1;
+    _queueNewlyUnlockedUpgrades(previousPrestigeCount, prestigeCount);
 
     number = BigInt.zero;
     clickPower = BigInt.from(
@@ -1625,6 +1681,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCoolingDown = false;
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseCooldownTimerRef?.cancel();
+    _neuralSparkBoostMultiplier = 1.0;
+    _neuralSparkBoostTimer?.cancel();
 
     for (var u in upgrades) {
       u.level = 0;
@@ -1685,6 +1743,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCoolingDown = false;
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseCooldownTimerRef?.cancel();
+    _neuralSparkBoostMultiplier = 1.0;
+    _neuralSparkBoostTimer?.cancel();
     offlineGainsThisSession = BigInt.zero;
     highestNumber = BigInt.zero;
     prestigeCurrency = 0.0;
@@ -1802,6 +1862,73 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCoolingDown = false;
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseCooldownTimerRef?.cancel();
+    _neuralSparkBoostMultiplier = 1.0;
+    _neuralSparkBoostTimer?.cancel();
+  }
+
+  /// Starts watching device connectivity so the game can retry the cloud
+  /// backend the moment a connection comes back, instead of staying stuck in
+  /// offline mode for the rest of the session.
+  Future<void> _initConnectivityMonitoring() async {
+    try {
+      _isOnline = await ConnectivityService.instance.checkConnection();
+      if (!_isOnline) _wasEverOffline = true;
+    } catch (_) {
+      _isOnline = true;
+    }
+
+    _connectivitySub = ConnectivityService.instance.onStatusChange.listen(
+      (online) {
+        final cameBackOnline = online && !_isOnline;
+        _isOnline = online;
+        if (!online) {
+          _wasEverOffline = true;
+        } else if (cameBackOnline && _wasEverOffline) {
+          unawaited(_reconnectToCloud());
+        }
+        notifyListeners();
+      },
+      onError: (_) {},
+    );
+  }
+
+  /// Re-attempts the Firebase handshake and, if signed in, a cloud sync.
+  /// [BackendService.initialize] is idempotent, so this is safe to call even
+  /// when the service booted successfully the first time around.
+  Future<void> _reconnectToCloud() async {
+    if (!BackendService.instance.isInitialized) {
+      try {
+        await BackendService.initialize().timeout(const Duration(seconds: 6));
+      } catch (_) {
+        // Still unreachable — the next connectivity transition retries.
+        return;
+      }
+    }
+
+    if (!BackendService.instance.isSignedIn) {
+      // No account to sync, but the connection itself is back — still worth
+      // telling the player they're no longer running in offline mode.
+      _justReconnected = true;
+      notifyListeners();
+      return;
+    }
+
+    await syncWithCloud();
+    if (_lastCloudSyncError == null) {
+      _justReconnected = true;
+      notifyListeners();
+    }
+  }
+
+  /// Queues a notice for every prestige-gated upgrade whose threshold sits
+  /// strictly between [oldCount] and [newCount], i.e. was just crossed.
+  void _queueNewlyUnlockedUpgrades(int oldCount, int newCount) {
+    for (final upgrade in upgrades) {
+      final required = minPrestigeForUpgrade(upgrade.id);
+      if (required > 0 && oldCount < required && newCount >= required) {
+        _pendingUnlockNotices.add(upgrade.id);
+      }
+    }
   }
 
   Future<void> syncWithCloud({bool forceUpload = false}) async {
@@ -2345,10 +2472,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _connectivitySub?.cancel();
     _ticker?.cancel();
     _overclockTimer?.cancel();
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseCooldownTimerRef?.cancel();
+    _neuralSparkBoostTimer?.cancel();
     _saveDebounceTimer?.cancel();
     super.dispose();
   }

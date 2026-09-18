@@ -44,6 +44,10 @@ class _MainLayoutState extends State<MainLayout> {
   bool _prestigeNoticeVisible = false;
   int? _lastPrestigeReadyNotifiedCount;
   OverlayEntry? _prestigeNoticeEntry;
+  bool _reconnectNoticeVisible = false;
+  OverlayEntry? _reconnectNoticeEntry;
+  bool _unlockNoticeVisible = false;
+  OverlayEntry? _unlockNoticeEntry;
   GameState? _gameState;
 
   final GlobalKey _tapAreaKey = GlobalKey();
@@ -58,6 +62,9 @@ class _MainLayoutState extends State<MainLayout> {
     GameState.momentumId: GlobalKey(),
     GameState.kineticSynergyId: GlobalKey(),
     GameState.overclockId: GlobalKey(),
+    GameState.dimensionalTapId: GlobalKey(),
+    GameState.cascadeResonatorId: GlobalKey(),
+    GameState.temporalCollapseId: GlobalKey(),
   };
   final GlobalKey _prestigeInitiateKey = GlobalKey();
   final GlobalKey _prestigeMultiplierKey = GlobalKey();
@@ -173,6 +180,8 @@ class _MainLayoutState extends State<MainLayout> {
     _maybePromptForLocation();
     _maybeShowLoginPrompt();
     _maybeShowOfflineNotice(gameState.lastCloudSyncError);
+    _maybeShowReconnectNotice();
+    _maybeShowUnlockNotice();
 
     if (gameState.isPrestigeAnimating) {
       if (_prestigeNoticeVisible) _removePrestigeNotice();
@@ -394,6 +403,106 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  void _maybeShowReconnectNotice() {
+    final gameState = _gameState;
+    if (gameState == null || _reconnectNoticeVisible) return;
+    if (!gameState.consumeJustReconnected()) return;
+
+    _reconnectNoticeVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _reconnectNoticeVisible = false;
+        return;
+      }
+      final overlay = Overlay.of(context, rootOverlay: true);
+      _reconnectNoticeEntry?.remove();
+      _reconnectNoticeEntry = _TopBanner.insert(
+        overlay,
+        icon: Icons.wifi,
+        title: 'Back Online',
+        subtitle: 'Reconnected — your progress is syncing to the cloud.',
+        onClosed: _removeReconnectNotice,
+      );
+    });
+  }
+
+  void _removeReconnectNotice() {
+    _reconnectNoticeEntry?.remove();
+    _reconnectNoticeEntry = null;
+    _reconnectNoticeVisible = false;
+  }
+
+  void _maybeShowUnlockNotice() {
+    final gameState = _gameState;
+    if (gameState == null || _unlockNoticeVisible) return;
+    final pending = gameState.pendingUnlockedUpgradeIds;
+    if (pending.isEmpty) return;
+
+    final upgradeId = pending.first;
+    gameState.dismissUnlockNotice(upgradeId);
+    final upgrade =
+        gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
+    if (upgrade == null) return;
+
+    _unlockNoticeVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _unlockNoticeVisible = false;
+        return;
+      }
+      final overlay = Overlay.of(context, rootOverlay: true);
+      _unlockNoticeEntry?.remove();
+      _unlockNoticeEntry = OverlayEntry(
+        builder: (ctx) => _UpgradeUnlockedNotice(
+          upgradeName: upgrade.name,
+          onClosed: _removeUnlockNotice,
+          onTap: () {
+            _removeUnlockNotice();
+            _revealUpgrade(upgradeId, upgrade.effectType);
+          },
+        ),
+      );
+      overlay.insert(_unlockNoticeEntry!);
+    });
+  }
+
+  void _removeUnlockNotice() {
+    _unlockNoticeEntry?.remove();
+    _unlockNoticeEntry = null;
+    _unlockNoticeVisible = false;
+  }
+
+  /// Switches to the Upgrades tab, selects the right click/idle category, and
+  /// scrolls the given upgrade row to the middle of the viewport.
+  void _revealUpgrade(String upgradeId, String category) {
+    context.read<GameState>().setSelectedUpgradeCategory(category);
+    if (_currentIndex != 1) {
+      setState(() => _currentIndex = 1);
+      context.read<GameState>().onMainTabChanged(1);
+    }
+    _scrollToUpgradeRow(upgradeId);
+  }
+
+  void _scrollToUpgradeRow(String upgradeId, [int attempt = 0]) {
+    final ctx = _upgradeRowKeys[upgradeId]?.currentContext;
+    if (ctx == null) {
+      // The list needs a frame (or a few, after a tab/category switch) to lay
+      // its rows out before the GlobalKey's context exists.
+      if (attempt < 20 && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _scrollToUpgradeRow(upgradeId, attempt + 1);
+        });
+      }
+      return;
+    }
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      alignment: 0.5,
+    );
+  }
+
   void _maybeShowPrestigeReadyNotice({
     required bool canPrestige,
     required int prestigeCount,
@@ -451,6 +560,8 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void dispose() {
     _removePrestigeNotice();
+    _removeReconnectNotice();
+    _removeUnlockNotice();
     // The reset callback is a single slot holding this State's setState, so
     // leaving it registered retained the disposed MainLayout.
     _gameState?.unregisterTutorialResetCallback(_onTutorialReset);
@@ -618,6 +729,288 @@ class _TopPrestigeNoticeState extends State<_TopPrestigeNotice>
                   tooltip: 'Dismiss',
                   onPressed: _closeAnimated,
                   icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small dismissible banner that slides down from the top, auto-closes, and
+/// carries an icon/title/subtitle. Used for connectivity notices.
+class _TopBanner extends StatefulWidget {
+  const _TopBanner({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onClosed,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onClosed;
+
+  /// Inserts a [_TopBanner] into [overlay] and returns its entry.
+  static OverlayEntry insert(
+    OverlayState overlay, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onClosed,
+  }) {
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _TopBanner(
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        onClosed: onClosed,
+      ),
+    );
+    overlay.insert(entry);
+    return entry;
+  }
+
+  @override
+  State<_TopBanner> createState() => _TopBannerState();
+}
+
+class _TopBannerState extends State<_TopBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offsetAnimation;
+  Timer? _autoCloseTimer;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _offsetAnimation = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+    _autoCloseTimer = Timer(const Duration(seconds: 4), _closeAnimated);
+  }
+
+  Future<void> _closeAnimated() async {
+    if (_closing) return;
+    _closing = true;
+    await _controller.reverse();
+    widget.onClosed();
+  }
+
+  void _closeImmediately() {
+    if (_closing) return;
+    _closing = true;
+    widget.onClosed();
+  }
+
+  @override
+  void dispose() {
+    _autoCloseTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final topInset = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: topInset + 8,
+      left: 12,
+      right: 12,
+      child: Material(
+        color: Colors.transparent,
+        child: SlideTransition(
+          position: _offsetAnimation,
+          child: Dismissible(
+            key: ValueKey('top_banner_${widget.title}'),
+            direction: DismissDirection.up,
+            onDismissed: (_) => _closeImmediately(),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                ),
+              ),
+              child: ListTile(
+                leading: Icon(widget.icon, color: theme.colorScheme.primary),
+                title: Text(widget.title, style: theme.textTheme.titleMedium),
+                subtitle:
+                    Text(widget.subtitle, style: theme.textTheme.bodyMedium),
+                trailing: IconButton(
+                  tooltip: 'Dismiss',
+                  onPressed: _closeAnimated,
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Slides in from the right when a new upgrade becomes available. Tapping it
+/// navigates to and centers that upgrade in the Upgrades list.
+class _UpgradeUnlockedNotice extends StatefulWidget {
+  const _UpgradeUnlockedNotice({
+    required this.upgradeName,
+    required this.onTap,
+    required this.onClosed,
+  });
+
+  final String upgradeName;
+  final VoidCallback onTap;
+  final VoidCallback onClosed;
+
+  @override
+  State<_UpgradeUnlockedNotice> createState() =>
+      _UpgradeUnlockedNoticeState();
+}
+
+class _UpgradeUnlockedNoticeState extends State<_UpgradeUnlockedNotice>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offsetAnimation;
+  Timer? _autoCloseTimer;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _offsetAnimation = Tween<Offset>(
+      begin: const Offset(1.1, 0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _controller.forward();
+    _autoCloseTimer = Timer(const Duration(seconds: 6), _closeAnimated);
+  }
+
+  Future<void> _closeAnimated() async {
+    if (_closing) return;
+    _closing = true;
+    await _controller.reverse();
+    widget.onClosed();
+  }
+
+  void _closeImmediately() {
+    if (_closing) return;
+    _closing = true;
+    widget.onClosed();
+  }
+
+  void _handleTap() {
+    if (_closing) return;
+    _closing = true;
+    widget.onTap();
+  }
+
+  @override
+  void dispose() {
+    _autoCloseTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Positioned(
+      right: 0,
+      top: 0,
+      bottom: 0,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          color: Colors.transparent,
+          child: SlideTransition(
+            position: _offsetAnimation,
+            child: Dismissible(
+              key: const ValueKey('upgrade_unlocked_notice'),
+              direction: DismissDirection.right,
+              onDismissed: (_) => _closeImmediately(),
+              child: GestureDetector(
+                onTap: _handleTap,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(4),
+                        right: Radius.circular(4),
+                      ),
+                      border: Border.all(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(-2, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.new_releases,
+                                color: theme.colorScheme.primary, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              'NEW UPGRADE',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                letterSpacing: 1.2,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          widget.upgradeName,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap to view',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
