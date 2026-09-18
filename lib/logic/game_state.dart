@@ -135,6 +135,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _pendingUnlockNotices.remove(upgradeId);
   }
 
+  // Upgrades the player has never bought (level 0) surface the same notice
+  // the first moment their cost is affordable. Tracked separately so an
+  // upgrade only ever announces itself once, even if the player's balance
+  // dips back below its cost afterwards.
+  final Set<String> _affordabilityNotified = {};
+
   List<ResearchNode> researchNodes = NexusData.allNodes();
 
   NeuralNetwork neuralNetwork = NeuralNetwork.initial();
@@ -1760,6 +1766,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     for (var n in researchNodes) {
       n.level = 0;
     }
+    _affordabilityNotified.clear();
+    _pendingUnlockNotices.clear();
     neuralNetwork = NeuralNetwork.initial();
     if (!preserveTutorial) {
       _tutorialCompleted = false;
@@ -1776,6 +1784,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (number > highestNumber) {
       highestNumber = number;
     }
+    _checkAffordabilityUnlocks();
   }
 
   PlayerProgress _buildLocalProgress(String userId) {
@@ -1928,6 +1937,22 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (required > 0 && oldCount < required && newCount >= required) {
         _pendingUnlockNotices.add(upgrade.id);
       }
+    }
+  }
+
+  /// Queues a notice the first time a never-bought upgrade's cost becomes
+  /// affordable, so the player is told "new upgrade available" as soon as
+  /// they can actually buy it rather than having to notice it themselves in
+  /// the upgrades list.
+  void _checkAffordabilityUnlocks() {
+    if (_affordabilityNotified.length >= upgrades.length) return;
+    for (final upgrade in upgrades) {
+      if (upgrade.level != 0) continue;
+      if (_affordabilityNotified.contains(upgrade.id)) continue;
+      if (prestigeCount < minPrestigeForUpgrade(upgrade.id)) continue;
+      if (number < upgrade.currentCost) continue;
+      _affordabilityNotified.add(upgrade.id);
+      _pendingUnlockNotices.add(upgrade.id);
     }
   }
 

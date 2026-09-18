@@ -181,7 +181,15 @@ class _MainLayoutState extends State<MainLayout> {
     _maybeShowLoginPrompt();
     _maybeShowOfflineNotice(gameState.lastCloudSyncError);
     _maybeShowReconnectNotice();
-    _maybeShowUnlockNotice();
+
+    final hasOfflineProgress = gameState.offlineGainsThisSession > BigInt.zero ||
+        gameState.offlineAccuracyGain > 0;
+    // Hold off on the "new upgrade" popup while the offline-earnings dialog
+    // is still up (or about to appear) so it doesn't stack on top of it —
+    // it fires the moment the player acknowledges those earnings instead.
+    if (!hasOfflineProgress) {
+      _maybeShowUnlockNotice();
+    }
 
     if (gameState.isPrestigeAnimating) {
       if (_prestigeNoticeVisible) _removePrestigeNotice();
@@ -197,8 +205,6 @@ class _MainLayoutState extends State<MainLayout> {
       setState(() => _currentIndex = 0);
     }
 
-    final hasOfflineProgress = gameState.offlineGainsThisSession > BigInt.zero ||
-        gameState.offlineAccuracyGain > 0;
     if (hasOfflineProgress && !_offlineDialogQueued) {
       _offlineDialogQueued = true;
       OfflineGainsDialog.show(
@@ -944,14 +950,17 @@ class _UpgradeUnlockedNoticeState extends State<_UpgradeUnlockedNotice>
       top: 0,
       bottom: 0,
       child: Align(
-        alignment: Alignment.centerRight,
+        // Shifted up from dead-center so it clears the "CURRENT NUMBER"
+        // readout instead of sitting right beside it, while staying pinned
+        // to the same right edge.
+        alignment: const Alignment(1.0, -0.35),
         child: Material(
           color: Colors.transparent,
           child: SlideTransition(
             position: _offsetAnimation,
             child: Dismissible(
               key: const ValueKey('upgrade_unlocked_notice'),
-              direction: DismissDirection.right,
+              direction: DismissDirection.startToEnd,
               onDismissed: (_) => _closeImmediately(),
               child: GestureDetector(
                 onTap: _handleTap,

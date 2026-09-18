@@ -59,7 +59,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
   void _scheduleNextSpark() {
     _sparkSpawnTimer?.cancel();
     // Randomized so the spawn never feels like a metronome.
-    final delaySeconds = 20 + _sparkRng.nextInt(21); // 20..40s
+    final delaySeconds = 10 + _sparkRng.nextInt(11); // 10..20s
     _sparkSpawnTimer = Timer(Duration(seconds: delaySeconds), _trySpawnSpark);
   }
 
