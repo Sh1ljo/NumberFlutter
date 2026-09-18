@@ -69,6 +69,7 @@ class _MainLayoutState extends State<MainLayout> {
   final GlobalKey _prestigeInitiateKey = GlobalKey();
   final GlobalKey _prestigeMultiplierKey = GlobalKey();
   final GlobalKey _prestigeGainCardKey = GlobalKey();
+  final GlobalKey _nexusOptProtocolNodeKey = GlobalKey();
   final GlobalKey _idleCategoryKey = GlobalKey();
 
   late final List<Widget> _screens;
@@ -97,6 +98,8 @@ class _MainLayoutState extends State<MainLayout> {
         return _prestigeMultiplierKey;
       case TutorialTarget.prestigeGainCard:
         return _prestigeGainCardKey;
+      case TutorialTarget.nexusOptProtocolNode:
+        return _nexusOptProtocolNodeKey;
       case TutorialTarget.momentumBar:
         return _momentumBarKey;
       case TutorialTarget.neuralNeuron:
@@ -131,6 +134,7 @@ class _MainLayoutState extends State<MainLayout> {
         initiateButtonKey: _prestigeInitiateKey,
         prestigeMultiplierKey: _prestigeMultiplierKey,
         prestigeGainCardKey: _prestigeGainCardKey,
+        nexusOptProtocolNodeKey: _nexusOptProtocolNodeKey,
       ),
       NeuralNetworkScreen(
         neuralNeuronKey: _neuralNeuronKey,

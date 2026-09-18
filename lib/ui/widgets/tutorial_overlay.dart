@@ -43,6 +43,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   TutorialStep? _lastStep;
   String? _lastCategory;
   int? _lastTab;
+  int? _lastSubTab;
   int _holeGeneration = 0;
   Timer? _retryTimer;
 
@@ -172,11 +173,12 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     // Selected rather than consumed: this overlay is mounted for the whole
     // session and the game ticker notifies ~10x/s, but what it renders only
     // depends on these three values.
-    return Selector<GameState, (bool, TutorialStep, String)>(
+    return Selector<GameState, (bool, TutorialStep, String, int)>(
       selector: (_, gs) => (
         gs.isTutorialActive,
         gs.tutorialStep,
         gs.selectedUpgradeCategory,
+        gs.prestigeSubTabIndex,
       ),
       builder: (context, _, __) {
         final gameState = context.read<GameState>();
@@ -186,14 +188,19 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         final spec = specFor(step);
         final category = gameState.selectedUpgradeCategory;
         final tab = widget.currentTab;
+        final subTab = gameState.prestigeSubTabIndex;
 
         // Re-resolve the hole when anything that could move the target
         // changes. Still kicked from build, but it only schedules a
         // post-frame measurement and never calls setState synchronously.
-        if (step != _lastStep || category != _lastCategory || tab != _lastTab) {
+        if (step != _lastStep ||
+            category != _lastCategory ||
+            tab != _lastTab ||
+            subTab != _lastSubTab) {
           _lastStep = step;
           _lastCategory = category;
           _lastTab = tab;
+          _lastSubTab = subTab;
           _restartHoleTracking(step);
         }
 
@@ -227,6 +234,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
 
           case TutorialMode.tapToContinue:
           case TutorialMode.spotlightAction:
+          case TutorialMode.spotlightTapToContinue:
             return _spotlight(context, spec, media, gameState);
         }
       },
@@ -299,6 +307,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     final hole = _holeRect;
     final size = media.size;
     final tapToContinue = spec.isTapToContinue;
+    final tapInsideHole = spec.mode == TutorialMode.spotlightTapToContinue;
     final onTap =
         tapToContinue ? () => gameState.onTutorialTapToContinue() : null;
 
@@ -316,6 +325,12 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         children.add(_DimBar(rect: bar, onBlock: onTap));
       }
       children.add(_PulseOutline(rect: hole));
+      if (tapInsideHole) {
+        children.add(_HoleTapLayer(
+          rect: hole,
+          onTap: () => gameState.onTutorialTapToContinue(),
+        ));
+      }
     } else if (tapToContinue) {
       // No target (or not resolved yet) but the step advances on any tap:
       // dim the whole screen and take the tap.
@@ -342,7 +357,9 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         centerOnScreen: hole == null,
         continueHint: tapToContinue
             ? (spec.continueHint ?? 'TAP ANYWHERE TO CONTINUE')
-            : null,
+            : tapInsideHole
+                ? (spec.continueHint ?? 'TAP THE HIGHLIGHTED AREA TO CONTINUE')
+                : null,
       ));
     }
 
@@ -450,6 +467,28 @@ class _PulseOutlineState extends State<_PulseOutline>
             child: const SizedBox.expand(),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HoleTapLayer extends StatelessWidget {
+  final Rect rect;
+  final VoidCallback onTap;
+  const _HoleTapLayer({required this.rect, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    if (rect.width <= 0 || rect.height <= 0) return const SizedBox.shrink();
+    return Positioned(
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: const SizedBox.expand(),
       ),
     );
   }

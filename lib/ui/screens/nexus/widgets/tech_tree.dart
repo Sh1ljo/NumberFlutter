@@ -5,7 +5,8 @@ import 'tech_node.dart';
 
 class TechTree extends StatelessWidget {
   final List<ResearchNode> nodes;
-  const TechTree({required this.nodes});
+  final GlobalKey? optProtocolNodeKey;
+  const TechTree({required this.nodes, this.optProtocolNodeKey});
 
   ResearchNode _find(String id) => nodes.firstWhere((n) => n.id == id);
 
@@ -77,7 +78,12 @@ class TechTree extends StatelessWidget {
                 top: entry.value.dy - nodeSize / 2,
                 width: nodeSize,
                 height: nodeSize,
-                child: TechNode(node: _find(entry.key), allNodes: nodes),
+                child: entry.key == 'opt_protocol' && optProtocolNodeKey != null
+                    ? KeyedSubtree(
+                        key: optProtocolNodeKey,
+                        child: TechNode(node: _find(entry.key), allNodes: nodes),
+                      )
+                    : TechNode(node: _find(entry.key), allNodes: nodes),
               ),
           ],
         ),

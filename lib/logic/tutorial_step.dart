@@ -48,6 +48,10 @@ enum TutorialStep {
   /// ── Nexus tutorial (fires once, after first stabilization) ────────────
   nexusIntro,
   nexusUpgrades,
+
+  /// Spotlight on the real Optimization Protocol node — tap it, open the
+  /// real NodeDetailSheet, press the real RESEARCH button.
+  nexusResearchOptProtocol,
   nexusGoal,
 
   /// ── Neural tutorial (fires once, after Neural Genesis purchase) ───────
@@ -114,6 +118,11 @@ enum TutorialMode {
   /// when the player performs the action.
   spotlightAction,
 
+  /// Dim with a hole over the target, like [spotlightAction], but advances on
+  /// a tap *inside* the hole — for inert display widgets (a stat block, a
+  /// cost card) that have no purchase/nav action of their own to hook into.
+  spotlightTapToContinue,
+
   /// Pulsing outline over the target, no dim, taps pass through. For nav
   /// buttons and other chrome the player must be able to reach freely.
   passthroughHint,
@@ -140,6 +149,7 @@ enum TutorialTarget {
   idleCategory,
   prestigeMultiplier,
   prestigeGainCard,
+  nexusOptProtocolNode,
   momentumBar,
   neuralNeuron,
   neuralHud,
@@ -429,7 +439,7 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
   ),
   TutorialStep.prestigeMultiplierHint: TutorialStepSpec(
     scope: TutorialScope.main,
-    mode: TutorialMode.tapToContinue,
+    mode: TutorialMode.spotlightTapToContinue,
     target: TutorialTarget.prestigeMultiplier,
     requiredTab: TutorialTab.prestige,
     title: 'YOUR PRESTIGE MULTIPLIER',
@@ -438,7 +448,7 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
   ),
   TutorialStep.prestigeGainHint: TutorialStepSpec(
     scope: TutorialScope.main,
-    mode: TutorialMode.tapToContinue,
+    mode: TutorialMode.spotlightTapToContinue,
     target: TutorialTarget.prestigeGainCard,
     requiredTab: TutorialTab.prestige,
     title: 'PRESTIGE COST & GAIN',
@@ -468,6 +478,16 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     title: 'PERMANENT RESEARCH',
     body:
         'Tap a node to spend PP. Tier I (Optimization, Surge, Enhanced Extraction) opens Tier II (Idle Foundation, Quick Resume, Kinetic Surge), then Tier III (Resonance Core, Echo Protocol). Each level stacks forever.',
+  ),
+  TutorialStep.nexusResearchOptProtocol: TutorialStepSpec(
+    scope: TutorialScope.nexus,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.nexusOptProtocolNode,
+    requiredTab: TutorialTab.prestige,
+    title: 'RESEARCH IT',
+    body:
+        'Tap the highlighted node — Optimization Protocol — then press '
+        'RESEARCH to spend your first Prestige Points on a permanent upgrade.',
   ),
   TutorialStep.nexusGoal: TutorialStepSpec(
     scope: TutorialScope.nexus,

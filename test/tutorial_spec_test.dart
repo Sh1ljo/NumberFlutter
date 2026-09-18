@@ -45,7 +45,8 @@ void main() {
       for (final step in TutorialStep.values) {
         final spec = specFor(step);
         if (spec.mode == TutorialMode.spotlightAction ||
-            spec.mode == TutorialMode.passthroughHint) {
+            spec.mode == TutorialMode.passthroughHint ||
+            spec.mode == TutorialMode.spotlightTapToContinue) {
           expect(spec.target, isNotNull,
               reason: '${step.name} is a ${spec.mode.name} step with nothing '
                   'to point at');
@@ -141,6 +142,7 @@ void main() {
         TutorialTarget.upgradeOverclock: TutorialTab.upgrades,
         TutorialTarget.prestigeMultiplier: TutorialTab.prestige,
         TutorialTarget.prestigeGainCard: TutorialTab.prestige,
+        TutorialTarget.nexusOptProtocolNode: TutorialTab.prestige,
         TutorialTarget.neuralNeuron: TutorialTab.neural,
         TutorialTarget.neuralHud: TutorialTab.neural,
       };

@@ -112,6 +112,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _justReconnected = false;
 
   bool isPrestigeAnimating = false;
+
+  /// Which of PrestigeScreen's internal subtabs (0 = Prestige, 1 = Nexus) is
+  /// showing. Transient UI state, not persisted — lets TutorialOverlay
+  /// re-arm hole resolution when the player switches subtabs, since
+  /// TabBarView only builds the visible page and MainLayout's own
+  /// bottom-nav tab index never changes when this does.
+  int prestigeSubTabIndex = 0;
+
+  void setPrestigeSubTabIndex(int index) {
+    if (prestigeSubTabIndex == index) return;
+    prestigeSubTabIndex = index;
+    notifyListeners();
+  }
+
   bool get cloudSyncInProgress => _cloudSyncInProgress;
   String? get lastCloudSyncError => _lastCloudSyncError;
   bool get isOnline => _isOnline;
@@ -526,6 +540,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _tutorialStep == TutorialStep.done) {
       number += BigInt.from(100_000_000);
       _tutorialStep = TutorialStep.neuralUnlocked;
+    }
+    if (nodeId == 'opt_protocol' &&
+        _tutorialStep == TutorialStep.nexusResearchOptProtocol) {
+      _tutorialStep = TutorialStep.nexusGoal;
     }
     notifyListeners();
     _saveState();
@@ -2204,7 +2222,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _tutorialStep = TutorialStep.nexusUpgrades;
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.nexusUpgrades) {
-      _tutorialStep = TutorialStep.nexusGoal;
+      _tutorialStep = TutorialStep.nexusResearchOptProtocol;
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.nexusGoal) {
       _completeNexusTutorial();
@@ -2264,6 +2282,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _isNexusTutorialStep(TutorialStep step) {
     return step == TutorialStep.nexusIntro ||
         step == TutorialStep.nexusUpgrades ||
+        step == TutorialStep.nexusResearchOptProtocol ||
         step == TutorialStep.nexusGoal;
   }
 

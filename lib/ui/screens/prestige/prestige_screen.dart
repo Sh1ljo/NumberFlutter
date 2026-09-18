@@ -16,11 +16,13 @@ class PrestigeScreen extends StatefulWidget {
   final GlobalKey? initiateButtonKey;
   final GlobalKey? prestigeMultiplierKey;
   final GlobalKey? prestigeGainCardKey;
+  final GlobalKey? nexusOptProtocolNodeKey;
   const PrestigeScreen({
     super.key,
     this.initiateButtonKey,
     this.prestigeMultiplierKey,
     this.prestigeGainCardKey,
+    this.nexusOptProtocolNodeKey,
   });
 
   @override
@@ -80,6 +82,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_handleSubTabChanged);
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 5200),
@@ -111,9 +114,15 @@ class _PrestigeScreenState extends State<PrestigeScreen>
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleSubTabChanged);
     _tabController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _handleSubTabChanged() {
+    if (_tabController.indexIsChanging) return;
+    context.read<GameState>().setPrestigeSubTabIndex(_tabController.index);
   }
 
   void _initiatePrestige() {
@@ -438,7 +447,9 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       ),
 
                       // ── Tab 1: Nexus ─────────────────────────────────────
-                      const NexusScreen(),
+                      NexusScreen(
+                        optProtocolNodeKey: widget.nexusOptProtocolNodeKey,
+                      ),
                     ],
                   ),
                 ),

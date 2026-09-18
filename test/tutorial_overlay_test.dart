@@ -62,6 +62,17 @@ class _HarnessState extends State<_Harness> {
                     color: Colors.green,
                   ),
                 ),
+              if (widget.provideTargets)
+                Positioned(
+                  left: 40,
+                  top: 300,
+                  child: Container(
+                    key: _keys[TutorialTarget.prestigeMultiplier],
+                    width: 150,
+                    height: 80,
+                    color: Colors.purple,
+                  ),
+                ),
               TutorialOverlay(
                 resolveKey: (t) =>
                     widget.provideTargets ? _keys[t] : null,
@@ -212,6 +223,31 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(gameState.tutorialStep, TutorialStep.clickToFifty);
+    });
+
+    testWidgets('spotlightTapToContinue advances on a tap inside the hole',
+        (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.prestigeMultiplierHint);
+      await pumpHarness(tester, currentTab: TutorialTab.prestige);
+
+      // Inside the 40,300,150x80 target rect.
+      await tester.tapAt(const Offset(60, 320));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(gameState.tutorialStep, TutorialStep.prestigeGainHint);
+    });
+
+    testWidgets(
+        'spotlightTapToContinue does not advance on a tap in the dim area',
+        (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.prestigeMultiplierHint);
+      await pumpHarness(tester, currentTab: TutorialTab.prestige);
+
+      // Well outside the 40,300,150x80 target rect.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(gameState.tutorialStep, TutorialStep.prestigeMultiplierHint);
     });
   });
 

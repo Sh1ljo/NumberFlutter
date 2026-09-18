@@ -6,7 +6,8 @@ import '../widgets/ambient_background.dart';
 import '../widgets/tech_tree.dart';
 
 class StabilizedView extends StatelessWidget {
-  const StabilizedView();
+  final GlobalKey? optProtocolNodeKey;
+  const StabilizedView({this.optProtocolNodeKey});
 
   @override
   Widget build(BuildContext context) {
@@ -82,8 +83,10 @@ class StabilizedView extends StatelessWidget {
                   for (final node in gs.researchNodes) node.level,
                 ],
                 shouldRebuild: (prev, next) => !listEquals(prev, next),
-                builder: (context, _, __) =>
-                    TechTree(nodes: gameState.researchNodes),
+                builder: (context, _, __) => TechTree(
+                  nodes: gameState.researchNodes,
+                  optProtocolNodeKey: optProtocolNodeKey,
+                ),
               ),
               const SizedBox(height: 20),
             ],

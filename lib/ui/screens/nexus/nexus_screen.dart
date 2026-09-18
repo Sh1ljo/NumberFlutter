@@ -5,7 +5,8 @@ import 'views/unstabilized_view.dart';
 import 'views/stabilized_view.dart';
 
 class NexusScreen extends StatelessWidget {
-  const NexusScreen({super.key});
+  final GlobalKey? optProtocolNodeKey;
+  const NexusScreen({super.key, this.optProtocolNodeKey});
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +16,7 @@ class NexusScreen extends StatelessWidget {
         context.select<GameState, bool>((g) => g.nexusStabilized);
 
     if (nexusStabilized) {
-      return const StabilizedView();
+      return StabilizedView(optProtocolNodeKey: optProtocolNodeKey);
     }
 
     return prestigeCount == 0
