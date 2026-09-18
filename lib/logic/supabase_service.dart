@@ -186,21 +186,36 @@ class SupabaseService {
     bool? tutorialCompleted,
   }) async {
     if (!_initialized) return;
-    final metadata = currentUser?.userMetadata ?? <String, dynamic>{};
-    final fallbackName = (currentUser?.email ?? 'Player').split('@').first;
-    final resolvedDisplayName = (displayName?.trim().isNotEmpty ?? false)
-        ? displayName!.trim()
-        : ((metadata['full_name'] as String?) ??
-            (metadata['name'] as String?) ??
-            fallbackName);
+    final trimmedName = displayName?.trim();
 
+    // display_name is only written when a name is actually given. This used
+    // to fall back to the auth-metadata name on every call, and cloud sync
+    // calls in here every ~20s, so a name the player chose got reset.
     await _client.from('profiles').upsert({
       'id': userId,
-      'display_name': resolvedDisplayName,
+      if (trimmedName != null && trimmedName.isNotEmpty)
+        'display_name': trimmedName,
       if (country != null) 'country': country.trim(),
       if (city != null) 'city': city.trim(),
       if (tutorialCompleted != null) 'tutorial_completed': tutorialCompleted,
     });
+  }
+
+  /// Creates the profile row with a default name if it doesn't exist yet,
+  /// and leaves an existing row untouched.
+  Future<void> ensureProfile({required String userId}) async {
+    if (!_initialized) return;
+    final metadata = currentUser?.userMetadata ?? <String, dynamic>{};
+    final fallbackName = (currentUser?.email ?? 'Player').split('@').first;
+    final defaultName = (metadata['full_name'] as String?) ??
+        (metadata['name'] as String?) ??
+        fallbackName;
+
+    await _client.from('profiles').upsert(
+      {'id': userId, 'display_name': defaultName},
+      onConflict: 'id',
+      ignoreDuplicates: true,
+    );
   }
 
   Future<UserProfile?> fetchProfile({required String userId}) async {
@@ -215,7 +230,7 @@ class SupabaseService {
     final existing = await fetchProfile(userId: userId);
     if (existing != null) return existing;
 
-    await upsertProfile(userId: userId);
+    await ensureProfile(userId: userId);
     final created = await fetchProfile(userId: userId);
     if (created != null) return created;
 

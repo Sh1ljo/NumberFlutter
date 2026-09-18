@@ -168,6 +168,45 @@ class StorageService {
     };
   }
 
+  /// Every key the game save uses.
+  static const List<String> _saveKeys = [
+    _keyNumber,
+    _keyClickPower,
+    _keyAutoClickRate,
+    _keyLastPlayed,
+    _keyPrestigeCurrency,
+    _keyGlobalMultiplier,
+    _keyPrestigeMultiplier,
+    _keyPrestigeCount,
+    _keyUpgradeLevels,
+    _keyHighestNumber,
+    _keyNexusLevels,
+    _keyTutorialCompleted,
+    _keyTutorialStep,
+    _keyNexusTutorialSeen,
+    _keyNeuralTutorialSeen,
+    _keyUpgradeTutorialSeen,
+    _keyNexusStabilized,
+    _keyNeuralNetwork,
+    _keyTestEnvironmentEnabled,
+  ];
+
+  /// Copies the stored save, as-is, into one JSON blob under
+  /// `corrupt_save_backup_<epoch ms>`, so an unreadable save can still be
+  /// recovered by hand after the game starts fresh over it.
+  Future<void> backupRawSave() async {
+    final prefs = await _instance();
+    final raw = <String, Object?>{
+      for (final key in _saveKeys)
+        if (prefs.get(key) != null) key: prefs.get(key),
+    };
+    if (raw.isEmpty) return;
+    await prefs.setString(
+      'corrupt_save_backup_${DateTime.now().millisecondsSinceEpoch}',
+      jsonEncode(raw),
+    );
+  }
+
   Future<void> clearAllData() async {
     final prefs = await _instance();
     _lastWritten.clear();

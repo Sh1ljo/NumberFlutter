@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'config/app_config.dart';
@@ -16,6 +18,17 @@ Future<void> main() async {
   // The theme's font variants ship in assets/google_fonts, so never hit the
   // network for them.
   GoogleFonts.config.allowRuntimeFetching = false;
+  // The bundled fonts are OFL-licensed, which asks for the licence to ship
+  // with them; this lists it on Flutter's licences page.
+  LicenseRegistry.addLicense(() async* {
+    for (final (family, file) in [
+      ('Space Grotesk', 'OFL-spacegrotesk.txt'),
+      ('Manrope', 'OFL-manrope.txt'),
+    ]) {
+      final text = await rootBundle.loadString('assets/google_fonts/$file');
+      yield LicenseEntryWithLineBreaks(['google_fonts: $family'], text);
+    }
+  });
   await AppConfig.load();
   try {
     // Never block app launch on network-backed service boot.

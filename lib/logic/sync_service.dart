@@ -17,6 +17,8 @@ class SyncService {
   final SupabaseService _supabaseService;
   static const Duration _cloudRequestTimeout = Duration(seconds: 6);
 
+  String? _ensuredProfileUserId;
+
   bool get isAvailable => _supabaseService.isInitialized;
   String? get currentUserId => _supabaseService.currentUser?.id;
 
@@ -28,9 +30,15 @@ class SyncService {
     final userId = currentUserId;
     if (userId == null) return null;
 
-    await _supabaseService
-        .upsertProfile(userId: userId)
-        .timeout(_cloudRequestTimeout);
+    // The progress row needs a profile row. Creating a missing one once per
+    // user per session is enough; this ran on every sync (~20s) and reset
+    // the player's chosen display name each time.
+    if (_ensuredProfileUserId != userId) {
+      await _supabaseService
+          .ensureProfile(userId: userId)
+          .timeout(_cloudRequestTimeout);
+      _ensuredProfileUserId = userId;
+    }
     final remoteProgress = await _supabaseService
         .fetchProgress(userId: userId)
         .timeout(_cloudRequestTimeout);

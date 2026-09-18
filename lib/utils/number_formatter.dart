@@ -92,11 +92,12 @@ class NumberFormatter {
 
   /// Format a double value with K, M, B denominations and 3 decimal places
   static String formatDouble(double value) {
+    if (!value.isFinite) return value.toString();
     if (value < 1000) {
       return value.toStringAsFixed(3);
     }
 
-    final suffixIndex = (math.log(value) / math.log(10) ~/ 3).toInt();
+    final suffixIndex = _decimalExponent(value) ~/ 3;
 
     if (suffixIndex < _suffixes.length && suffixIndex > 0) {
       double shortValue =
@@ -107,9 +108,26 @@ class NumberFormatter {
     }
 
     // Fallback to scientific notation for absurdly large numbers
-    int exponent = (math.log(value) / math.log(10)).floor();
+    int exponent = _decimalExponent(value);
     String mantissa = '${value / (BigInt.from(10).pow(exponent).toDouble())}';
-    return '${mantissa.substring(0, 5)}e+$exponent';
+    // A round mantissa prints short ("1.0"), which substring(0, 5) threw on.
+    return '${mantissa.substring(0, math.min(5, mantissa.length))}e+$exponent';
+  }
+
+  /// floor(log10(value)) for value >= 1, exactly.
+  ///
+  /// The float log alone lands just under the integer at exact powers of
+  /// ten (log(1000)/log(10) is 2.9999999999999996), which rendered 1e6 as
+  /// "1000.000K" and made formatDouble(1000) throw.
+  static int _decimalExponent(double value) {
+    var exponent = (math.log(value) / math.ln10).floor();
+    if (BigInt.from(10).pow(exponent + 1).toDouble() <= value) {
+      exponent++;
+    } else if (exponent > 0 &&
+        BigInt.from(10).pow(exponent).toDouble() > value) {
+      exponent--;
+    }
+    return exponent;
   }
 
   /// Compact display for prestige multiplier (e.g. 1.028, 2.415).

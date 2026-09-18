@@ -42,8 +42,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> get ready => _readyCompleter.future;
 
   BigInt number = BigInt.zero;
-  BigInt clickPower = BigInt.from(10000);
-  Object _prestigeCurrency = 10000.0;
+  BigInt clickPower = BigInt.from(productionBaseClickPower);
+  Object _prestigeCurrency = 0.0;
 
   bool _testEnvironmentEnabled = false;
   bool get testEnvironmentEnabled => _testEnvironmentEnabled;
@@ -62,7 +62,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double prestigeMultiplier = 1.0;
 
   /// How many prestiges completed (used for incremental gains).
-  int prestigeCount = 500;
+  int prestigeCount = 0;
 
   /// Whether the nexus has been stabilized (persisted).
   bool _nexusStabilized = false;
@@ -87,6 +87,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   BigInt highestNumber = BigInt.zero;
   DateTime? _lastSavedAt;
   DateTime? _lastCloudPushAt;
+
+  /// Set when the save couldn't be loaded and the session started fresh.
+  /// Until a sync succeeds, the fresh local game reports itself as older
+  /// than anything in the cloud, so syncing restores the player's real
+  /// progress instead of overwriting it.
+  bool _loadFailed = false;
 
   /// Automatic pushes back off after failures. Every save used to retry a
   /// failed sync straight away, so offline play fired up to 3 network calls
@@ -866,6 +872,22 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       _startTicker();
       notifyListeners();
+    } catch (error, stack) {
+      // A load that throws part-way used to leave half-loaded state and no
+      // ticker, and the next tap then saved that over the real save. Keep a
+      // copy of what was stored, then start a clean game that runs normally.
+      debugPrint('Failed to load save, starting fresh: $error\n$stack');
+      try {
+        await _storageService.backupRawSave();
+      } catch (backupError) {
+        debugPrint('Failed to back up unreadable save: $backupError');
+      }
+      _loadFailed = true;
+      _testEnvironmentEnabled = false;
+      _resetToFreshState(preserveTutorial: false);
+      _lastSavedAt = null;
+      _startTicker();
+      notifyListeners();
     } finally {
       if (!_readyCompleter.isCompleted) {
         _readyCompleter.complete();
@@ -873,9 +895,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void _calculateOfflineProgress(DateTime? lastPlayed) {
+  void _calculateOfflineProgress(DateTime? lastPlayed, {DateTime? now}) {
     if (lastPlayed != null) {
-      final diff = DateTime.now().difference(lastPlayed).inSeconds;
+      final diff = (now ?? DateTime.now()).difference(lastPlayed).inSeconds;
       if (diff <= 0) return;
 
       if (totalIdleRate > 0) {
@@ -911,6 +933,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void _startTicker() {
     _ticker?.cancel();
+    // Prestige and a cloud restore restart the loop; if either finishes
+    // while the app is minimised, resuming will start it instead.
+    if (_backgroundedAt != null) {
+      _ticker = null;
+      return;
+    }
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       bool hasStateChange = _updateMomentumDecay();
 
@@ -1623,6 +1651,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get prestigePointsOnPrestige => nextPrestigeReward;
 
   Future<void> hardReset({bool preserveTutorial = false}) async {
+    _resetToFreshState(preserveTutorial: preserveTutorial);
+
+    await _storageService.clearAllData();
+    _lastSavedAt = DateTime.now();
+    await _persistState(skipCloudUpload: true);
+    if (_syncService.isAvailable && _syncService.currentUserId != null) {
+      await syncWithCloud(forceUpload: true);
+    }
+
+    notifyListeners();
+    if (!preserveTutorial) {
+      _onTutorialResetCallback?.call();
+    }
+  }
+
+  /// Puts every piece of game state back to a brand-new game. Touches no
+  /// storage and no cloud; callers decide what to persist.
+  void _resetToFreshState({required bool preserveTutorial}) {
     number = BigInt.zero;
     clickPower = BigInt.from(
         _testEnvironmentEnabled ? 10000 : productionBaseClickPower);
@@ -1664,18 +1710,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _upgradeTutorialSeen = false;
     }
     _recalculateDerivedStatsFromUpgrades();
-
-    await _storageService.clearAllData();
-    _lastSavedAt = DateTime.now();
-    await _persistState(skipCloudUpload: true);
-    if (_syncService.isAvailable && _syncService.currentUserId != null) {
-      await syncWithCloud(forceUpload: true);
-    }
-
-    notifyListeners();
-    if (!preserveTutorial) {
-      _onTutorialResetCallback?.call();
-    }
   }
 
   void _updateHighestNumber() {
@@ -1712,7 +1746,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       ),
       neuralLoss: neuralNetwork.loss,
       neuralLowestLoss: neuralNetwork.lowestLossEver,
-      updatedAt: _lastSavedAt?.toUtc() ?? now,
+      updatedAt: _loadFailed
+          ? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
+          : (_lastSavedAt?.toUtc() ?? now),
     );
   }
 
@@ -1786,6 +1822,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       );
       if (result == null) return;
 
+      // Either the cloud copy was restored or there was none to protect.
+      _loadFailed = false;
       if (result.winner == SyncWinner.remote) {
         _applyCloudProgress(result.resolved);
         _startTicker();
@@ -1891,17 +1929,53 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.paused && _backgroundedAt == null) {
+      // Minimising works like closing the app: the loop stops (it used to
+      // keep ticking, saving and syncing until the OS froze the process,
+      // which on Android could be minutes) and the time away is credited
+      // as offline progress on return.
+      _backgroundedAt = clock();
+      _ticker?.cancel();
+      _ticker = null;
       // The OS may kill a backgrounded app without warning. Flush now so the
       // last few seconds since the periodic save aren't lost.
       _saveDebounceTimer?.cancel();
       unawaited(_saveState());
     }
     if (state == AppLifecycleState.resumed) {
-      // When app resumes, update lastPlayed to current time so we don't
-      // accumulate offline gains for the time the app was paused
-      _lastSavedAt = DateTime.now();
-      clearOfflineGains();
+      final backgroundedAt = _backgroundedAt;
+      _backgroundedAt = null;
+      if (backgroundedAt != null) {
+        _creditTimeAway(backgroundedAt);
+      }
+      _lastSavedAt = clock();
+      _startTicker();
+      notifyListeners();
+    }
+  }
+
+  /// Time source for the minimise/resume handling, swappable in tests.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
+  /// When the app was minimised; null while it is in the foreground.
+  DateTime? _backgroundedAt;
+
+  /// Away for less than this and the offline gains are credited silently
+  /// instead of popping the offline-gains dialog.
+  static const Duration offlineDialogMinAway = Duration(seconds: 60);
+
+  /// Credits time spent minimised exactly like time spent with the app
+  /// closed (including Quick Resume), via [_calculateOfflineProgress].
+  void _creditTimeAway(DateTime backgroundedAt) {
+    // Any gains still waiting on an unacknowledged dialog were already
+    // added to the number; only the new amount is reported.
+    offlineGainsThisSession = BigInt.zero;
+    offlineAccuracyGain = 0.0;
+    _calculateOfflineProgress(backgroundedAt, now: clock());
+    if (clock().difference(backgroundedAt) < offlineDialogMinAway) {
+      offlineGainsThisSession = BigInt.zero;
+      offlineAccuracyGain = 0.0;
     }
   }
 

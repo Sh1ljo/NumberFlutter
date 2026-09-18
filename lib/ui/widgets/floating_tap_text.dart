@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 ///
 /// Wrapped in its own RepaintBoundary: while particles are alive they
 /// animate every frame, which used to repaint the entire page with them.
-/// Hit testing is unchanged: the layer only catches pointers that land on a
-/// particle, exactly as the particles did when they sat in the page's Stack.
+/// Particles ignore pointers: a fast tap landing on the "+N" still rising
+/// from the previous tap used to be swallowed by it and never counted.
 class FloatingTapTextLayer extends StatefulWidget {
   const FloatingTapTextLayer({super.key});
 
@@ -47,8 +47,10 @@ class FloatingTapTextLayerState extends State<FloatingTapTextLayer> {
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Stack(children: List<Widget>.of(_texts)),
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: Stack(children: List<Widget>.of(_texts)),
+      ),
     );
   }
 }
