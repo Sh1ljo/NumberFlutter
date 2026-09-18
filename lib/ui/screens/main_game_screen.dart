@@ -14,7 +14,10 @@ import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
 
-  const MainGameScreen({super.key, this.tapAreaKey});
+  /// Spotlight target for the `demonstrateMomentum` tutorial step.
+  final GlobalKey? momentumBarKey;
+
+  const MainGameScreen({super.key, this.tapAreaKey, this.momentumBarKey});
 
   @override
   State<MainGameScreen> createState() => _MainGameScreenState();
@@ -189,6 +192,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
                       if (!data.show) return const SizedBox.shrink();
                       return RepaintBoundary(
                         child: Padding(
+                          key: widget.momentumBarKey,
                           padding:
                               const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
                           child: _MomentumProgressBar(

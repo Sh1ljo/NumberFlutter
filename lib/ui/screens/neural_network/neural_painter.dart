@@ -72,7 +72,10 @@ class NeuralPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(NeuralPainter oldDelegate) =>
+      // neuronPositions is rebuilt each time the network changes, so an
+      // identity comparison on it was always true and made this unconditional.
       oldDelegate.animationValue != animationValue ||
-      oldDelegate.layers != layers ||
-      oldDelegate.neuronPositions != neuronPositions;
+      oldDelegate.cs != cs ||
+      !identical(oldDelegate.layers, layers) ||
+      oldDelegate.neuronPositions.length != neuronPositions.length;
 }

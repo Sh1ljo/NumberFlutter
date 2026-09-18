@@ -1,248 +1,300 @@
-# NumberFlutter - Gameplay Math Reference (Current)
+# Game Math Reference
 
-This is the current math as implemented in code.
+**Accurate as of the V0.19 rebalance.** Every formula here was read back out of
+`lib/logic/game_state.dart` and its siblings at the time of writing. `test/economy_test.dart`
+locks the load-bearing ones, so if you change a number there and this file disagrees, the test
+should be the thing that fails first.
 
-## 1) Notation
+The previous revision of this file had drifted badly — it documented a flat-growth prestige
+requirement, a `1.18^n` reward, a `0.028 + 0.011i` delta, and a "Permanent Prestige Shop" whose
+code no longer exists anywhere in `lib/`. None of that was true. Treat any formula not covered
+here as unverified.
 
-- `floor(x)` = integer floor.
-- `L` = upgrade level.
-- `eff(L)` = effective level after milestone multiplier.
-- `PC` = `prestigeCount`.
+---
 
-## 2) Milestone Multiplier
+## 1. Currencies
 
-Milestone thresholds:
+There are exactly two real currencies.
 
-- 25, 50, 100, 250, 500, 1000
+| Currency | Field | Earned by | Spent on |
+|---|---|---|---|
+| **Number** (`N`) | `BigInt number` | clicks, idle ticker, offline gains, Temporal Collapse burst, Surge Protocol carry-over | all upgrades, the whole neural network |
+| **Prestige Points** (`PP`) | `double prestigeCurrency` | `prestige()` | Nexus research nodes only |
 
-Milestone multiplier:
+The shop screen displays USD prices but is a non-functional mock — no IAP plugin is wired up.
+See `PROD_READINESS.md`.
 
-- `milestoneMultiplier(L) = 2^(#thresholds reached by L)`
+---
 
-Effective level used by most special mechanics:
+## 2. Upgrade cost model
 
-- `eff(L) = L * milestoneMultiplier(L)`
+Shared by every upgrade (`Upgrade.costForLevel`, applied in `getPurchaseInfo`):
 
-## 3) Upgrade Cost Model
+```
+cost(L) = floor(baseCost × costMultiplier^L × upgradeCostReductionFactor)
 
-For an upgrade with base cost `B` and cost multiplier `r`:
+upgradeCostReductionFactor = clamp(1.0 - 0.01 × optProtocolLevel, 0.01, 1.0)
+```
 
-- Next-level cost at level `L`:  
-  `cost(L) = floor(B * r^L)`
+`L` is the *current* level, so buying level 1 costs `cost(0)`.
 
-Bulk purchase:
+### Milestone multiplier
 
-- `k` buys sum the next `k` step costs.
-- `MAX` buys step-by-step until currency is insufficient.
+Thresholds `[25, 50, 100, 250, 500, 1000]` (`upgradeMilestoneThresholds`):
 
-## 4) Click and Idle Core Equations
+```
+milestoneMult(L) = 2 ^ (number of thresholds <= L)     // 1, 2, 4, 8, 16, 32, 64
+```
 
-### 4.1 Click gain per tap
+Applied to the **effect**, never to the cost. A level-1000 upgrade is 64× as effective as its
+raw level implies.
 
-Base click gain:
+---
 
-- `baseClick = clickPower * prestigeMultiplier * permanentClickMultiplier`
+## 3. Idle branch
 
-Kinetic contribution:
+All seven generator tiers are purely **additive** into `autoClickRate`:
 
-- `kineticBonus = totalIdleRate * kineticShare`
+```
+autoClickRate += effectValue × level × milestoneMult(level)
+```
 
-Momentum:
+### Tier table
 
-- `momentumMult` (from Momentum rules below)
+Post-rebalance every tier shares one growth rate and one cost-per-effect ratio
+(`baseCost = 150 × effectValue`):
 
-Probability Strike:
+| id | +N/s per level | baseCost | costMultiplier |
+|---|---|---|---|
+| `idle_auto_clicker` | 1 | 150 | 1.16 |
+| `idle_quantum_multiplier` | 10 | 1,500 | 1.16 |
+| `idle_fractal_engine` | 100 | 15,000 | 1.16 |
+| `idle_singularity_core` | 1,000 | 150,000 | 1.16 |
+| `idle_tesseract_array` | 10,000 | 1,500,000 | 1.16 |
+| `idle_entropy_harvester` | 100,000 | 15,000,000 | 1.16 |
+| `idle_void_resonance` | 1,000,000 | 150,000,000 | 1.16 |
 
-- if triggered, multiply by `probabilityStrikeMult`
+**Why uniform.** Cost per `+1/s` is therefore `150 × 1.16^L` for *every* tier, independent of
+which tier it is. The optimal play becomes "buy the lowest-level tier you can afford", which
+walks the player up the ladder naturally as absolute prices come into reach — and no tier can
+ever be permanently dominated.
 
-Final tap gain:
+Before the rebalance the tiers had growth rates from 1.15 to 1.85 while their L0 ratios were
+all within 3× of each other. That made the tier-1 Auto-Clicker the mathematically correct
+purchase essentially forever (a greedy simulation took it to **level 86** while every other
+tier sat at 18-27), and made Quantum Multiplier a strict trap pick — worst ratio *and*
+second-worst growth. `test/economy_test.dart` now asserts both properties can't come back.
 
-- `tapGain = floor((baseClick + kineticBonus) * momentumMult * strikeFactor)`
-- where `strikeFactor = probabilityStrikeMult` if strike triggers, else `1`
+### Gated idle upgrades
 
-### 4.2 Idle gain rate
+| id | Requires | baseCost | mult | maxLevel | Effect |
+|---|---|---|---|---|---|
+| `idle_cascade_resonator` | 5 prestiges | 5e9 | 4.0 | 5 | `totalIdleRate ×= 2^L` — multiplicative, excluded from `autoClickRate` |
 
-- `totalIdleRate = autoClickRate * prestigeMultiplier * permanentIdleMultiplier * overclockFactor`
-- `overclockFactor = overclockIdleMultiplier` when overclock active, else `1`
+### Total idle rate
 
-Ticker:
+```
+if (autoClickRate <= 0) return 0            // hard gate: no generator, no idle
 
-- Runs every `100 ms` (10 ticks/sec)
-- adds `totalIdleRate / 10` into an accumulator
-- converts integer part of accumulator to `number`
+idleRate = (autoClickRate + permanentIdleBonus)
+         × prestigeMultiplier
+         × resonanceMultiplier               // 1.05 ^ resonanceCoreLevel
+         × neuralLossMultiplier
+if (overclockActive) idleRate ×= overclockIdleMultiplier
+if (cascadeLevel > 0) idleRate ×= 2 ^ cascadeLevel
+```
+
+Ticker runs at 100 ms and adds `rate / 10` per tick, flushing the integer part into `number`.
+
+**Stacking:** generator effects are additive into `autoClickRate`; every *meta* source
+(prestige, resonance, neural, overclock, cascade) is multiplicative and they all compound with
+no diminishing-returns term.
+
+---
+
+## 4. Click branch
 
-## 5) Upgrade Catalog (Current Values)
+```
+baseClickGain = clickPower × prestigeMultiplier × neuralLossMultiplier
+kineticBonus  = totalIdleRate × kineticSynergyShare   // already carries neuralLossMultiplier
+gain = floor((baseClickGain + kineticBonus) × momentumMultiplier × strikeMultiplier?)
+```
+
+`clickPower` is rebuilt from scratch by `_recalculateDerivedStatsFromUpgrades()`:
+
+```
+clickPower = productionBaseClickPower (1)           // or 10,000 in test environment
+           + Σ  effectValue × level × milestoneMult(level)     // click upgrades
+           + floor(prestigeMultiplier × level × 500)           // Dimensional Tap
+```
+
+Production base click is `1`: a fresh save clicks for exactly one number. What used to make
+the click branch decoration was not the base but the `/50` divisor on click upgrade effects —
+Click Power delivered `+1` per level against an Auto-Clicker that cost 150 for `+1/s`
+permanently. That divisor and the `clickPower` load floor of 50 are both gone, so Click Power
+now pays its full `+50` per level on top of the base of 1.
 
-## CLICK upgrades
+### Click upgrades
 
-1. `Click Power`
-   - base cost: `100`
-   - cost multiplier: `1.45`
-   - effect: `clickPower += 50 * eff(L)`
+| id | baseCost | mult | maxLevel | Effect |
+|---|---|---|---|---|
+| `click_power` | 100 | 1.30 | ∞ | `+50 × L × milestoneMult` click power |
+| `click_probability_strike` | 2,500 | 1.72 | ∞ | fixed **5%** chance; multiplier `10 + 2(L-1)` |
+| `click_momentum` | 8,000 | 1.68 | ∞ | see below |
+| `click_kinetic_synergy` | 40,000 | 1.75 | ∞ | `share = 0.01 × L` of `totalIdleRate` added to click |
+| `click_overclock` | 125,000 | 1.82 | ∞ | see below |
+| `click_dimensional_tap` | 5e8 | 2.10 | ∞ | `+floor(prestigeMultiplier × L × 500)`; **no** milestone mult; needs 1 prestige |
+| `click_temporal_collapse` | 5e10 | 3.5 | 5 | burst `= floor(totalIdleRate × 60 × L)`, ×2 prestige mult for `30 + 15L` s, cooldown `max(80, 180 - 20L)` s; needs 8 prestiges |
 
-2. `Probability Strike`
-   - base cost: `2500`
-   - cost multiplier: `1.72`
-   - chance (if `eff(L) > 0`): `5%` fixed
-   - strike multiplier: `10 + 2 * (eff(L) - 1)`
+**A realistic note on the click branch.** Raw Click Power scales *linearly* in levels while
+idle stacks seven exponential tiers, so raw clicking will never rival late-game idle income —
+and it isn't meant to. Its two real jobs are:
 
-3. `Momentum`
-   - base cost: `8000`
-   - cost multiplier: `1.68`
-   - per-click combo bonus:  
-     `momentumPerClickBonus = 0.02 + 0.006 * (eff(L) - 1)` for `eff(L) > 0`
-   - cap:  
-     `momentumCap = 2.0 + 0.35 * (eff(L) - 1)` for `eff(L) > 0`
-   - decay window:  
-     `momentumDecayWindowMs = min(2500, 1000 + 120 * (eff(L) - 1))`
-   - grace period before decay: `2000 ms`
-   - clicks-to-cap helper:  
-     `clicksToCap = max(5, ceil((momentumCap - 1) / momentumPerClickBonus) + 1)`
+1. carrying the first few minutes of a run, before any generator is affordable, and
+2. converting idle income back into click income via **Kinetic Synergy**
+   (`+1%` of `totalIdleRate` per level), which *is* competitive at scale.
 
-4. `Kinetic Synergy`
-   - base cost: `40000`
-   - cost multiplier: `1.75`
-   - idle-to-click share: `kineticShare = 0.01 * eff(L)`
+Momentum, Probability Strike and Overclock are multipliers on top of that. Judge the branch on
+whether Kinetic Synergy is worth buying, not on whether Click Power out-earns Void Resonance.
 
-5. `Overclock`
-   - base cost: `125000`
-   - cost multiplier: `1.82`
-   - streak trigger requirement:  
-     `overclockStreakRequirement = max(20, 50 - 3 * (eff(L) - 1))`
-   - idle multiplier while active:  
-     `overclockIdleMultiplier = 2.0 + 0.4 * (eff(L) - 1)`
-   - active duration (seconds):  
-     `overclockDurationSeconds = min(180, 30 + 5 * (eff(L) - 1))`
+### Momentum
 
-## IDLE upgrades
+```
+perClickBonus  = 0.02 + 0.006 × (L - 1)
+cap            = 2.0 + 0.35 × (L - 1) + 0.1 × kineticSurgeLevel
+decayWindowMs  = min(2500, 1000 + 120 × (L - 1))
+gracePeriodMs  = 2000                       // before decay starts
+clicksToCap    = max(5, ceil((cap - 1) / perClickBonus) + 1)
+```
 
-All idle effects add directly to `autoClickRate`:
+### Overclock
+
+```
+streakRequirement = max(20, 50 - 3 × (L - 1))
+idleMultiplier    = 2.0 + 0.4 × (L - 1)
+durationSeconds   = min(180, 30 + 5 × (L - 1))
+```
 
-1. `Auto-Clicker`
-   - base cost: `50`
-   - multiplier: `1.15`
-   - effect: `+1 * eff(L)` numbers/sec
+---
 
-2. `Quantum Multiplier`
-   - base cost: `1500`
-   - multiplier: `1.85`
-   - effect: `+10 * eff(L)` numbers/sec
+## 5. Prestige
 
-3. `Fractal Engine`
-   - base cost: `7500`
-   - multiplier: `1.55`
-   - effect: `+100 * eff(L)` numbers/sec
+### Requirement — the load-bearing pacing constant
 
-4. `Singularity Core`
-   - base cost: `65000`
-   - multiplier: `1.58`
-   - effect: `+1000 * eff(L)` numbers/sec
+```
+requirement(n) = 100,000,000 × (21/10)^n        // n = completed prestiges
+               = 10,000 × (21/10)^n             // test environment
+```
 
-5. `Tesseract Array`
-   - base cost: `750000`
-   - multiplier: `1.62`
-   - effect: `+10000 * eff(L)` numbers/sec
+Held as the **exact rational 21/10**, not a double. Computing `base × pow(2.1, n)` in floating
+point and handing the result to `BigInt.from` saturates at int64 max
+(`9223372036854775807`) around prestige 35 — which silently flattens the curve back into the
+exact bug this constant exists to fix. Clamped at `maxPrestigeRequirementExponent = 1000`
+(`100M × 2.1^1000 ≈ 1e338`, far past anything reachable) so a corrupt save reporting a wild
+count can't blow up the BigInt arithmetic.
 
-6. `Entropy Harvester`
-   - base cost: `9000000`
-   - multiplier: `1.66`
-   - effect: `+100000 * eff(L)` numbers/sec
+This used to be a **flat 100M forever**, while the reward grew `1.35^n`. That inverted the
+whole progression — every prestige was cheaper in real terms than the last, PP/hour rose
+~850× from run 1 to run 16, and the full 16-prestige arc took ~22 h.
 
-7. `Void Resonance`
-   - base cost: `120000000`
-   - multiplier: `1.70`
-   - effect: `+1000000 * eff(L)` numbers/sec
+### Reward and multiplier
 
-## 6) Prestige Math
+```
+reward(n)   = 3.0 × 1.35^n                      // PP, ×prestigePointsMultiplier on payout
+delta(i)    = 0.20 + 0.05 × i                   // multiplier gained by the prestige at index i
+multiplier(n) = 1 + Σ delta(i) for i in [0, n)  = 1 + 0.20n + 0.05·n(n-1)/2
+```
 
-### 6.1 Requirement and reward
+Quadratic: `n=10 → 4.25×`, `n=50 → 72.25×`, `n=100 → 268.5×`.
 
-- Requirement for next prestige:
-  - `prestigeRequirement(PC) = floor(10000 * 1.32^PC)`
+`prestigeRequirementGrowth (2.1)` must stay **above** `prestigeRewardGrowth (1.35)` or the loop
+runs backwards again. That invariant is asserted in `test/economy_test.dart`.
 
-- Reward for next prestige:
-  - `prestigeReward(PC) = 1.0 * 1.18^PC`
+### Measured pacing (optimal reinvestment)
 
-- Prestige points earned on activate:
-  - if `number < requirement`, earn `0`
-  - else earn exactly `prestigeReward(PC)`
+| Run | Requirement | Multiplier | Run time | Cumulative | PP/h |
+|---|---|---|---|---|---|
+| 1 | 1.0e8 | 1.00 | 1.3 h | 1.3 h | ~2 |
+| 5 | 1.9e9 | 2.10 | ~0.8 h | ~5 h | ~13 |
+| 9 | 3.8e10 | 4.00 | ~1.4 h | ~9 h | **~43 (peak)** |
+| 13 | 7.4e11 | 6.70 | ~4.4 h | 21 h | ~25 |
+| 15 | 3.2e12 | 8.35 | ~13 h | ~45 h | ~16 |
+| 16 | 6.8e12 | 9.25 | ~23 h | 68 h | ~12 |
 
-### 6.2 Prestige multiplier growth
+PP/hour rises to a peak around run 9 and then declines — the correct shape. Prestige 15 at
+~45 h sits inside the intended 40-60 h band.
 
-Per-prestige delta at prestige index `i` (0-based):
+### What prestige resets
 
-- `prestigeDelta(i) = 0.028 + 0.011 * i`
+**Reset:** `number → 0`, `clickPower → base`, `autoClickRate → 0`, all `upgrade.level → 0`,
+momentum / overclock / temporal state.
 
-On prestige:
+**Preserved:** `prestigeCurrency`, `prestigeMultiplier`, `prestigeCount`, all Nexus
+`researchNodes` levels, the entire `neuralNetwork` **including `loss`**, `highestNumber`,
+`nexusStabilized`.
 
-- `prestigeCurrency += prestigeReward(PC)`
-- `prestigeMultiplier += prestigeDelta(PC)`
-- `prestigeCount += 1`
-- then reset number and non-permanent upgrades/progression runtime state
+Surge Protocol refunds `netWorthBefore × 0.005 × level` (0.5% per level, max 2.5%).
 
-Closed-form total after `n` prestiges (derived from implemented sequence):
+---
 
-- `prestigeMultiplier(n) = 1 + n * 0.028 + 0.011 * n * (n - 1) / 2`
+## 6. Nexus (research tree) — spends PP
 
-## 7) Permanent Prestige Shop Math (Logic Exists, UI Hidden)
+Unlocked by `nexusStabilized`, gated behind `prestigeCount >= 1`. Stabilization itself is free.
 
-Even though the shop UI is removed, these formulas still exist in state logic.
+```
+costForNextLevel = costsScale ? baseCostPerLevel × 1.6^level : baseCostPerLevel
+```
 
-### 7.1 Cost
+Geometric as of V0.19. It was linear (`(level + 1) × base`), which put PP on a linear curve
+against an exponential number economy: the whole tree got bought out within a few prestiges of
+unlocking and PP had **no sink at all** afterwards.
 
-Cost at shop rank `r`:
+| id | Tier | Prereq | base/lvl | maxLvl | Effect |
+|---|---|---|---|---|---|
+| `opt_protocol` | 1 | — | 3 | 10 | -1% all upgrade costs per level (max -10%) |
+| `surge_protocol` | 1 | — | 6 | 5 | +0.5% pre-prestige net worth carried per level |
+| `enhanced_extraction` | 1 | — | 6 | 5 | +10% prestige delta per level |
+| `idle_foundation` | 2 | opt ≥3 | 6 | 10 | +1.0/s permanent idle per level |
+| `quick_resume` | 2 | opt ≥5 | 9 | 5 | +10% offline gains per level |
+| `kinetic_surge` | 2 | surge ≥3 | 9 | 3 | +0.1 momentum cap per level |
+| `resonance_core` | 3 | idle_foundation ≥5 | 15 | 5 | `×1.05^L` idle |
+| `echo_protocol` | 3 | enhanced_extraction ≥3 | 12 | 5 | +10% PP earned per level |
+| `neural_genesis` | 4 | resonance 5 **and** echo 5 | 200 flat | 1 | unlocks the Neural Network; also grants +100M `number` if the neural tutorial hasn't run |
 
-- `shopCost(r) = 1 + r / 14`
+**Totals.** Maxing everything now costs **~2,640 PP** (was 1,469). The minimum path to
+`neural_genesis` is **~800 PP** (was 776) — deliberately close to unchanged, so the neural
+network still unlocks around prestige 15 while the *completionist* tree gained a long tail.
 
-### 7.2 Permanent multiplier growth
+Known rough edge: at `costGrowth = 1.6` the 10-level nodes get steep at the tail
+(`opt_protocol` L10 ≈ 206 PP for a single 1% cost reduction). That's intentional as a late-game
+sink, but it's the first thing to revisit if the tail feels bad.
 
-Per-purchase delta at purchase index `i`:
+`idle_foundation`'s `+1/s` does **not** bypass the `autoClickRate <= 0` gate on `totalIdleRate`,
+so its "survives prestige" promise is void until an Auto-Clicker is re-bought. Flagged, not
+yet fixed.
 
-- `permDelta(i) = 0.014 + 0.006 * i`
+---
 
-Permanent multiplier after `n` purchases:
+## 7. Progress score (leaderboard tiebreak)
 
-- `permMultiplier(n) = 1 + sum(i=0..n-1) permDelta(i)`
-- equivalent closed form:
-  - `permMultiplier(n) = 1 + n * 0.014 + 0.006 * n * (n - 1) / 2`
+```
+score = clamp(prestigeCount × 1e8, 0, 9e18)
+      + prestigeCurrencyScaled × 10,000          // floor(prestigeCurrency × 1000)
+      + upgradesTotal × 10
+      + floor(log10(numberDigits + 1) × 1000)
+```
 
-Applied as:
+**Known bug:** the `prestigeCurrencyScaled × 10000` term is unclamped and overflows int64
+around prestige ~70. See `PROD_READINESS.md`.
 
-- `permanentClickMultiplier` in click equation
-- `permanentIdleMultiplier` in idle equation
+---
 
-## 8) Offline Progress Formula
+## 8. Offline gains
 
-If `lastPlayed` exists and `autoClickRate > 0`:
+```
+offlineGains = floor(totalIdleRate × secondsAway × offlineGainMultiplier)
+offlineGainMultiplier = 1 + 0.10 × quickResumeLevel        // max 1.5×
+```
 
-- `secondsAway = now - lastPlayed`
-- `offlineRate = autoClickRate * prestigeMultiplier * permanentIdleMultiplier`
-- `offlineGains = floor(offlineRate * secondsAway)`
-
-`offlineGains` is added to `number` at load and shown in the offline gains dialog.
-
-## 9) Sync / Leaderboard Progress Score Math
-
-Cloud winner selection primarily uses `progressScore`.
-
-Progress score:
-
-- `numberDigits = len(number as string)` (minimum 1)
-- `upgradesTotal = sum(all upgrade levels)`
-- `shopTotal = permanentClickPurchases + permanentIdlePurchases`
-- `prestigeCurrencyScaled = floor(prestigeCurrency * 1000)`
-- `logScore = floor(log10(numberDigits + 1) * 1000)`
-
-Score:
-
-- `progressScore = clamp(prestigeCount * 100000000, 0, 9e18)`
-  `+ prestigeCurrencyScaled * 10000`
-  `+ shopTotal * 1000`
-  `+ upgradesTotal * 10`
-  `+ logScore`
-
-Tie-breakers:
-
-1. Higher `progressScore`
-2. Higher `highestNumber`
-3. Newer `updatedAt`
+**There is no cap on `secondsAway`.** 30 days away pays 2.6M seconds at full rate. Currently
+the strongest income source in the game. See `PROD_READINESS.md`.

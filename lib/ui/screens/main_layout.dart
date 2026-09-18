@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
+import '../../logic/login_prompt_policy.dart';
 import '../../logic/tutorial_step.dart';
 import '../../logic/supabase_service.dart';
 import '../../utils/network_error_utils.dart';
@@ -30,6 +32,10 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
+  final LoginPromptPolicy _loginPromptPolicy = LoginPromptPolicy();
+  bool _loginPromptShownThisSession = false;
+  bool _loginPromptSettledThisSession = false;
+  bool _loginPromptCheckInFlight = false;
   bool _offlineDialogQueued = false;
   String? _promptedProfileUserId;
   bool _profilePromptInProgress = false;
@@ -38,8 +44,10 @@ class _MainLayoutState extends State<MainLayout> {
   bool _prestigeNoticeVisible = false;
   int? _lastPrestigeReadyNotifiedCount;
   OverlayEntry? _prestigeNoticeEntry;
+  GameState? _gameState;
 
   final GlobalKey _tapAreaKey = GlobalKey();
+  final GlobalKey _momentumBarKey = GlobalKey();
   final GlobalKey _neuralNeuronKey = GlobalKey();
   final GlobalKey _neuralHudKey = GlobalKey();
   final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
@@ -58,11 +66,59 @@ class _MainLayoutState extends State<MainLayout> {
 
   late final List<Widget> _screens;
 
+  /// Single place that maps a named tutorial target to its live GlobalKey.
+  ///
+  /// The overlay used to reach for `navKeys[1]` / `navKeys[3]` directly from a
+  /// 39-case switch, and `momentumBarKey` was declared and consumed but never
+  /// actually supplied — leaving `demonstrateMomentum` with no spotlight and
+  /// no way to advance except ~51 consecutive clicks.
+  GlobalKey? _resolveTutorialTarget(TutorialTarget target) {
+    switch (target) {
+      case TutorialTarget.tapArea:
+        return _tapAreaKey;
+      case TutorialTarget.navGenerators:
+        return _navKeys[TutorialTab.generators];
+      case TutorialTarget.navUpgrades:
+        return _navKeys[TutorialTab.upgrades];
+      case TutorialTarget.navPrestige:
+        return _navKeys[TutorialTab.prestige];
+      case TutorialTarget.navNeural:
+        return _navKeys[TutorialTab.neural];
+      case TutorialTarget.idleCategory:
+        return _idleCategoryKey;
+      case TutorialTarget.prestigeMultiplier:
+        return _prestigeMultiplierKey;
+      case TutorialTarget.prestigeGainCard:
+        return _prestigeGainCardKey;
+      case TutorialTarget.momentumBar:
+        return _momentumBarKey;
+      case TutorialTarget.neuralNeuron:
+        return _neuralNeuronKey;
+      case TutorialTarget.neuralHud:
+        return _neuralHudKey;
+      case TutorialTarget.upgradeAutoClicker:
+        return _upgradeRowKeys[GameState.autoClickerId];
+      case TutorialTarget.upgradeClickPower:
+        return _upgradeRowKeys[GameState.clickPowerId];
+      case TutorialTarget.upgradeProbabilityStrike:
+        return _upgradeRowKeys[GameState.probabilityStrikeId];
+      case TutorialTarget.upgradeMomentum:
+        return _upgradeRowKeys[GameState.momentumId];
+      case TutorialTarget.upgradeKineticSynergy:
+        return _upgradeRowKeys[GameState.kineticSynergyId];
+      case TutorialTarget.upgradeOverclock:
+        return _upgradeRowKeys[GameState.overclockId];
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _screens = [
-      MainGameScreen(tapAreaKey: _tapAreaKey),
+      MainGameScreen(
+        tapAreaKey: _tapAreaKey,
+        momentumBarKey: _momentumBarKey,
+      ),
       UpgradesScreen(upgradeRowKeys: _upgradeRowKeys, idleCategoryKey: _idleCategoryKey),
       PrestigeScreen(
         initiateButtonKey: _prestigeInitiateKey,
@@ -77,27 +133,131 @@ class _MainLayoutState extends State<MainLayout> {
       const SettingsScreen(),
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GameState>().registerTutorialResetCallback(() {
-        if (mounted) setState(() => _currentIndex = 0);
-      });
+      if (!mounted) return;
+      final gameState = context.read<GameState>();
+      gameState.registerTutorialResetCallback(_onTutorialReset);
+      _gameState = gameState;
+      // Listen explicitly instead of firing these off from build(): the 100ms
+      // ticker calls notifyListeners(), so anything driven from build ran
+      // ~10x/s behind ad-hoc boolean guards.
+      gameState.addListener(_onGameStateChanged);
       _maybeShowLoginPrompt();
+      _onGameStateChanged();
     });
   }
 
-  void _maybeShowLoginPrompt() {
+  void _onTutorialReset() {
+    if (mounted) setState(() => _currentIndex = 0);
+  }
+
+  /// Reacts to GameState changes outside of build, so dialogs, overlays and
+  /// network fetches are never triggered as a build side effect.
+  void _onGameStateChanged() {
+    if (!mounted) return;
+
+    // notifyListeners() can in principle land mid-frame. Inserting an
+    // OverlayEntry or pushing a dialog during build or layout throws, so
+    // defer to the end of the frame when that happens.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase != SchedulerPhase.idle &&
+        phase != SchedulerPhase.postFrameCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onGameStateChanged();
+      });
+      return;
+    }
+
+    final gameState = _gameState;
+    if (gameState == null) return;
+
+    _maybePromptForLocation();
+    _maybeShowLoginPrompt();
+    _maybeShowOfflineNotice(gameState.lastCloudSyncError);
+
+    if (gameState.isPrestigeAnimating) {
+      if (_prestigeNoticeVisible) _removePrestigeNotice();
+    } else {
+      _maybeShowPrestigeReadyNotice(
+        canPrestige: gameState.number >= gameState.prestigeRequirement,
+        prestigeCount: gameState.prestigeCount,
+      );
+    }
+
+    // goodLuck is the wrap-up card and belongs on the main screen.
+    if (gameState.tutorialStep == TutorialStep.goodLuck && _currentIndex != 0) {
+      setState(() => _currentIndex = 0);
+    }
+
+    final hasOfflineProgress = gameState.offlineGainsThisSession > BigInt.zero ||
+        gameState.offlineAccuracyGain > 0;
+    if (hasOfflineProgress && !_offlineDialogQueued) {
+      _offlineDialogQueued = true;
+      OfflineGainsDialog.show(
+        context,
+        gameState.offlineGainsThisSession,
+        accuracyGain: gameState.offlineAccuracyGain,
+        onAcknowledge: () {
+          if (!mounted) return;
+          context.read<GameState>().clearOfflineGains();
+        },
+      );
+    } else if (!hasOfflineProgress && _offlineDialogQueued) {
+      _offlineDialogQueued = false;
+    }
+  }
+
+  /// Considers the unprompted account modal. [LoginPromptPolicy] owns the
+  /// "is now a good time" decision; this only handles the parts that need a
+  /// live widget tree.
+  Future<void> _maybeShowLoginPrompt() async {
+    if (_loginPromptSettledThisSession || _loginPromptCheckInFlight) return;
     final supabase = SupabaseService.instance;
     if (!supabase.isConfigured || !supabase.isInitialized) return;
-    if (supabase.currentSession != null) return;
+
+    // Cheap gates first: this runs off the game-state listener, which fires
+    // ~10x/s, and must not hit SharedPreferences on every tick. A player who
+    // has not reached the milestone yet simply isn't settled — they get
+    // re-checked once they do.
+    final gameState = _gameState ?? context.read<GameState>();
+    if (!gameState.tutorialCompleted) return;
+    if (gameState.highestNumber < LoginPromptPolicy.progressWorthSaving) return;
+
+    // Another modal (offline gains, a tutorial card) owns the screen: wait
+    // rather than stacking. Checked before the prefs read so this does not
+    // burn the session's single decision.
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+
+    _loginPromptCheckInFlight = true;
+    final bool allowed;
+    try {
+      allowed = await _loginPromptPolicy.shouldPrompt(
+        signedIn: supabase.currentSession != null,
+        tutorialCompleted: gameState.tutorialCompleted,
+        highestNumber: gameState.highestNumber,
+      );
+    } finally {
+      _loginPromptCheckInFlight = false;
+    }
+    // Snoozes and dismissal counts cannot change under us mid-session, so a
+    // "no" here is final until the next launch.
+    _loginPromptSettledThisSession = true;
+    if (!allowed || !mounted) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _loginPromptShownThisSession) return;
+      // Re-checked after the frame: a dialog may have opened during the await.
+      if (ModalRoute.of(context)?.isCurrent != true) {
+        _loginPromptSettledThisSession = false;
+        return;
+      }
+      _loginPromptShownThisSession = true;
       _showLoginPrompt();
     });
   }
 
-  void _showLoginPrompt() {
+  Future<void> _showLoginPrompt() async {
     final theme = Theme.of(context);
-    showDialog(
+    final choice = await showDialog<_LoginPromptChoice>(
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
@@ -109,16 +269,18 @@ class _MainLayoutState extends State<MainLayout> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
+            onPressed: () =>
+                Navigator.of(ctx).pop(_LoginPromptChoice.never),
+            child: const Text("DON'T ASK AGAIN"),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(_LoginPromptChoice.later),
             child: const Text('LATER'),
           ),
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
-              );
-            },
+            onPressed: () =>
+                Navigator.of(ctx).pop(_LoginPromptChoice.signIn),
             icon: const Icon(Icons.login),
             label: const Text('SIGN IN'),
             style: ElevatedButton.styleFrom(
@@ -129,6 +291,26 @@ class _MainLayoutState extends State<MainLayout> {
         ],
       ),
     );
+
+    // A barrier tap is a soft no, not a free retry — otherwise dismissing the
+    // cheapest way possible is the one path that gets you asked again tomorrow.
+    switch (choice ?? _LoginPromptChoice.later) {
+      case _LoginPromptChoice.never:
+        await _loginPromptPolicy.retire();
+      case _LoginPromptChoice.later:
+        await _loginPromptPolicy.recordDismissed();
+      case _LoginPromptChoice.signIn:
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
+        );
+        if (SupabaseService.instance.currentSession != null) {
+          await _loginPromptPolicy.retire();
+        } else {
+          // Backed out of the auth screen without finishing: same as LATER.
+          await _loginPromptPolicy.recordDismissed();
+        }
+    }
   }
 
   void _maybePromptForLocation() {
@@ -269,70 +451,46 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void dispose() {
     _removePrestigeNotice();
+    // The reset callback is a single slot holding this State's setState, so
+    // leaving it registered retained the disposed MainLayout.
+    _gameState?.unregisterTutorialResetCallback(_onTutorialReset);
+    _gameState?.removeListener(_onGameStateChanged);
+    _gameState = null;
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _maybePromptForLocation();
+    // build() is now pure. Dialogs, overlay notices, forced navigation and
+    // the profile fetch all live in _onGameStateChanged, which is driven by
+    // an explicit listener rather than by rebuilds.
     final isPrestigeAnimating =
         context.select<GameState, bool>((gs) => gs.isPrestigeAnimating);
-    final tutorialStep =
-        context.select<GameState, TutorialStep>((gs) => gs.tutorialStep);
-    if (isPrestigeAnimating && _prestigeNoticeVisible) {
-      _removePrestigeNotice();
-    }
-    if (tutorialStep == TutorialStep.goodLuck && _currentIndex != 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _currentIndex = 0);
-      });
-    }
-    final cloudError =
-        context.select<GameState, String?>((gs) => gs.lastCloudSyncError);
-    _maybeShowOfflineNotice(cloudError);
-    final canPrestige = context
-        .select<GameState, bool>((gs) => gs.number >= gs.prestigeRequirement);
-    final prestigeCount =
-        context.select<GameState, int>((gs) => gs.prestigeCount);
-    if (!isPrestigeAnimating) {
-      _maybeShowPrestigeReadyNotice(
-        canPrestige: canPrestige,
-        prestigeCount: prestigeCount,
-      );
-    }
-    final offlineGains = context.select<GameState, BigInt>(
-      (gs) => gs.offlineGainsThisSession,
-    );
-    final offlineAccuracy = context.select<GameState, double>(
-      (gs) => gs.offlineAccuracyGain,
-    );
-    final hasOfflineProgress =
-        offlineGains > BigInt.zero || offlineAccuracy > 0;
-
-    if (hasOfflineProgress && !_offlineDialogQueued) {
-      _offlineDialogQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        OfflineGainsDialog.show(
-          context,
-          offlineGains,
-          accuracyGain: offlineAccuracy,
-          onAcknowledge: () {
-            if (!mounted) return;
-            context.read<GameState>().clearOfflineGains();
-          },
-        );
-      });
-    } else if (!hasOfflineProgress && _offlineDialogQueued) {
-      _offlineDialogQueued = false;
-    }
+    final mediaQuery = MediaQuery.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackground(
         child: Stack(
           children: [
-            _screens[_currentIndex],
+            // The nav bar is drawn on top of the active screen rather than
+            // beside it, so screens have to be told about the space it eats.
+            // Feeding it through MediaQuery means every screen's SafeArea and
+            // every LayoutBuilder below this point sees an honest viewport —
+            // which is what keeps the neural canvas from centring its network
+            // into the region hidden behind the bar.
+            MediaQuery(
+              data: mediaQuery.copyWith(
+                padding: mediaQuery.padding.copyWith(
+                  bottom: mediaQuery.padding.bottom + BottomNavBar.chromeHeight,
+                ),
+                viewPadding: mediaQuery.viewPadding.copyWith(
+                  bottom: mediaQuery.viewPadding.bottom +
+                      BottomNavBar.chromeHeight,
+                ),
+              ),
+              child: _screens[_currentIndex],
+            ),
             if (!isPrestigeAnimating)
               Positioned(
                 left: 0,
@@ -356,15 +514,9 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
               ),
             TutorialOverlay(
-              tapAreaKey: _tapAreaKey,
-              navKeys: _navKeys,
-              upgradeRowKeys: _upgradeRowKeys,
-              prestigeButtonKey: _prestigeInitiateKey,
-              prestigeMultiplierKey: _prestigeMultiplierKey,
-              prestigeGainCardKey: _prestigeGainCardKey,
-              idleCategoryKey: _idleCategoryKey,
-              neuralNeuronKey: _neuralNeuronKey,
-              neuralHudKey: _neuralHudKey,
+              resolveKey: _resolveTutorialTarget,
+              currentTab: _currentIndex,
+              modalRouteActive: ModalRoute.of(context)?.isCurrent == false,
             ),
           ],
         ),
@@ -475,3 +627,7 @@ class _TopPrestigeNoticeState extends State<_TopPrestigeNotice>
     );
   }
 }
+
+/// What the player chose in the "Save Your Progress" prompt. A barrier tap
+/// yields null and is read as [later].
+enum _LoginPromptChoice { never, later, signIn }

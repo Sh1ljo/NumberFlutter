@@ -11,13 +11,17 @@ class NeuronDetailSheet extends StatefulWidget {
 
   const NeuronDetailSheet({super.key, required this.neuron});
 
-  static void show(BuildContext context, NeuralNeuron neuron) {
-    showModalBottomSheet<void>(
+  static Future<void> show(BuildContext context, NeuralNeuron neuron) async {
+    final gameState = context.read<GameState>();
+    await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => NeuronDetailSheet(neuron: neuron),
     );
+    // Awaiting the route covers every dismissal path, so the tutorial can
+    // re-target the main screen only once this sheet is really gone.
+    gameState.onNeuronSheetDismissed();
   }
 
   @override
@@ -384,7 +388,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         borderRadius: BorderRadius.circular(2),
                       ),
                       child: Text(
-                        'GR ${currentNeuron.gradientLevel}/5',
+                        'GR ${currentNeuron.gradientLevel}/${NeuralNeuron.maxGradientLevel}',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: currentNeuron.gradientLevel > 0
                               ? cs.primary
@@ -431,10 +435,10 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                       ),
                       const SizedBox(height: 10),
                       Row(
-                        children: List.generate(5, (i) {
+                        children: List.generate(NeuralNeuron.maxGradientLevel, (i) {
                           final filled = i < currentNeuron.gradientLevel;
                           return Padding(
-                            padding: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.only(right: 4),
                             child: Container(
                               width: 10,
                               height: 10,

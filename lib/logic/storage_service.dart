@@ -14,6 +14,7 @@ class StorageService {
   static const String _keyHighestNumber = 'highestNumber';
   static const String _keyNexusLevels = 'nexus_levels';
   static const String _keyTutorialCompleted = 'tutorialCompleted';
+  static const String _keyTutorialStep = 'tutorialStep';
   static const String _keyNexusTutorialSeen = 'nexusTutorialSeen';
   static const String _keyNeuralTutorialSeen = 'neuralTutorialSeen';
   static const String _keyUpgradeTutorialSeen = 'upgradeTutorialSeen';
@@ -32,6 +33,7 @@ class StorageService {
     required BigInt highestNumber,
     required Map<String, int> nexusLevels,
     required bool tutorialCompleted,
+    required String tutorialStep,
     required bool nexusTutorialSeen,
     required bool neuralTutorialSeen,
     required bool upgradeTutorialSeen,
@@ -51,6 +53,9 @@ class StorageService {
     await prefs.setString(_keyHighestNumber, highestNumber.toString());
     await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
     await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
+    // Stored by NAME, never by index — an enum reorder would silently
+    // reinterpret every saved step if this were an ordinal.
+    await prefs.setString(_keyTutorialStep, tutorialStep);
     await prefs.setBool(_keyNexusTutorialSeen, nexusTutorialSeen);
     await prefs.setBool(_keyNeuralTutorialSeen, neuralTutorialSeen);
     await prefs.setBool(_keyUpgradeTutorialSeen, upgradeTutorialSeen);
@@ -115,6 +120,7 @@ class StorageService {
           BigInt.zero,
       'nexusLevels': nexusLevels,
       'tutorialCompleted': prefs.getBool(_keyTutorialCompleted) ?? false,
+      'tutorialStep': prefs.getString(_keyTutorialStep),
       'nexusTutorialSeen': prefs.getBool(_keyNexusTutorialSeen) ?? false,
       'neuralTutorialSeen': prefs.getBool(_keyNeuralTutorialSeen) ?? false,
       'upgradeTutorialSeen': prefs.getBool(_keyUpgradeTutorialSeen) ?? false,
@@ -141,6 +147,7 @@ class StorageService {
     await prefs.remove(_keyHighestNumber);
     await prefs.remove(_keyNexusLevels);
     await prefs.remove(_keyTutorialCompleted);
+    await prefs.remove(_keyTutorialStep);
     await prefs.remove(_keyNexusTutorialSeen);
     await prefs.remove(_keyNeuralTutorialSeen);
     await prefs.remove(_keyUpgradeTutorialSeen);

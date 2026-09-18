@@ -12,8 +12,27 @@ class BottomNavBar extends StatelessWidget {
     this.itemKeys,
   });
 
+  /// Height of the bar's own chrome, excluding any system inset.
+  ///
+  /// The bar is laid out as a `Positioned(bottom: 0)` sibling **on top of**
+  /// the active screen, so screens do not automatically lose this space.
+  /// [MainLayout] adds it to the screens' `MediaQuery` bottom padding — without
+  /// that, anything centring itself in its own viewport (the neural canvas
+  /// most visibly) centres into a region ~85px taller than what the player
+  /// can actually see, and the bottom of tall content hides behind the bar.
+  static const double chromeHeight = _itemHeight + _verticalPadding * 2 + 1;
+
+  static const double _itemHeight = 56;
+  static const double _verticalPadding = 14;
+
+  /// Total space the bar occupies, including the bottom system inset it pads
+  /// itself by (gesture bar, home indicator).
+  static double totalHeight(BuildContext context) =>
+      chromeHeight + MediaQuery.of(context).viewPadding.bottom;
+
   @override
   Widget build(BuildContext context) {
+    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xE6131313), // #131313 at 90% opacity
@@ -24,7 +43,12 @@ class BottomNavBar extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        _verticalPadding,
+        12,
+        _verticalPadding + safeBottom,
+      ),
       child: Row(
         children: [
           for (var i = 0; i < 5; i++)
@@ -100,7 +124,7 @@ class _NavItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        height: 56,
+        height: BottomNavBar._itemHeight,
         width: double.infinity,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),

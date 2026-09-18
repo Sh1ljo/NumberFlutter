@@ -111,6 +111,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _upgradeTutorialSeen = false;
   VoidCallback? _onTutorialResetCallback;
 
+  /// Pre-deep-dive progress, restored by [_completeUpgradeTutorial].
+  BigInt? _upgradeTutorialNumberSnapshot;
+  Map<String, int>? _upgradeTutorialLevelSnapshot;
+
   TutorialStep get tutorialStep => _tutorialStep;
   bool get tutorialCompleted => _tutorialCompleted;
   bool get isTutorialActive => _tutorialStep != TutorialStep.done;
@@ -118,8 +122,26 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool get neuralTutorialSeen => _neuralTutorialSeen;
   bool get upgradeTutorialSeen => _upgradeTutorialSeen;
 
+  /// Test-only: jump straight to a step so the overlay's rendering for it can
+  /// be exercised. Does not touch persistence.
+  @visibleForTesting
+  void debugSetTutorialStep(TutorialStep step) {
+    _tutorialStep = step;
+    _tutorialCompleted = step == TutorialStep.done;
+    notifyListeners();
+  }
+
   void registerTutorialResetCallback(VoidCallback cb) {
     _onTutorialResetCallback = cb;
+  }
+
+  /// Drop the callback when its owner is disposed. It is a single slot that
+  /// captures a State's setState, so leaving it set retained the disposed
+  /// MainLayout for the lifetime of the GameState.
+  void unregisterTutorialResetCallback(VoidCallback cb) {
+    if (_onTutorialResetCallback == cb) {
+      _onTutorialResetCallback = null;
+    }
   }
 
   void setPrestigeAnimating(bool value) {
@@ -152,13 +174,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const Duration _saveDebounceDuration = Duration(milliseconds: 350);
 
   // Upgrades
-  List<Upgrade> upgrades = [
+  /// The upgrade catalog. Built fresh per call so each [GameState] owns its
+  /// own mutable levels, and so tests can inspect the catalog without
+  /// constructing a GameState (whose constructor starts the game loop).
+  static List<Upgrade> defaultUpgrades() => [
     Upgrade(
       id: clickPowerId,
       name: 'Click Power',
       description: 'Increases value per click.',
       baseCost: BigInt.from(100),
-      costMultiplier: 1.45,
+      costMultiplier: 1.30,
       effectType: clickCategory,
       effectValue: BigInt.from(50),
     ),
@@ -205,8 +230,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: autoClickerId,
       name: 'Auto-Clicker',
       description: 'Clicks for you automatically.',
-      baseCost: BigInt.from(50),
-      costMultiplier: 1.15,
+      baseCost: BigInt.from(150),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 1.0,
     ),
@@ -215,7 +240,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Quantum Multiplier',
       description: 'Greatly increases idle generation.',
       baseCost: BigInt.from(1500),
-      costMultiplier: 1.85,
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 10.0,
     ),
@@ -223,8 +248,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'idle_fractal_engine',
       name: 'Fractal Engine',
       description: 'Adds +100 numbers per second each level.',
-      baseCost: BigInt.from(7500),
-      costMultiplier: 1.55,
+      baseCost: BigInt.from(15000),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 100.0,
     ),
@@ -232,8 +257,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'idle_singularity_core',
       name: 'Singularity Core',
       description: 'Adds +1,000 numbers per second each level.',
-      baseCost: BigInt.from(65000),
-      costMultiplier: 1.58,
+      baseCost: BigInt.from(150000),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 1000.0,
     ),
@@ -241,8 +266,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'idle_tesseract_array',
       name: 'Tesseract Array',
       description: 'Adds +10,000 numbers per second each level.',
-      baseCost: BigInt.from(750000),
-      costMultiplier: 1.62,
+      baseCost: BigInt.from(1500000),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 10000.0,
     ),
@@ -250,8 +275,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'idle_entropy_harvester',
       name: 'Entropy Harvester',
       description: 'Adds +100,000 numbers per second each level.',
-      baseCost: BigInt.from(9000000),
-      costMultiplier: 1.66,
+      baseCost: BigInt.from(15000000),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 100000.0,
     ),
@@ -259,8 +284,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'idle_void_resonance',
       name: 'Void Resonance',
       description: 'Adds +1,000,000 numbers per second each level.',
-      baseCost: BigInt.from(120000000),
-      costMultiplier: 1.7,
+      baseCost: BigInt.from(150000000),
+      costMultiplier: 1.16,
       effectType: idleCategory,
       effectValue: 1000000.0,
     ),
@@ -296,7 +321,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       effectType: clickCategory,
       effectValue: 0,
     ),
-  ];
+      ];
+
+  List<Upgrade> upgrades = defaultUpgrades();
 
   GameState() {
     _init();
@@ -464,7 +491,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     if (_tutorialStep == TutorialStep.neuralBranchNeuron) {
-      _tutorialStep = TutorialStep.neuralViewAccuracy;
+      // Hold the advance until the sheet has actually finished dismissing.
+      // Switching to neuralViewAccuracy here meant the overlay spotlit the
+      // loss HUD from a frame where the sheet was still covering it.
+      _pendingNeuralAccuracyStep = true;
     }
     notifyListeners();
     _scheduleStateSave();
@@ -476,6 +506,40 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _tutorialStep = TutorialStep.neuralUpgradeGradient;
       notifyListeners();
     }
+  }
+
+  /// Clicks made while `triggerProbabilityStrike` is the active step.
+  int _tutorialStrikeClicks = 0;
+
+  /// After this many clicks the tutorial forces a strike.
+  ///
+  /// The step is gated on a 5% roll, so the expected wait is ~20 clicks but
+  /// the tail is unbounded — and the step renders no SKIP-bearing dim, so an
+  /// unlucky player could sit there indefinitely.
+  static const int tutorialStrikePityClicks = 25;
+
+  /// Set by [branchNeuron] during the neural tutorial, flushed by
+  /// [onNeuronSheetDismissed] once the detail sheet is gone.
+  bool _pendingNeuralAccuracyStep = false;
+
+  /// Called for **every** dismissal path of NeuronDetailSheet — branch, close
+  /// button, backdrop tap and swipe-down.
+  ///
+  /// The in-sheet steps used to have no handling for dismissal at all: the
+  /// overlay rendered nothing and no SKIP, so swiping the sheet away left the
+  /// player permanently stuck.
+  void onNeuronSheetDismissed() {
+    if (_pendingNeuralAccuracyStep) {
+      _pendingNeuralAccuracyStep = false;
+      _tutorialStep = TutorialStep.neuralViewAccuracy;
+      notifyListeners();
+      _scheduleStateSave();
+    }
+  }
+
+  bool get _tutorialForcesStrike {
+    if (_tutorialStep != TutorialStep.triggerProbabilityStrike) return false;
+    return _tutorialStrikeClicks >= tutorialStrikePityClicks;
   }
 
   // ── end Neural Network ────────────────────────────────────────────────
@@ -504,32 +568,74 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get prestigeMultiplierAfterNext =>
       prestigeMultiplier + nextPrestigeDelta;
 
+  /// Base requirement for the very first prestige.
+  static final BigInt prestigeBaseRequirement = BigInt.from(100000000); // 100M
+  static final BigInt prestigeTestBaseRequirement = BigInt.from(10000);
+
+  /// How much more each successive prestige costs, as an exact rational.
+  ///
+  /// This is the single most important pacing constant in the game. The reward
+  /// grows at [prestigeRewardGrowth] (1.35), so if the requirement were flat
+  /// the loop would run *backwards* — every prestige cheaper in real terms than
+  /// the last, with PP/hour compounding without limit. 2.1 is tuned so run
+  /// times bottom out around prestige 7 and then grow, putting prestige 13 at
+  /// roughly 36 cumulative hours with PP/hour declining after run 10.
+  ///
+  /// Held as 21/10 rather than a double on purpose: computing
+  /// `base * pow(2.1, n)` in floating point and handing the result to
+  /// `BigInt.from` saturates at int64 max around prestige 35, which silently
+  /// flattens the curve back into the bug this constant exists to fix.
+  static final BigInt _prestigeGrowthNumerator = BigInt.from(21);
+  static final BigInt _prestigeGrowthDenominator = BigInt.from(10);
+
+  /// Convenience view of the growth factor for docs and tests.
+  static const double prestigeRequirementGrowth = 2.1;
+
+  /// Hard ceiling on the exponent. 100M x 2.1^1000 is about 1e338 — far past
+  /// anything reachable — so clamping here costs nothing and keeps the BigInt
+  /// arithmetic from blowing up if a corrupt save reports a wild count.
+  static const int maxPrestigeRequirementExponent = 1000;
+
   /// Number required to perform the next prestige.
-  BigInt get prestigeRequirement {
-    if (_testEnvironmentEnabled) {
-      return BigInt.from(10000);
-    }
-    return BigInt.from(100000000); // 100M for production
-  }
+  BigInt get prestigeRequirement => _prestigeRequirementAtCount(
+        prestigeCount,
+        testEnvironment: _testEnvironmentEnabled,
+      );
 
   /// Fixed reward for the next prestige activation.
   double get nextPrestigeReward => prestigeRewardAtCount(prestigeCount);
 
   /// Requirement for the prestige at [count] completed prestiges.
-  /// Starts at 10,000 and increases exponentially each prestige.
-  static BigInt prestigeRequirementAtCount(int count) {
-    const baseRequirement = 10000.0;
-    const growthPerPrestige = 2.5;
-    final scaled = baseRequirement * math.pow(growthPerPrestige, count);
-    return BigInt.from(scaled.floor());
+  /// Grows geometrically so later prestiges stay meaningful.
+  static BigInt prestigeRequirementAtCount(int count) =>
+      _prestigeRequirementAtCount(count, testEnvironment: false);
+
+  static BigInt _prestigeRequirementAtCount(
+    int count, {
+    required bool testEnvironment,
+  }) {
+    final base =
+        testEnvironment ? prestigeTestBaseRequirement : prestigeBaseRequirement;
+    var exponent = count < 0 ? 0 : count;
+    if (exponent > maxPrestigeRequirementExponent) {
+      exponent = maxPrestigeRequirementExponent;
+    }
+    return base *
+        _prestigeGrowthNumerator.pow(exponent) ~/
+        _prestigeGrowthDenominator.pow(exponent);
   }
 
+  /// Base PP awarded by the first prestige.
+  static const double prestigeBaseReward = 3.0;
+
+  /// Growth of the PP reward per prestige. Must stay below
+  /// [prestigeRequirementGrowth] or the loop runs backwards.
+  static const double prestigeRewardGrowth = 1.35;
+
   /// Fixed prestige point reward for the next prestige (independent of current number).
-  /// First prestige gives 1.0 point, then grows exponentially.
   static double prestigeRewardAtCount(int count) {
-    const baseReward = 3.0;
-    const growthPerPrestige = 1.35;
-    return baseReward * math.pow(growthPerPrestige, count);
+    final safeCount = count < 0 ? 0 : count;
+    return prestigeBaseReward * math.pow(prestigeRewardGrowth, safeCount);
   }
 
   /// Calculates fixed prestige points from [currentNumber] for the next prestige.
@@ -545,6 +651,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Resolve a persisted step by name, falling back to the start of the
+  /// tutorial for anything unrecognised (older save, renamed enum value).
+  static TutorialStep _tutorialStepFromName(String? name) {
+    if (name == null || name.isEmpty) return TutorialStep.welcome;
+    for (final step in TutorialStep.values) {
+      if (step.name == name) return step;
+    }
+    return TutorialStep.welcome;
+  }
+
   Future<void> _init() async {
     WidgetsBinding.instance.addObserver(this);
     try {
@@ -553,9 +669,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       _testEnvironmentEnabled = (data['testEnvironmentEnabled'] as bool?) ?? false;
 
+      // clickPower is fully derived from base + upgrade levels by
+      // _recalculateDerivedStatsFromUpgrades() below, so the saved value is
+      // only a floor against a corrupt/empty blob.
       final savedClickPower = data['clickPower'] as BigInt;
-      clickPower =
-          savedClickPower < BigInt.from(50) ? BigInt.from(50) : savedClickPower;
+      clickPower = savedClickPower > BigInt.zero
+          ? savedClickPower
+          : BigInt.from(productionBaseClickPower);
 
       final savedAutoClickRate = data['autoClickRate'] as double? ?? 0.0;
       autoClickRate = savedAutoClickRate.isFinite && savedAutoClickRate > 0.0
@@ -608,6 +728,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _tutorialCompleted = (data['tutorialCompleted'] as bool?) ?? false;
       if (_tutorialCompleted) {
         _tutorialStep = TutorialStep.done;
+      } else {
+        // Resume exactly where the player left off. The step used to be the
+        // one piece of tutorial state never saved, so any app kill restarted
+        // the main tutorial from `welcome` — and permanently lost the nexus
+        // and neural tutorials, since both fire on one-time events.
+        _tutorialStep = _tutorialStepFromName(data['tutorialStep'] as String?);
       }
       _nexusTutorialSeen = (data['nexusTutorialSeen'] as bool?) ?? false;
       _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
@@ -726,11 +852,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── Neural network decay tuning ────────────────────────────────────────
   // Tuned so a fully maxed network (all 22 neurons at GL9, all preferred
-  // activations, strength ≈ 6.05) reaches loss ≈ 0.001 in ~13 days of
-  // real time (including offline). Partial networks scale proportionally:
-  // a mid-game build (~strength 3) takes ~27 days, encouraging full upgrade.
+  // activations, strength ≈ 5.85) reaches loss ≈ 0.001 in ~2.7 days of real
+  // time (including offline). Partial networks scale proportionally: a
+  // mid-game build (~strength 3) takes ~5.3 days, so upgrading is the lever.
+  //
+  // The previous value (1e-6) put a *maxed* network at ~13.7 days of pure
+  // waiting with no interaction available — a timer, not an end game.
   static const double _neuralDt = 0.1; // ticker period in seconds
-  static const double _neuralDecayK = 0.000001;
+  static const double _neuralDecayK = 0.000005;
+
+  /// Exposed for the economy tests, which assert the training arc stays in
+  /// the "days" band rather than drifting back into a multi-week timer.
+  static double get neuralDecayK => _neuralDecayK;
   static const double _neuralMinLoss = 0.001; // floor: max accuracy ≈ 99.96%
   static const double _neuralBoostScale = 30.0;
   static const double _neuralSoftCapPerPrestige = 5.0;
@@ -768,6 +901,23 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Raw (uncapped) multiplier from the network's current loss. Exposed so
   /// the HUD can detect when the soft cap is the binding constraint without
   /// having to know `_neuralBoostScale` itself.
+  /// Cheap value-equality handle on the network's *shape* — neuron count per
+  /// layer plus each neuron's gradient level and activation.
+  ///
+  /// Lets the neural canvas rebuild only when the topology actually changes,
+  /// instead of on every 100ms loss tick.
+  String get neuralNetworkTopologySignature {
+    final parts = <String>[];
+    for (final layer in neuralNetwork.layers) {
+      parts.add('${layer.index}');
+      for (final neuron in layer.neurons) {
+        parts.add(
+            '${neuron.id}:${neuron.gradientLevel}:${neuron.activationFn}:${neuron.hasBranched}');
+      }
+    }
+    return parts.join('|');
+  }
+
   double get neuralLossRawMultiplier {
     if (!neuralNetworkUnlocked) return 1.0;
     final raw = 1.0 + (1.0 - neuralNetwork.loss) * _neuralBoostScale;
@@ -807,8 +957,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return upgradeMilestoneMultiplierForLevel(upgrade.level);
   }
 
+  /// Base value of a manual click before upgrades and multipliers.
+  ///
+  /// A fresh save clicks for exactly 1. The click branch stays competitive
+  /// through its upgrades instead of the base: Click Power adds its raw
+  /// `effectValue` (+50/level), and Probability Strike, Momentum, Kinetic
+  /// Synergy and Overclock all multiply on top of that.
+  static const int productionBaseClickPower = 1;
+
   void _recalculateDerivedStatsFromUpgrades() {
-    final baseClick = _testEnvironmentEnabled ? 10000 : 1;
+    final baseClick = _testEnvironmentEnabled ? 10000 : productionBaseClickPower;
     clickPower = BigInt.from(baseClick);
     autoClickRate = 0.0;
 
@@ -831,11 +989,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
             milestoneMultiplier;
       } else if (upgrade.effectType == clickCategory &&
           upgrade.effectValue is BigInt) {
-        var effectValue = upgrade.effectValue as BigInt;
-        // Scale down upgrade effects in production mode to match base click = 1
-        if (!_testEnvironmentEnabled) {
-          effectValue = effectValue ~/ BigInt.from(50);
-        }
+        final effectValue = upgrade.effectValue as BigInt;
         clickPower += effectValue *
             BigInt.from(upgrade.level * milestoneMultiplier);
       }
@@ -1034,9 +1188,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       overclockChanged = true;
     }
 
+    if (_tutorialStep == TutorialStep.triggerProbabilityStrike) {
+      _tutorialStrikeClicks++;
+    }
     final bool probabilityStrikeTriggered =
         _isUpgradeActive(probabilityStrikeId) &&
-            _rng.nextDouble() < _probabilityStrikeChance;
+            (_rng.nextDouble() < _probabilityStrikeChance ||
+                _tutorialForcesStrike);
 
     final baseClickGain =
         clickPower.toDouble() * prestigeMultiplier * neuralLossMultiplier;
@@ -1054,7 +1212,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     number += gained;
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
-    if (probabilityStrikeTriggered && _tutorialStep == TutorialStep.triggerProbabilityStrike) {
+    if (probabilityStrikeTriggered &&
+        _tutorialStep == TutorialStep.triggerProbabilityStrike) {
+      _tutorialStrikeClicks = 0;
       _tutorialStep = TutorialStep.navUpgradesForMomentum;
     }
     if (_tutorialStep == TutorialStep.demonstrateMomentum && _momentumProgress >= 1.0) {
@@ -1155,11 +1315,22 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void setSelectedUpgradeCategory(String category) {
     if (category != clickCategory && category != idleCategory) return;
-    if (selectedUpgradeCategory == category) return;
-    selectedUpgradeCategory = category;
-    if (_tutorialStep == TutorialStep.selectIdle && category == idleCategory) {
+
+    // Advance the tutorial BEFORE the no-op early return. With the check
+    // after it, `selectIdle` was unreachable whenever the category already
+    // happened to be IDLE — which is exactly the state a resumed tutorial
+    // can start in, wedging the step permanently.
+    final advancing =
+        _tutorialStep == TutorialStep.selectIdle && category == idleCategory;
+    if (advancing) {
       _tutorialStep = TutorialStep.buyAutoClicker;
     }
+
+    if (selectedUpgradeCategory == category) {
+      if (advancing) notifyListeners();
+      return;
+    }
+    selectedUpgradeCategory = category;
     notifyListeners();
   }
 
@@ -1288,7 +1459,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     prestigeCount += 1;
 
     number = BigInt.zero;
-    clickPower = BigInt.from(_testEnvironmentEnabled ? 10000 : 1);
+    clickPower = BigInt.from(
+        _testEnvironmentEnabled ? 10000 : productionBaseClickPower);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -1329,7 +1501,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> hardReset({bool preserveTutorial = false}) async {
     number = BigInt.zero;
-    clickPower = BigInt.from(_testEnvironmentEnabled ? 10000 : 1);
+    clickPower = BigInt.from(
+        _testEnvironmentEnabled ? 10000 : productionBaseClickPower);
     autoClickRate = 0.0;
     _idleAccumulator = 0.0;
     _lastManualClickTime = null;
@@ -1422,9 +1595,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void _applyCloudProgress(PlayerProgress progress) {
     number = progress.number;
-    clickPower = progress.clickPower < BigInt.from(50)
-        ? BigInt.from(50)
-        : progress.clickPower;
+    clickPower = progress.clickPower > BigInt.zero
+        ? progress.clickPower
+        : BigInt.from(productionBaseClickPower);
     autoClickRate =
         progress.autoClickRate.isFinite && progress.autoClickRate > 0
             ? progress.autoClickRate
@@ -1530,6 +1703,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         for (final node in researchNodes) node.id: node.level,
       },
       tutorialCompleted: _tutorialCompleted,
+      tutorialStep: _tutorialStep.name,
       nexusTutorialSeen: _nexusTutorialSeen,
       neuralTutorialSeen: _neuralTutorialSeen,
       upgradeTutorialSeen: _upgradeTutorialSeen,
@@ -1570,15 +1744,26 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── Tutorial methods ───────────────────────────────────────────────────
 
+  /// Apply the cloud profile's tutorial flag.
+  ///
+  /// Completion only ever syncs **upward**. A fresh Supabase row defaults
+  /// `tutorial_completed` to false, and this runs on every profile fetch, so
+  /// honouring a remote `false` meant signing in could restart onboarding on
+  /// top of a mature local save.
   void setTutorialCompletionFromProfile(bool completed) {
-    if (completed == _tutorialCompleted) return;
-    _tutorialCompleted = completed;
-    if (completed) {
-      _tutorialStep = TutorialStep.done;
-    } else {
-      _tutorialStep = TutorialStep.welcome;
+    if (!completed) {
+      if (_tutorialCompleted) {
+        // Local says done, remote disagrees: push our truth up instead.
+        _tutorialNeedsCloudSync = true;
+        unawaited(syncTutorialCompletedToProfileIfNeeded());
+      }
+      return;
     }
+    if (_tutorialCompleted) return;
+    _tutorialCompleted = true;
+    _tutorialStep = TutorialStep.done;
     notifyListeners();
+    _scheduleStateSave();
   }
 
   Future<void> syncTutorialCompletedToProfileIfNeeded() async {
@@ -1722,24 +1907,53 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         step == TutorialStep.upgradesDone;
   }
 
+  /// Budget handed to the player so the upgrade deep-dive is affordable.
+  static final BigInt upgradeTutorialGrant = BigInt.from(100000000);
+
   void _startUpgradeTutorial() {
-    // Only show upgrade tutorial once during main tutorial
+    // Only show the upgrade tutorial once during the main tutorial.
     if (_upgradeTutorialSeen) {
       _tutorialStep = TutorialStep.learnPrestige;
       return;
     }
-    // Grant 100M for experimenting with upgrades
-    number = BigInt.from(100_000_000);
-    _upgradeTutorialSeen = true;
+
+    // Snapshot what the player actually had, so finishing (or skipping) the
+    // sub-tutorial restores it rather than zeroing everything. The old
+    // teardown set number = 0 and every upgrade level = 0 unconditionally,
+    // which destroyed real progress — and it was the SKIP path too.
+    _upgradeTutorialNumberSnapshot = number;
+    _upgradeTutorialLevelSnapshot = {
+      for (final u in upgrades) u.id: u.level,
+    };
+
+    number = number + upgradeTutorialGrant;
     _tutorialStep = TutorialStep.upgradeIntro;
   }
 
   void _completeUpgradeTutorial() {
-    // Reset all upgrades and earnings for the real game
-    number = BigInt.zero;
-    for (var u in upgrades) {
-      u.level = 0;
+    // Restore the pre-tutorial snapshot: the grant and anything bought with
+    // it goes away, but progress the player earned themselves survives.
+    final numberSnapshot = _upgradeTutorialNumberSnapshot;
+    final levelSnapshot = _upgradeTutorialLevelSnapshot;
+    if (numberSnapshot != null) {
+      number = numberSnapshot;
     }
+    if (levelSnapshot != null) {
+      for (final u in upgrades) {
+        final restored = levelSnapshot[u.id];
+        if (restored != null) {
+          u.level = u.maxLevel == -1
+              ? restored
+              : restored.clamp(0, u.maxLevel);
+        }
+      }
+    }
+    _upgradeTutorialNumberSnapshot = null;
+    _upgradeTutorialLevelSnapshot = null;
+    // Set only now that the sub-tutorial has actually finished. Setting it at
+    // the start meant an app kill mid-deep-dive short-circuited straight to
+    // learnPrestige on relaunch, and the grant was never clawed back.
+    _upgradeTutorialSeen = true;
     _recalculateDerivedStatsFromUpgrades();
     _tutorialStep = TutorialStep.learnPrestige;
   }
@@ -1768,9 +1982,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_isUpgradeTutorialStep(_tutorialStep)) {
+      // Restore the snapshot, then leave the tutorial entirely. This used to
+      // drop the player at learnPrestige, so SKIP needed up to four presses
+      // to actually escape.
       _completeUpgradeTutorial();
+      _tutorialCompleted = true;
+      _tutorialStep = TutorialStep.done;
+      _tutorialNeedsCloudSync = true;
       notifyListeners();
       _scheduleStateSave();
+      unawaited(syncTutorialCompletedToProfileIfNeeded());
       return;
     }
     _tutorialCompleted = true;
@@ -1817,11 +2038,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       selectedUpgradeCategory = clickCategory;
       _tutorialStep = TutorialStep.kineticSynergyIntro;
       notifyListeners();
-    } else if (_tutorialStep == TutorialStep.goodLuck && index == 0) {
-      // User navigated back to main screen during final tutorial
-      _tutorialStep = TutorialStep.goodLuck;
-      notifyListeners();
     }
+    // No `else` for other tabs on purpose: the overlay reads
+    // TutorialStepSpec.requiredTab and shows only SKIP when the player is
+    // somewhere the current step doesn't apply, rather than pointing a
+    // spotlight at a nav item while a different screen is on show.
+    //
+    // (A `goodLuck && index == 0` branch used to live here that assigned the
+    // step to itself — dead code.)
   }
 
   void _advanceTutorialOnPurchase(String upgradeId) {
@@ -1844,13 +2068,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Number the player must reach before the tutorial sends them to buy the
+  /// first Auto-Clicker. Derived from the Auto-Clicker's own base cost so a
+  /// future price change can't strand the step on an unaffordable purchase.
+  static BigInt get tutorialFirstClickTarget =>
+      defaultUpgrades().firstWhere((u) => u.id == autoClickerId).baseCost;
+
+  /// Number the player must reach while watching idle income accumulate,
+  /// before being sent to buy Click Power.
+  static BigInt get tutorialIdleWatchTarget =>
+      defaultUpgrades().firstWhere((u) => u.id == clickPowerId).baseCost * BigInt.two;
+
   void _advanceTutorialOnNumberReached() {
     if (_tutorialStep == TutorialStep.clickToFifty &&
-        number >= BigInt.from(50)) {
+        number >= tutorialFirstClickTarget) {
       _tutorialStep = TutorialStep.navUpgrades;
       notifyListeners();
     } else if (_tutorialStep == TutorialStep.watchIdle &&
-        number >= BigInt.from(100)) {
+        number >= tutorialIdleWatchTarget) {
       _tutorialStep = TutorialStep.navUpgradesForClick;
       notifyListeners();
     }

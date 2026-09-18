@@ -1,331 +1,230 @@
-# Neural Network — Loss / Accuracy / Multiplier Math
+# Neural Network Math
 
-This is the current math as implemented in code. All formulas below appear
-in either `lib/models/neural_network.dart` or `lib/logic/game_state.dart`.
+**Accurate as of the V0.19 rebalance.** Read back out of `lib/models/neural_network.dart` and
+`lib/logic/game_state.dart` at the time of writing.
 
-## 1) Notation
+The previous revision of this file was wrong on nearly every constant — it documented
+`k = 0.00008` (80× the real value), a boost scale of 50, a soft cap of 8 per prestige, a
+`MIN_LOSS` of `1e-6`, a gradient range of 0..5, and `accuracy = 1 - loss`. None of that was
+true. It also claimed "~3 hours to loss 0.01", which was off by roughly two orders of
+magnitude.
 
-| Symbol | Meaning |
-|---|---|
-| `loss` | Current training loss in `(0, 1]`. Decays over time. Persists across prestige. |
-| `lowestLossEver` | Best (lowest) loss this network has ever reached. Cloud-synced. Drives the leaderboard. |
-| `accuracy` | `1 − loss`, clamped to `[0, 1]`. Pure UI projection of `loss`. |
-| `strength` | Network "training power" derived from neuron upgrades. Drives decay rate. |
-| `gradientLevel` | Per-neuron upgrade level, `0..5`. |
-| `activationFn` | Per-neuron activation: `linear`, `relu`, `sigmoid`, `tanh`. |
-| `layer.index` | Layer position, `0..6` (input → output, pyramid). |
-| `prestigeCount` | How many times the player has prestiged. |
-| `dt` | Ticker period, `0.1` seconds. |
-| `k` | Decay constant, `0.00008`. |
+---
 
-## 2) Per-Neuron Contribution
+## 1. Structure
 
-Each neuron contributes to the network's raw "training signal" sum.
+A left-to-right pyramid of up to **7 layers / 22 neurons**:
 
 ```
-contribution(neuron) = (gradientLevel + 1)
-                     × layerDepthBonus(layer.index)
-                     × activationBonus(layer.index, activationFn)
+targetNeuronCountForLayer:  [1, 2, 4, 8, 4, 2, 1]
 ```
 
-Where:
+Layer index ≥ 7 returns 0. Neuron ids are `layer_<layerIndex>_neuron_<slot>`, and the **slot
+is parsed back out of the id** for positioning — so an existing neuron never moves when a
+sibling appears.
 
-```
-layerDepthBonus(i) = 1.0 + 0.25 * i
-```
+### Expansion rules
 
-| Layer `i` | depthBonus |
-|---|---|
-| 0 | 1.00 |
-| 1 | 1.25 |
-| 2 | 1.50 |
-| 3 | 1.75 |
-| 4 | 2.00 |
-| 5 | 2.25 |
-| 6 | 2.50 |
+Only the *leading* neurons may branch once the pyramid starts shrinking
+(`isEligibleParentIndex`):
 
-Deeper layers are worth more — there's incentive to keep branching.
-
-```
-activationBonus(i, fn) = 1.10  if fn == preferredActivationByLayer[i]
-                       = 1.00  otherwise
-```
-
-Preferred activation per layer (locked rule):
-
-| Layer `i` | role | preferred fn |
+| Layer | Eligible parents | Children created |
 |---|---|---|
-| 0 | input | `linear` |
-| 1 | hidden | `relu` |
-| 2 | hidden | `relu` |
-| 3 | hidden | `relu` |
-| 4 | hidden | `relu` |
-| 5 | deep hidden | `tanh` |
-| 6 | output | `linear` |
+| 0, 1, 2 | all | fills the next layer's target |
+| 3 | neurons 0 and 1 | 4 in layer 4 |
+| 4 | neuron 0 | 2 in layer 5 |
+| 5 | neuron 0 | 1 in layer 6 |
+| 6 | none (terminal) | — |
 
-> **Why `(gradientLevel + 1)`?** So a fresh, level-0 neuron still contributes
-> something nonzero (just a small amount). Otherwise an unupgraded network
-> would have zero strength → zero decay forever.
+Expansion is strictly left-to-right, gated by `activeExpansionLayerIndex`: the leftmost layer
+that still has an unbranched eligible neuron. A neuron in a later layer cannot branch until
+every eligible parent in the active layer has.
 
-## 3) Network Strength
+When a parent branches, it spawns only **its own slice** of the next layer
+(`perParent = targetNext ~/ eligibleCount`, starting at
+`startSlot = eligibleIndexOfParent × perParent`), so children appear under their parent's
+column as each sibling branches rather than all at once. Children are kept sorted by slot.
 
-```
-strength = ln(1 + Σ contribution(neuron))
-```
+---
 
-Natural log applied to `1 + Σ` — so:
-- A weak network has near-zero strength (matches intuition).
-- The marginal value of adding another upgrade *decreases* as the network
-  gets stronger (log-shaped curve). This prevents late-game decay from
-  becoming so fast that loss falls off a cliff.
+## 2. Costs — all paid in `number`
 
-### 3.1 Marginal Δstrength (per neuron)
-
-The detail sheet shows what removing *this* neuron's contribution would do:
+### Gradient
 
 ```
-marginalΔ = ln(1 + Σ_total) − ln(1 + Σ_total − contribution(this))
+maxGradientLevel = 9
+gradientUpgradeCost = 10,000 × 10^gradientLevel
 ```
 
-That's the actual log-strength delta this neuron is responsible for — and
-since `loss` decay is driven by `strength`, this is the number that matters
-when deciding whether to upgrade.
+→ 10K, 100K, 1M, 10M, 100M, 1B, 10B, 100B, 1T. Maxing all 22 neurons is **~24.4 T**.
 
-## 4) Loss Decay (per tick, every 100 ms)
+`NeuralNeuron.maxGradientLevel` is the single source of truth — `NeuronDetailSheet` reads it
+for both the `GR x/y` badge and the pip row. Those used to be hardcoded to 5 while the logic
+capped at 9, so the UI claimed the neuron was maxed at level 5.
 
-```
-loss_next = max( loss * exp(-k * strength * dt), MIN_LOSS )
-```
-
-With:
-- `dt = 0.1` (seconds per tick)
-- `k = 0.00008` (decay constant)
-- `MIN_LOSS = 1e-6` (loss never reaches true zero)
-
-This is **continuous exponential decay**, not linear. Each tick, loss is
-multiplied by a factor `< 1` whose magnitude depends on current strength.
-
-Over a wall-clock interval `T` seconds (assuming constant strength):
+### Activation
 
 ```
-loss(T) = loss(0) * exp(-k * strength * T)
+activationChangeCost(fn) = 0        if fn == current, or fn == 'linear',
+                                    or fn already in unlockedActivations
+                         = 5,000,000  otherwise
 ```
 
-Time to reach a target loss:
+`linear` is free and implicitly always unlocked. Once paid for, switching back to an
+activation is free forever.
+
+### Branching (adds a layer)
 
 ```
-T_target = ln(loss_start / loss_target) / (k * strength)
+addLayerCost(currentLayerCount) = 1,000,000 × 8^(currentLayerCount - 1)
 ```
 
-### 4.1 First-pass tuning target
+→ 1M, 8M, 64M, 512M, ~4.1B, ~32.8B. Charged **per branch** using the *current layer count*, so
+every parent in the same expansion wave pays the same price. Fully expanding the pyramid costs
+`1M + 2×8M + 4×64M + 2×512M + 4.1B + 32.8B ≈ **38.2 B**`.
 
-`k = 0.00008` is calibrated so a **fully-tuned** network reaches `loss ≈ 0.01`
-in roughly 24 hours of continuous play. Adjust during playtest.
+---
 
-A fully-tuned network is:
-- All 22 neurons present (1+2+4+8+4+2+1).
-- Every neuron at gradient 5.
-- Every neuron's activation matches its layer's preferred fn.
-
-For that network:
+## 3. Strength
 
 ```
-Σ contributions ≈ Σ over all neurons of (5+1) × depthBonus × 1.10
-                ≈ 6 × 1.10 × Σ (1, 2×1.25, 4×1.50, 8×1.75, 4×2.00, 2×2.25, 1×2.50)
-                ≈ 6.6 × 31.5
-                ≈ 207.9
-strength       ≈ ln(1 + 207.9) ≈ 5.34
+depthBonus(layerIndex)      = 1.0 + 0.25 × layerIndex
+activationBonus(neuron)     = 1.10 if neuron.activationFn == preferredActivationByLayer[idx]
+                              else 1.00
+contribution(neuron)        = (gradientLevel + 1) × depthBonus × activationBonus
+
+strength = ln(1 + Σ contributions)
 ```
 
-Time to go from `loss = 1.0` → `loss = 0.01`:
+Preferred activations by layer: `0: linear, 1-4: relu, 5: tanh, 6: linear`.
+
+Fully maxed (22 neurons, GL9, all preferred): `Σ ≈ 346.5`, so **strength ≈ 5.85**.
+
+Log-shaped on purpose — late-game additions slow down gracefully instead of falling off a
+cliff.
+
+---
+
+## 4. Loss decay
 
 ```
-T = ln(1.0 / 0.01) / (0.00008 × 5.34)
-  = 4.605 / 0.000427
-  ≈ 10,780 seconds
-  ≈ 3.0 hours
+_neuralDt    = 0.1          // ticker period, seconds
+_neuralDecayK = 0.000005
+_neuralMinLoss = 0.001      // floor
+
+loss <- clamp(loss × exp(-k × strength × dt), minLoss, 1.0)
 ```
 
-(So the "24 h" target is conservative — real play has the network ramping
-up slowly, not starting fully-tuned. The constant is set so the journey
-to ~99% accuracy takes a meaningful day-or-two of play, not a weekend.)
+Runs every tick whenever the network is unlocked, **regardless of whether the player owns an
+auto-clicker**, and is applied in one shot for elapsed time on resume
+(`_calculateOfflineProgress`).
 
-## 5) Accuracy (UI display)
+Stochastic training jitter exists in the code but is currently disabled so accuracy progression
+is strictly monotonic.
 
-```
-accuracy = clamp(1 − loss, 0, 1)
-```
-
-That's it. Accuracy is a pure presentation of `loss` — the canvas HUD
-shows `accuracy × 100` as `"Accuracy: 99.21%"`. The leaderboard shows the
-same projection.
-
-| `loss` | `accuracy` shown as |
-|---|---|
-| 1.000  | 0.00% |
-| 0.500  | 50.00% |
-| 0.100  | 90.00% |
-| 0.010  | 99.00% |
-| 0.001  | 99.90% |
-| 1e-6   | 99.9999% |
-
-## 6) Loss Multiplier (the gain boost)
-
-The neural network's payoff is a multiplier applied to all number gain.
-
-### 6.1 Raw multiplier
+### Time to floor
 
 ```
-rawMult = 1.0 + (1.0 − loss) × NEURAL_BOOST_SCALE
-        = 1.0 + accuracy × 50         // since NEURAL_BOOST_SCALE = 50
+t = ln(1 / minLoss) / (k × strength) = ln(1000) / (k × strength)
 ```
 
-| `accuracy` | `rawMult` |
-|---|---|
-|  0%  | 1.00 |
-| 50%  | 26.00 |
-| 90%  | 46.00 |
-| 99%  | 50.50 |
-| 99.9%| 50.95 |
-| 100% | 51.00 |
-
-### 6.2 Soft cap (anti-trivialization)
-
-A returning player who unlocks the network *after* having a low `loss`
-shouldn't be able to one-shot the early prestige curve. So the raw
-multiplier is capped by a function of `prestigeCount`:
-
-```
-softCap = 1.0 + prestigeCount × NEURAL_SOFT_CAP_PER_PRESTIGE
-        = 1.0 + prestigeCount × 8
-
-neuralLossMultiplier = min(rawMult, softCap)
-```
-
-The cap binds early and stops binding once `prestigeCount` is high enough
-for `softCap ≥ rawMult`.
-
-| `prestigeCount` | `softCap` | binds vs `rawMult = 51`? |
+| Build | Strength | Time to loss 0.001 |
 |---|---|---|
-| 0   | 1     | yes (huge clamp) |
-| 1   | 9     | yes |
-| 3   | 25    | yes |
-| 5   | 41    | yes |
-| 6   | 49    | yes |
-| 7   | 57    | **no** — full boost from here on |
-| 50  | 401   | no |
+| Fully maxed | 5.85 | **~2.7 days** |
+| Mid-game | 3.0 | ~5.3 days |
+| Single neuron, GL0 | 0.69 | ~23 days |
 
-The HUD shows a `(capped)` flag next to the multiplier when the soft cap
-is the active constraint, so players know more prestiges = more headroom.
+`k` was `0.000001` before V0.19, which put a *fully maxed* network at **~13.7 days of pure
+waiting** with no interaction available — a timer, not an end game. `test/economy_test.dart`
+asserts the maxed figure stays in the 1-5 day band.
 
-If the neural network isn't unlocked at all:
+---
 
-```
-neuralLossMultiplier = 1.0   // no boost, no cap
-```
-
-## 7) Where the Multiplier Applies
-
-### 7.1 Idle rate
+## 5. Displayed accuracy
 
 ```
-totalIdleRate = (autoClickRate + permanentIdleBonus)
-              × prestigeMultiplier
-              × resonanceMultiplier
-              × neuralLossMultiplier
-              × overclockIdleMultiplier  // if active
+x = clamp(1 - loss, 0, 1)
+accuracy = log(1 + 9x) / log(10)
 ```
 
-### 7.2 Click gain
+A log remap, **not** `1 - loss`. Early upgrades feel impactful and the curve asymptotes toward
+100% without ever touching it. Consequences worth knowing:
+
+- `loss = 1.0` → accuracy 0%
+- `loss = 0.5` → accuracy **~74%** (not 50%)
+- `loss = 0.001` → accuracy ~99.96%
+
+The HUD additionally smooths the displayed percentage with an EMA (`alpha = 0.22`) so it
+doesn't jitter at 10 Hz.
+
+---
+
+## 6. Gain multiplier
 
 ```
-baseClickGain = clickPower × prestigeMultiplier × neuralLossMultiplier
-kineticBonus  = totalIdleRate × kineticShare         // already includes mult
-gain          = (baseClickGain + kineticBonus) × momentumMultiplier
-              × probabilityStrikeMultiplier         // if triggered
+_neuralBoostScale        = 30.0
+_neuralSoftCapPerPrestige = 5.0
+
+raw      = max(1.0, 1 + (1 - loss) × 30)
+softCap  = 1 + prestigeCount × 5
+neuralLossMultiplier = min(raw, softCap)
 ```
 
-> The `kineticBonus` inherits `neuralLossMultiplier` *via* `totalIdleRate`,
-> so we deliberately don't multiply it again — that would double-apply.
+Maximum raw is **31×** at the loss floor. The soft cap stops binding at `prestigeCount >= 6`,
+so it only throttles a player who somehow reached the neural network unusually early — which
+the ~800 PP unlock path (≈15 prestiges) makes unlikely by construction.
 
-## 8) `lowestLossEver` (leaderboard metric)
+`neuralLossMultiplier` multiplies **both** idle and click income. `kineticBonus` derives from
+`totalIdleRate`, which already carries the multiplier, so it is deliberately *not* applied a
+second time there.
 
-Updated every tick:
+The HUD shows `MULT × (capped)` when `neuralLossMultiplier < neuralLossRawMultiplier`.
 
-```
-if (loss < lowestLossEver) {
-  lowestLossEver = loss;
-}
-```
+---
 
-It is a **monotonically non-increasing** field. It is never reset by
-prestige, and (importantly) the cloud sync always merges it as
-`min(local, remote)` even when the other side wins the timestamp
-race — so a stale upload can never wipe a better training run.
+## 7. Persistence
 
-The leaderboard `'loss'` metric ranks `ASC` by `neural_lowest_loss`.
-The UI presents it as `Accuracy: (1 − lowestLossEver) × 100`.
+`_saveVersion = 4`, with real migrations — this is the **one** save path in the project that
+versions itself properly, and it's the pattern the rest of the game should follow
+(`PROD_READINESS.md` item 11).
 
-## 9) Lifecycle Summary
+- v0/v1 → v2: layer/neuron normalisation
+- pre-v4: activation grandfathering (a neuron already using a non-linear activation gets it
+  added to `unlockedActivations` free, so existing players aren't re-charged)
+- v3+: `loss` and `lowestLossEver` are persisted
 
-| Event | `loss` | `lowestLossEver` |
-|---|---|---|
-| Genesis unlock      | initialized to `1.0` | initialized to `1.0` |
-| Tick (every 100 ms) | decays via §4 | maybe lowered |
-| Prestige            | **unchanged** | **unchanged** |
-| Hard reset          | reset to `1.0` (network reinitialized) | reset to `1.0` |
-| Cloud sync (remote wins) | `min(local, remote)` | `min(local, remote)` |
-| Cloud sync (local wins)  | local | `min(local, remote)` (always) |
+`lowestLossEver` is monotonic and is merged across devices by taking the **minimum** of local
+and remote, so a stale upload can never wipe a better training run.
 
-## 10) Tuning Constants (live in `game_state.dart`)
+**Not persisted to the cloud: the network topology itself.** `PlayerProgress` carries only
+`neuralLoss` and `neuralLowestLoss`, so restoring on a new device yields a maxed accuracy value
+attached to an empty canvas. This is a known data-loss bug — see `PROD_READINESS.md` item 8.
 
-```dart
-static const double _neuralDt                 = 0.1;     // ticker period (s)
-static const double _neuralDecayK             = 0.00008; // decay constant
-static const double _neuralMinLoss            = 1e-6;    // floor for loss
-static const double _neuralBoostScale         = 50.0;    // mult @ accuracy=1
-static const double _neuralSoftCapPerPrestige = 8.0;    // cap slope
-```
+A corrupt `neural_network` blob currently resets to `NeuralNetwork.initial()` **silently**,
+with no warning and no backup (item 12).
 
-All five are intentionally easy to find and change in one place. Adjust
-during playtest — the formulas above will continue to hold.
+---
 
-## 11) Worked Example
+## 8. Layout / rendering
 
-Player has:
-- A mid-game network: 12 neurons, average gradient 3, ~half on preferred
-  activation.
-- `prestigeCount = 4`.
-- Current `loss = 0.40` (accuracy 60%).
-
-Estimate:
+Canvas geometry lives in `neural_canvas.dart` in canvas-local pixels:
 
 ```
-Σ contributions ≈ 12 × (3+1) × 1.5_avg_depth × 1.05_avg_activation ≈ 75.6
-strength        = ln(1 + 75.6) ≈ 4.34
-decayPerSecond  = k × strength = 0.00008 × 4.34 ≈ 3.47e-4 /s
-                                                  (× current loss to get loss/s)
-
-rawMult         = 1 + (1 − 0.40) × 50 = 31.0
-softCap         = 1 + 4 × 8 = 33.0
-neuralLossMult  = min(31.0, 33.0) = 31.0   // raw is below cap
-                                            // → HUD shows no "(capped)"
+_layerSpacing  = 120    _neuronSpacing = 80
+_neuronSize    = 48     _canvasPadding = 80
+_minScale      = 0.3    _maxScale      = 3.0
 ```
 
-So this player's gain is being multiplied by **31×** right now, and the
-HUD's decay readout would show `≈ 0.00035 /s` next to the multiplier and
-accuracy.
-
-Time to reach `loss = 0.01` from here at constant strength:
-
 ```
-T = ln(0.40 / 0.01) / (0.00008 × 4.34)
-  = 3.689 / 3.47e-4
-  ≈ 10,630 seconds
-  ≈ 2.95 hours
+x = _canvasPadding + layer.index × _layerSpacing + _neuronSize / 2
+y = canvasCenterY - ((slots - 1) × _neuronSpacing) / 2 + slot × _neuronSpacing
 ```
 
-After two more prestiges (`prestigeCount = 6`), `softCap` becomes
-`49` — still under the asymptotic max raw of `51`, so almost any
-high-accuracy network will be unconstrained. From `prestigeCount = 7`
-upward, the soft cap stops binding entirely.
+where `slots` is the layer's **target** count, so a neuron's position never shifts as siblings
+fill in around it.
+
+`_fitAndCenter` must compute its bounds from the **actual** neuron positions, not from the
+target pyramid. Using targets meant that with layers 0(1), 1(2), 2(4), 3(2-of-8) the real
+content spanned y 104→504 (centre 304) while the fit box spanned 80→688 (centre 384) — the
+network rendered 80 px high and zoomed out over mostly-empty canvas until every slot filled.
+See Part 3 of `IMPLEMENTATION_PLAN.md`.

@@ -159,22 +159,34 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
 
             // ── Neural canvas (with loss HUD on top) ─────────────────────
             Expanded(
-              child: Consumer<GameState>(
-                builder: (context, state, _) {
-                  if (!state.neuralNetwork.unlocked) {
-                    return const NeuralUnlockScreen();
-                  }
+              // Deliberately two narrow Selectors rather than one Consumer.
+              // The ticker calls notifyListeners() 10x/s, and a Consumer here
+              // rebuilt the HUD *and* the entire canvas subtree every tick.
+              child: Selector<GameState, bool>(
+                selector: (_, state) => state.neuralNetwork.unlocked,
+                builder: (context, unlocked, _) {
+                  if (!unlocked) return const NeuralUnlockScreen();
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _NeuralLossHud(
-                        key: widget.neuralHudKey,
-                        state: state,
+                      Selector<GameState, double>(
+                        // Loss is what the HUD renders; rebuild on it alone.
+                        selector: (_, state) => state.neuralNetwork.loss,
+                        builder: (context, _, __) => _NeuralLossHud(
+                          key: widget.neuralHudKey,
+                          state: context.read<GameState>(),
+                        ),
                       ),
                       Expanded(
-                        child: NeuralCanvas(
-                          network: state.neuralNetwork,
-                          neuralNeuronKey: widget.neuralNeuronKey,
+                        // The canvas only cares about topology, which changes
+                        // on branch/upgrade — not on every loss tick.
+                        child: Selector<GameState, String>(
+                          selector: (_, state) =>
+                              state.neuralNetworkTopologySignature,
+                          builder: (context, _, __) => NeuralCanvas(
+                            network: context.read<GameState>().neuralNetwork,
+                            neuralNeuronKey: widget.neuralNeuronKey,
+                          ),
                         ),
                       ),
                     ],

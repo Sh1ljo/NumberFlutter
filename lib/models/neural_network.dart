@@ -29,7 +29,7 @@ const Map<String, String> activationFunctionDescriptions = {
 
 class NeuralNeuron {
   final String id;
-  int gradientLevel; // 0–5
+  int gradientLevel; // 0..maxGradientLevel
   String activationFn; // 'linear' | 'relu' | 'sigmoid' | 'tanh'
   bool hasBranched;
 
@@ -46,7 +46,11 @@ class NeuralNeuron {
     Set<String>? unlockedActivations,
   }) : unlockedActivations = unlockedActivations ?? <String>{};
 
-  bool get isGradientMaxed => gradientLevel >= 9;
+  /// Highest reachable gradient level. Drives both the cost ladder and the
+  /// pip row / "GR x/y" badge in NeuronDetailSheet.
+  static const int maxGradientLevel = 9;
+
+  bool get isGradientMaxed => gradientLevel >= maxGradientLevel;
 
   BigInt get gradientUpgradeCost {
     if (isGradientMaxed) return BigInt.zero;

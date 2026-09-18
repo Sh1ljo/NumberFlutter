@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 class ResearchNode {
@@ -9,7 +11,12 @@ class ResearchNode {
   final Map<String, int> prereqLevels; // nodeId -> minimum level required
   final int maxLevel;
   final double baseCostPerLevel;
-  final bool costsScale; // if true, cost = (level + 1) * baseCostPerLevel
+  /// If true, cost grows geometrically: base * [costGrowth] ^ level.
+  ///
+  /// It used to be linear ((level + 1) * base), which put PP on a linear curve
+  /// against an exponential number economy — the whole 1,469 PP tree got
+  /// bought out within a few prestiges of unlocking and PP had no sink after.
+  final bool costsScale;
   final String effectType;
   final double effectPerLevel;
   int level;
@@ -31,8 +38,12 @@ class ResearchNode {
 
   bool get isMaxed => level >= maxLevel;
 
-  double get costForNextLevel =>
-      costsScale ? (level + 1) * baseCostPerLevel : baseCostPerLevel;
+  /// Per-level cost growth for nodes with [costsScale] set.
+  static const double costGrowth = 1.6;
+
+  double get costForNextLevel => costsScale
+      ? baseCostPerLevel * math.pow(costGrowth, level)
+      : baseCostPerLevel;
 
   bool prereqsMet(List<ResearchNode> allNodes) {
     for (final entry in prereqLevels.entries) {

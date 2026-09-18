@@ -130,7 +130,10 @@ class PlayerProgress {
       number: parsedNumber ?? BigInt.zero,
       clickPower:
           BigInt.tryParse(row['click_power_numeric'] as String? ?? '') ??
-              BigInt.from(50),
+              // Mirrors GameState.productionBaseClickPower; kept as a literal
+              // to avoid a models -> logic import cycle. Recomputed from
+              // upgrade levels on apply anyway.
+              BigInt.from(1),
       autoClickRate: (row['auto_click_rate'] as num?)?.toDouble() ?? 0.0,
       prestigeCurrency: (row['prestige_currency'] as num?)?.toDouble() ?? 0.0,
       prestigeMultiplier:
