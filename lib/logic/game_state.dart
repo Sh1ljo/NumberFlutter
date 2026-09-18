@@ -181,11 +181,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: clickPowerId,
       name: 'Click Power',
-      description: 'Increases value per click.',
-      baseCost: BigInt.from(100),
-      costMultiplier: 1.30,
+      description: 'Adds +1 click power each level.',
+      baseCost: BigInt.from(15),
+      costMultiplier: 1.15,
       effectType: clickCategory,
-      effectValue: BigInt.from(50),
+      effectValue: BigInt.from(1),
+    ),
+    Upgrade(
+      id: 'click_reinforced_tap',
+      name: 'Reinforced Tap',
+      description: 'Adds +5 click power each level.',
+      baseCost: BigInt.from(400),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(5),
     ),
     Upgrade(
       id: probabilityStrikeId,
@@ -196,6 +205,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       costMultiplier: 1.72,
       effectType: clickCategory,
       effectValue: 0,
+    ),
+    Upgrade(
+      id: 'click_kinetic_amplifier',
+      name: 'Kinetic Amplifier',
+      description: 'Adds +25 click power each level.',
+      baseCost: BigInt.from(6000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(25),
     ),
     Upgrade(
       id: momentumId,
@@ -217,6 +235,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       effectValue: 0,
     ),
     Upgrade(
+      id: 'click_resonant_touch',
+      name: 'Resonant Touch',
+      description: 'Adds +150 click power each level.',
+      baseCost: BigInt.from(75000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(150),
+    ),
+    Upgrade(
       id: overclockId,
       name: 'Overclock',
       description:
@@ -225,6 +252,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       costMultiplier: 1.82,
       effectType: clickCategory,
       effectValue: 0,
+    ),
+    Upgrade(
+      id: 'click_quantum_fingertip',
+      name: 'Quantum Fingertip',
+      description: 'Adds +1,000 click power each level.',
+      baseCost: BigInt.from(1000000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(1000),
+    ),
+    Upgrade(
+      id: 'click_singularity_press',
+      name: 'Singularity Press',
+      description: 'Adds +7,500 click power each level.',
+      baseCost: BigInt.from(15000000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(7500),
     ),
     Upgrade(
       id: autoClickerId,
@@ -960,8 +1005,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Base value of a manual click before upgrades and multipliers.
   ///
   /// A fresh save clicks for exactly 1. The click branch stays competitive
-  /// through its upgrades instead of the base: Click Power adds its raw
-  /// `effectValue` (+50/level), and Probability Strike, Momentum, Kinetic
+  /// through its upgrades instead of the base: the flat click upgrades (Click
+  /// Power +1, Reinforced Tap +5, … Singularity Press +7,500) add their raw
+  /// `effectValue` per level, and Probability Strike, Momentum, Kinetic
   /// Synergy and Overclock all multiply on top of that.
   static const int productionBaseClickPower = 1;
 

@@ -128,21 +128,24 @@ clickPower = productionBaseClickPower (1)           // or 10,000 in test environ
            + floor(prestigeMultiplier × level × 500)           // Dimensional Tap
 ```
 
-Production base click is `1`: a fresh save clicks for exactly one number. What used to make
-the click branch decoration was not the base but the `/50` divisor on click upgrade effects —
-Click Power delivered `+1` per level against an Auto-Clicker that cost 150 for `+1/s`
-permanently. That divisor and the `clickPower` load floor of 50 are both gone, so Click Power
-now pays its full `+50` per level on top of the base of 1.
+Production base click is `1`: a fresh save clicks for exactly one number. Click Power adds a
+realistic `+1` per level and is priced to match (15 base, ×1.15). Bigger flat gains come from
+a ladder of flat click upgrades, each a higher tier with a higher cost.
 
 ### Click upgrades
 
 | id | baseCost | mult | maxLevel | Effect |
 |---|---|---|---|---|
-| `click_power` | 100 | 1.30 | ∞ | `+50 × L × milestoneMult` click power |
+| `click_power` | 15 | 1.15 | ∞ | `+1 × L × milestoneMult` click power |
+| `click_reinforced_tap` | 400 | 1.15 | ∞ | `+5 × L × milestoneMult` click power |
 | `click_probability_strike` | 2,500 | 1.72 | ∞ | fixed **5%** chance; multiplier `10 + 2(L-1)` |
+| `click_kinetic_amplifier` | 6,000 | 1.15 | ∞ | `+25 × L × milestoneMult` click power |
 | `click_momentum` | 8,000 | 1.68 | ∞ | see below |
 | `click_kinetic_synergy` | 40,000 | 1.75 | ∞ | `share = 0.01 × L` of `totalIdleRate` added to click |
+| `click_resonant_touch` | 75,000 | 1.15 | ∞ | `+150 × L × milestoneMult` click power |
 | `click_overclock` | 125,000 | 1.82 | ∞ | see below |
+| `click_quantum_fingertip` | 1e6 | 1.15 | ∞ | `+1,000 × L × milestoneMult` click power |
+| `click_singularity_press` | 1.5e7 | 1.15 | ∞ | `+7,500 × L × milestoneMult` click power |
 | `click_dimensional_tap` | 5e8 | 2.10 | ∞ | `+floor(prestigeMultiplier × L × 500)`; **no** milestone mult; needs 1 prestige |
 | `click_temporal_collapse` | 5e10 | 3.5 | 5 | burst `= floor(totalIdleRate × 60 × L)`, ×2 prestige mult for `30 + 15L` s, cooldown `max(80, 180 - 20L)` s; needs 8 prestiges |
 

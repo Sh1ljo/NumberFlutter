@@ -8,6 +8,10 @@ class NexusDispersePainter extends CustomPainter {
   final Color primary;
   final Color outline;
 
+  /// Scale the spin-up left the sphere at, so the burst starts exactly where
+  /// the compressed sphere was.
+  final double sphereScale;
+
   static const int _nSphere = 100;
   static const int _nParticles = 36;
   static const double _goldenAngle = 2.399963229728653;
@@ -20,7 +24,10 @@ class NexusDispersePainter extends CustomPainter {
     required this.ambientT,
     required this.primary,
     required this.outline,
+    this.sphereScale = 1.0,
   });
+
+  double get _r => _sphereR * sphereScale;
 
   List<Offset> _spherePositions(double cx, double cy) {
     final positions = <Offset>[];
@@ -38,7 +45,7 @@ class NexusDispersePainter extends CustomPainter {
       final sinA = math.sin(sphereAngle);
       final rx = sx * cosA + sz * sinA;
 
-      positions.add(Offset(cx + rx * _sphereR * osc, cy + sy * _sphereR * osc));
+      positions.add(Offset(cx + rx * _r * osc, cy + sy * _r * osc));
     }
     return positions;
   }
@@ -54,6 +61,8 @@ class NexusDispersePainter extends CustomPainter {
 
     // ambient drift fades in during latter half of disperse
     final driftBlend = ((stabilizeT - 0.67) / 0.28).clamp(0.0, 1.0);
+
+    _paintShockwave(canvas, size, cx, cy);
 
     final spherePos = _spherePositions(cx, cy);
 
@@ -124,8 +133,8 @@ class NexusDispersePainter extends CustomPainter {
       if (len < 0.001) continue;
 
       final scatter = 1.8 + (i % 5) * 0.4;
-      final flyX = start.dx + (dirX / len) * easedDisperse * _sphereR * scatter;
-      final flyY = start.dy + (dirY / len) * easedDisperse * _sphereR * scatter;
+      final flyX = start.dx + (dirX / len) * easedDisperse * _r * scatter;
+      final flyY = start.dy + (dirY / len) * easedDisperse * _r * scatter;
       final alpha = (0.4 * (1.0 - easedDisperse * 1.3)).clamp(0.0, 1.0);
 
       if (alpha < 0.01) continue;
@@ -138,9 +147,33 @@ class NexusDispersePainter extends CustomPainter {
     }
   }
 
+  /// Expanding rings fired at the moment of release (stabilizeT 0.45→0.62).
+  void _paintShockwave(Canvas canvas, Size size, double cx, double cy) {
+    final w = ((stabilizeT - 0.45) / 0.17).clamp(0.0, 1.0);
+    if (w <= 0 || w >= 1) return;
+    final maxR =
+        math.sqrt(size.width * size.width + size.height * size.height) / 2;
+    for (int k = 0; k < 2; k++) {
+      final local = ((w - k * 0.18) / (1 - k * 0.18)).clamp(0.0, 1.0);
+      if (local <= 0 || local >= 1) continue;
+      final radius = _r + (maxR - _r) * Curves.easeOutCubic.transform(local);
+      final fade = 1.0 - local;
+      canvas.drawCircle(
+        Offset(cx, cy),
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (k == 0 ? 10.0 : 4.0) * fade + 0.5
+          ..color = primary.withValues(alpha: (k == 0 ? 0.55 : 0.3) * fade)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + 6 * local),
+      );
+    }
+  }
+
   @override
   bool shouldRepaint(NexusDispersePainter old) =>
       old.stabilizeT != stabilizeT ||
       old.ambientT != ambientT ||
-      old.sphereAngle != sphereAngle;
+      old.sphereAngle != sphereAngle ||
+      old.sphereScale != sphereScale;
 }

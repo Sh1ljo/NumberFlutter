@@ -20,10 +20,17 @@ class UpgradesScreen extends StatefulWidget {
 
 class _UpgradesScreenState extends State<UpgradesScreen> {
   bool _profileActionBusy = false;
+  final ScrollController _listController = ScrollController();
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
 
   Future<void> _openStatsScreen() async {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
+    Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
   }
 
   Future<void> _openLeaderboardScreen() async {
@@ -79,10 +86,14 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
     final gameState = context.watch<GameState>();
     final theme = Theme.of(context);
     final selectedCategory = gameState.selectedUpgradeCategory;
+    // MainLayout folds the nav bar's height into this inset.
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
+        // The list runs to the nav bar and pads its own tail instead.
+        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -228,39 +239,47 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
               }).toList();
 
               return Expanded(
-                child: ListView.builder(
-                  // Eagerly build all items so GlobalKeys are always valid
-                  // even before the user scrolls (needed for tutorial highlights).
-                  cacheExtent: 10000,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0, vertical: 6.0),
-                  itemCount: entries.length,
-                  itemBuilder: (context, index) {
-                    final entry = entries[index];
-                    final milestoneMultiplier =
-                        gameState.upgradeMilestoneMultiplier(entry.upgrade);
-                    final row = _UpgradeItem(
-                      upgrade: entry.upgrade,
-                      canAfford: entry.canAfford,
-                      info: entry.info,
-                      milestoneMultiplier: milestoneMultiplier,
-                      affordabilityProgress: _calculateAffordabilityProgress(
-                        gameState.number,
-                        entry.info.cost,
-                      ),
-                    );
-                    final gk = widget.upgradeRowKeys?[entry.upgrade.id];
-                    if (gk != null) {
-                      return KeyedSubtree(key: gk, child: row);
-                    }
-                    return row;
-                  },
+                child: RawScrollbar(
+                  controller: _listController,
+                  thumbVisibility: true,
+                  trackVisibility: true,
+                  thickness: 4,
+                  radius: const Radius.circular(2),
+                  thumbColor: theme.colorScheme.primary,
+                  trackColor: theme.colorScheme.surfaceContainerLow,
+                  trackBorderColor: Colors.transparent,
+                  padding: EdgeInsets.fromLTRB(0, 6, 6, bottomInset + 6),
+                  child: ListView.builder(
+                    controller: _listController,
+                    // Eagerly build all items so GlobalKeys are always valid
+                    // even before the user scrolls (needed for tutorial highlights).
+                    cacheExtent: 10000,
+                    padding: EdgeInsets.fromLTRB(24, 6, 24, bottomInset + 8),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final milestoneMultiplier =
+                          gameState.upgradeMilestoneMultiplier(entry.upgrade);
+                      final row = _UpgradeItem(
+                        upgrade: entry.upgrade,
+                        canAfford: entry.canAfford,
+                        info: entry.info,
+                        milestoneMultiplier: milestoneMultiplier,
+                        affordabilityProgress: _calculateAffordabilityProgress(
+                          gameState.number,
+                          entry.info.cost,
+                        ),
+                      );
+                      final gk = widget.upgradeRowKeys?[entry.upgrade.id];
+                      if (gk != null) {
+                        return KeyedSubtree(key: gk, child: row);
+                      }
+                      return row;
+                    },
+                  ),
                 ),
               );
             }),
-
-            // Padding for the bottom nav bar
-            const SizedBox(height: 80),
           ],
         ),
       ),

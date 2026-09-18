@@ -71,7 +71,8 @@ void main() {
 
     test('never overflows to a non-finite value at extreme counts', () {
       for (final n in [300, 400, 1000, 100000]) {
-        expect(GameState.prestigeRequirementAtCount(n), greaterThan(BigInt.zero));
+        expect(
+            GameState.prestigeRequirementAtCount(n), greaterThan(BigInt.zero));
       }
     });
 
@@ -175,8 +176,24 @@ void main() {
     test('click power upgrade delivers its full advertised effect', () {
       final clickPower =
           upgrades.firstWhere((u) => u.id == GameState.clickPowerId);
-      // The old bug divided this by 50 in production, making it +1/level.
-      expect(clickPower.effectValue, BigInt.from(50));
+      expect(clickPower.effectValue, BigInt.from(1));
+    });
+
+    test('flat click upgrades form an escalating ladder', () {
+      final flat = upgrades
+          .where((u) =>
+              u.effectType == GameState.clickCategory &&
+              u.effectValue is BigInt)
+          .toList();
+      expect(flat.length, greaterThanOrEqualTo(6));
+      for (var i = 0; i < flat.length; i++) {
+        expect(flat[i].effectValue as BigInt, greaterThan(BigInt.zero));
+        if (i > 0) {
+          expect(flat[i].baseCost, greaterThan(flat[i - 1].baseCost));
+          expect(flat[i].effectValue as BigInt,
+              greaterThan(flat[i - 1].effectValue as BigInt));
+        }
+      }
     });
 
     test('click power grows slower than it used to, so it stays buyable', () {
@@ -240,7 +257,8 @@ void main() {
         prestiges++;
       }
       expect(prestiges, inInclusiveRange(12, 18),
-          reason: 'min path is $minPath PP, reached after $prestiges prestiges');
+          reason:
+              'min path is $minPath PP, reached after $prestiges prestiges');
     });
   });
 
@@ -256,8 +274,7 @@ void main() {
     test('a maxed network trains in days, not weeks', () {
       // Strength of a fully maxed 22-neuron pyramid is ~5.85.
       const strength = 5.85;
-      final days =
-          math.log(1000) / (GameState.neuralDecayK * strength) / 86400;
+      final days = math.log(1000) / (GameState.neuralDecayK * strength) / 86400;
       expect(days, lessThan(5.0),
           reason: '$days days of pure waiting is a timer, not an end game');
       expect(days, greaterThan(1.0),
