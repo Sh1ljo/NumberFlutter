@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import '../../logic/game_state.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../widgets/pulse_number.dart';
 import '../widgets/floating_tap_text.dart';
 import '../widgets/profile_editor_dialog.dart';
@@ -57,12 +57,12 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
   Future<void> _openProfileEditor() async {
     if (_profileActionBusy) return;
-    final supabase = SupabaseService.instance;
-    if (!supabase.isConfigured || !supabase.isInitialized) {
+    final backend = BackendService.instance;
+    if (!backend.isConfigured || !backend.isInitialized) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content:
-              Text('Profile editing needs Supabase configured in assets/.env.'),
+              Text('Profile editing needs a connection to the cloud.'),
         ),
       );
       return;
@@ -73,12 +73,12 @@ class _MainGameScreenState extends State<MainGameScreen> {
     });
 
     try {
-      if (supabase.currentSession == null) {
+      if (!backend.isSignedIn) {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
         );
       }
-      if (!mounted || supabase.currentSession == null) return;
+      if (!mounted || !backend.isSignedIn) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
       );

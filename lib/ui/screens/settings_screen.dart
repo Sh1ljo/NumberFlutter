@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../utils/network_error_utils.dart';
 import 'auth_screen.dart';
 
@@ -139,7 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       (gs) => (gs.cloudSyncInProgress, gs.testEnvironmentEnabled),
     );
     final gameState = context.read<GameState>();
-    final supabase = SupabaseService.instance;
+    final backend = BackendService.instance;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -189,7 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!supabase.isConfigured)
+                      if (!backend.isConfigured)
                         Container(
                           decoration: BoxDecoration(
                               border: Border.all(
@@ -197,15 +197,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       theme.colorScheme.surfaceContainerLow)),
                           padding: const EdgeInsets.all(24),
                           child: Text(
-                            'Cloud features need SUPABASE_URL and SUPABASE_ANON_KEY in assets/.env. You can still play offline.',
+                            'Cloud features are unavailable right now (could not reach the cloud). You can still play offline.',
                             style: theme.textTheme.labelSmall,
                           ),
                         )
                       else
                         StreamBuilder(
-                          stream: supabase.authStateChanges(),
+                          stream: backend.authStateChanges(),
                           builder: (context, snapshot) {
-                            final session = supabase.currentSession;
+                            final user = backend.currentUser;
                             return Container(
                               decoration: BoxDecoration(
                                   border: Border.all(
@@ -222,14 +222,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   Text(
                                     gameState.cloudSyncInProgress
                                         ? 'Sync in progress...'
-                                        : session != null
-                                            ? 'Signed in as ${session.user.email ?? 'Player'}. Progress syncs in the background.'
+                                        : user != null
+                                            ? 'Signed in as ${user.email ?? 'Player'}. Progress syncs in the background.'
                                             : 'Playing locally. Sign in to back up progress and use the leaderboard.',
                                     style: theme.textTheme.labelSmall
                                         ?.copyWith(fontSize: 10),
                                   ),
                                   const SizedBox(height: 24),
-                                  if (session == null) ...[
+                                  if (user == null) ...[
                                     OutlinedButton(
                                       onPressed: () {
                                         Navigator.of(context).push(
@@ -396,15 +396,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _buildDenominationsAccordion(context),
                   _buildLinkRow(context, 'Privacy Policy'),
                   _buildLinkRow(context, 'Terms of Service'),
-                  if (supabase.isConfigured)
+                  if (backend.isConfigured)
                     StreamBuilder(
-                      stream: supabase.authStateChanges(),
+                      stream: backend.authStateChanges(),
                       builder: (context, snapshot) {
-                        if (supabase.currentSession == null) {
+                        if (!backend.isSignedIn) {
                           return const SizedBox.shrink();
                         }
                         return _buildDangerRow(context, 'Sign Out', () async {
-                          await SupabaseService.instance.signOut();
+                          await BackendService.instance.signOut();
                         });
                       },
                     ),

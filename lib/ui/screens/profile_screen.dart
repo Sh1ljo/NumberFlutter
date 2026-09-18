@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/location_catalog_service.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../models/user_profile.dart';
 import '../../utils/network_error_utils.dart';
 import '../../utils/number_formatter.dart';
@@ -41,8 +41,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadData() async {
-    final service = SupabaseService.instance;
-    final userId = service.currentUser?.id;
+    final service = BackendService.instance;
+    final userId = service.currentUserId;
     if (userId == null) {
       setState(() {
         _loading = false;
@@ -89,8 +89,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _saveProfile() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) return;
-    final service = SupabaseService.instance;
-    final userId = service.currentUser?.id;
+    final service = BackendService.instance;
+    final userId = service.currentUserId;
     if (userId == null) return;
 
     setState(() {

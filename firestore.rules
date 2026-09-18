@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// Security rules for NumberFlutter. Deploy with:
+//   firebase deploy --only firestore:rules,firestore:indexes
+//
+// The app still reports its own scores; server-side validation needs Cloud
+// Functions (Blaze plan).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function optionalString(data, field, maxLength) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() <= maxLength);
+    }
+
+    // Public profile: names and locations appear on the leaderboard.
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && optionalString(request.resource.data, 'display_name', 100)
+        && optionalString(request.resource.data, 'country', 100)
+        && optionalString(request.resource.data, 'city', 100);
+      allow delete: if false;
+
+      // Archived prestige runs: private and append-only.
+      match /sessions/{sessionId} {
+        allow read, create: if isOwner(uid);
+        allow update, delete: if false;
+      }
+    }
+
+    // Full cloud save: only its owner can see it.
+    match /player_progress/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.data.user_id == uid;
+      allow delete: if false;
+    }
+
+    // Public ranking rows, one per player.
+    match /leaderboard/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && optionalString(request.resource.data, 'display_name', 100)
+        && optionalString(request.resource.data, 'country', 100)
+        && optionalString(request.resource.data, 'city', 100)
+        && optionalString(request.resource.data, 'highest_number_numeric', 100000)
+        && (!('highest_number_log10' in request.resource.data)
+            || request.resource.data.highest_number_log10 is number)
+        && (!('neural_lowest_loss' in request.resource.data)
+            || request.resource.data.neural_lowest_loss is number);
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

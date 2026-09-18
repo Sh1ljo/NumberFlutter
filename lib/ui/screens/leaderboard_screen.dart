@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../widgets/system_loading_indicator.dart';
 import '../../models/user_profile.dart';
 import '../../utils/number_formatter.dart';
@@ -54,15 +54,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Future<UserProfile?> _fetchProfile() async {
-    final s = SupabaseService.instance;
-    final userId = s.currentSession?.user.id;
+    final s = BackendService.instance;
+    final userId = s.currentUserId;
     if (userId == null) return null;
     return s.fetchOrCreateProfile(userId: userId);
   }
 
   Future<_LeaderboardData> _fetchRows() async {
-    final s = SupabaseService.instance;
-    if (!s.isInitialized || s.currentSession == null) {
+    final s = BackendService.instance;
+    if (!s.isInitialized || !s.isSignedIn) {
       return const _LeaderboardData(
           profile: null, rows: <Map<String, dynamic>>[]);
     }
@@ -134,7 +134,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final supabase = SupabaseService.instance;
+    final backend = BackendService.instance;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -178,19 +178,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   children: [
                     const SizedBox(height: 20),
                     Expanded(
-                      child: !supabase.isConfigured || !supabase.isInitialized
+                      child: !backend.isConfigured || !backend.isInitialized
                           ? Center(
                               child: Text(
-                                'Leaderboard needs Supabase in assets/.env. You can still play offline from other tabs.',
+                                'Leaderboard is unavailable right now (could not reach the cloud). You can still play offline from other tabs.',
                                 style: theme.textTheme.bodyLarge,
                                 textAlign: TextAlign.center,
                               ),
                             )
                           : StreamBuilder(
-                        stream: supabase.authStateChanges(),
+                        stream: backend.authStateChanges(),
                         builder: (context, _) {
-                          final session = supabase.currentSession;
-                          if (session == null) {
+                          final userId = backend.currentUserId;
+                          if (userId == null) {
                             return Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -230,7 +230,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               ),
                             );
                           }
-                          final rowsKey = _rowsKeyFor(session.user.id);
+                          final rowsKey = _rowsKeyFor(userId);
                           return FutureBuilder<_LeaderboardData>(
                             key: ValueKey<String>(rowsKey),
                             future: _rowsFor(rowsKey),
@@ -238,7 +238,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               if (snapshot.connectionState !=
                                   ConnectionState.done) {
                                 return const Center(
-                                  child: SystemLoadingIndicator(repeat: true),
+                                  child: SystemLoadingIndicator(),
                                 );
                               }
                               if (snapshot.hasError) {
@@ -286,7 +286,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                   setState(() {
                                     _refreshEpoch++;
                                     _rowsKey =
-                                        _rowsKeyFor(session.user.id);
+                                        _rowsKeyFor(userId);
                                     _rowsFuture = refreshed;
                                   });
                                 },

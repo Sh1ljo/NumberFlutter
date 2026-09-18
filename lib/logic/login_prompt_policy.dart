@@ -39,7 +39,7 @@ class LoginPromptPolicy {
   /// True when an unprompted account modal is allowed right now.
   ///
   /// [signedIn] short-circuits everything: a player with a session is never
-  /// asked. Callers still own the "is Supabase even configured" check.
+  /// asked. Callers still own the "is the backend even available" check.
   Future<bool> shouldPrompt({
     required bool signedIn,
     required bool tutorialCompleted,

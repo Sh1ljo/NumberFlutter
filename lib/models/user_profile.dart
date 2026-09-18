@@ -14,7 +14,7 @@ class UserProfile {
   final String? city;
   final DateTime? createdAt;
 
-  /// Synced with `profiles.tutorial_completed` in Supabase when signed in.
+  /// Synced with `profiles.tutorial_completed` in Firestore when signed in.
   final bool tutorialCompleted;
 
   bool get hasLocation =>

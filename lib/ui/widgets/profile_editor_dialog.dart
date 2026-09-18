@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../logic/location_catalog_service.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../models/user_profile.dart';
 import '../../utils/network_error_utils.dart';
 
@@ -41,8 +41,10 @@ class ProfileEditorDialog extends StatefulWidget {
 class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _countryController = TextEditingController();
-  final _cityController = TextEditingController();
+  String? _country;
+  String? _city;
+  String? _countryError;
+  String? _cityError;
 
   bool _loading = true;
   bool _saving = false;
@@ -59,14 +61,12 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
   @override
   void dispose() {
     _nameController.dispose();
-    _countryController.dispose();
-    _cityController.dispose();
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    final service = SupabaseService.instance;
-    final userId = service.currentUser?.id;
+    final service = BackendService.instance;
+    final userId = service.currentUserId;
     if (userId == null) {
       setState(() {
         _loading = false;
@@ -86,8 +86,15 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
       _catalog = catalog;
       _profile = profile;
       _nameController.text = profile.effectiveDisplayName;
-      _countryController.text = profile.country ?? '';
-      _cityController.text = profile.city ?? '';
+      final country = profile.country;
+      if (country != null && catalog.countries.contains(country)) {
+        _country = country;
+        final city = profile.city;
+        if (city != null &&
+            (catalog.citiesByCountry[country]?.contains(city) ?? false)) {
+          _city = city;
+        }
+      }
       setState(() {
         _loading = false;
       });
@@ -110,11 +117,49 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
     return _catalog!.citiesByCountry[country] ?? const <String>[];
   }
 
+  Future<void> _pickCountry() async {
+    final catalog = _catalog;
+    if (catalog == null) return;
+    final picked = await _LocationPickerPage.open(
+      context,
+      title: 'Choose country',
+      options: catalog.countries,
+      selected: _country,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (picked != _country) _city = null;
+      _country = picked;
+      _countryError = null;
+    });
+  }
+
+  Future<void> _pickCity() async {
+    final country = _country;
+    if (country == null) return;
+    final picked = await _LocationPickerPage.open(
+      context,
+      title: 'Choose city in $country',
+      options: _citiesForCountry(country),
+      selected: _city,
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _city = picked;
+      _cityError = null;
+    });
+  }
+
   Future<void> _saveProfile() async {
     final form = _formKey.currentState;
-    if (form == null || !form.validate()) return;
-    final service = SupabaseService.instance;
-    final userId = service.currentUser?.id;
+    final nameValid = form?.validate() ?? false;
+    setState(() {
+      _countryError = _country == null ? 'Choose your country' : null;
+      _cityError = _city == null ? 'Choose your city' : null;
+    });
+    if (!nameValid || _country == null || _city == null) return;
+    final service = BackendService.instance;
+    final userId = service.currentUserId;
     if (userId == null) return;
 
     setState(() {
@@ -126,8 +171,8 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
       final updated = await service.updateProfile(
         userId: userId,
         displayName: _nameController.text.trim(),
-        country: _countryController.text.trim(),
-        city: _cityController.text.trim(),
+        country: _country!,
+        city: _city!,
       );
       if (!mounted) return;
       Navigator.of(context).pop(updated ?? _profile);
@@ -201,99 +246,22 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
                         },
                       ),
                       const SizedBox(height: 12),
-                      Autocomplete<String>(
-                        initialValue:
-                            TextEditingValue(text: _countryController.text),
-                        optionsBuilder: (textEditingValue) {
-                          final input =
-                              textEditingValue.text.trim().toLowerCase();
-                          if (_catalog == null) {
-                            return const Iterable<String>.empty();
-                          }
-                          if (input.isEmpty) {
-                            return _catalog!.countries.take(12);
-                          }
-                          return _catalog!.countries
-                              .where(
-                                (country) =>
-                                    country.toLowerCase().contains(input),
-                              )
-                              .take(12);
-                        },
-                        onSelected: (selection) {
-                          _countryController.text = selection;
-                          final cities = _citiesForCountry(selection);
-                          if (!cities.contains(_cityController.text.trim())) {
-                            _cityController.clear();
-                          }
-                        },
-                        fieldViewBuilder:
-                            (context, textController, focusNode, onSubmitted) {
-                          return TextFormField(
-                            controller: textController,
-                            focusNode: focusNode,
-                            decoration:
-                                const InputDecoration(labelText: 'Country'),
-                            onChanged: (value) {
-                              _countryController.text = value;
-                            },
-                            validator: (value) {
-                              final trimmed = value?.trim() ?? '';
-                              if (trimmed.isEmpty) return 'Country is required';
-                              final exists =
-                                  _catalog?.countries.contains(trimmed) ??
-                                      false;
-                              if (!exists) {
-                                return 'Select a country from the list';
-                              }
-                              return null;
-                            },
-                          );
-                        },
+                      _LocationField(
+                        label: 'Country',
+                        value: _country,
+                        placeholder: 'Tap to choose',
+                        errorText: _countryError,
+                        onTap: _saving ? null : _pickCountry,
                       ),
                       const SizedBox(height: 12),
-                      Autocomplete<String>(
-                        initialValue:
-                            TextEditingValue(text: _cityController.text),
-                        optionsBuilder: (textEditingValue) {
-                          final country = _countryController.text.trim();
-                          final cities = _citiesForCountry(country);
-                          if (cities.isEmpty) {
-                            return const Iterable<String>.empty();
-                          }
-                          final input =
-                              textEditingValue.text.trim().toLowerCase();
-                          if (input.isEmpty) return cities.take(12);
-                          return cities
-                              .where(
-                                  (city) => city.toLowerCase().contains(input))
-                              .take(12);
-                        },
-                        onSelected: (selection) {
-                          _cityController.text = selection;
-                        },
-                        fieldViewBuilder:
-                            (context, textController, focusNode, onSubmitted) {
-                          return TextFormField(
-                            controller: textController,
-                            focusNode: focusNode,
-                            decoration:
-                                const InputDecoration(labelText: 'City'),
-                            onChanged: (value) {
-                              _cityController.text = value;
-                            },
-                            validator: (value) {
-                              final trimmed = value?.trim() ?? '';
-                              if (trimmed.isEmpty) return 'City is required';
-                              final country = _countryController.text.trim();
-                              final cities = _citiesForCountry(country);
-                              if (!cities.contains(trimmed)) {
-                                return 'Select a city from the list';
-                              }
-                              return null;
-                            },
-                          );
-                        },
+                      _LocationField(
+                        label: 'City',
+                        value: _city,
+                        placeholder: _country == null
+                            ? 'Choose a country first'
+                            : 'Tap to choose',
+                        errorText: _cityError,
+                        onTap: _saving || _country == null ? null : _pickCity,
                       ),
                       if (_error != null) ...[
                         const SizedBox(height: 12),
@@ -320,6 +288,159 @@ class _ProfileEditorDialogState extends State<ProfileEditorDialog> {
           child: Text(_saving ? 'SAVING...' : 'SAVE'),
         ),
       ],
+    );
+  }
+}
+
+/// Read-only field that opens a picker when tapped. Replaces the floating
+/// Autocomplete dropdowns, which jumped around as the keyboard opened.
+class _LocationField extends StatelessWidget {
+  const _LocationField({
+    required this.label,
+    required this.value,
+    required this.placeholder,
+    required this.errorText,
+    required this.onTap,
+  });
+
+  final String label;
+  final String? value;
+  final String placeholder;
+  final String? errorText;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          errorText: errorText,
+          enabled: onTap != null,
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+        ),
+        child: Text(
+          value ?? placeholder,
+          overflow: TextOverflow.ellipsis,
+          style: value == null
+              ? theme.textTheme.bodyLarge
+                  ?.copyWith(color: theme.colorScheme.outline)
+              : theme.textTheme.bodyLarge,
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen searchable list. The search box is pinned at the top and the
+/// list only shrinks when the keyboard opens, so nothing moves under the
+/// player's finger.
+class _LocationPickerPage extends StatefulWidget {
+  const _LocationPickerPage({
+    required this.title,
+    required this.options,
+    required this.selected,
+  });
+
+  final String title;
+  final List<String> options;
+  final String? selected;
+
+  static Future<String?> open(
+    BuildContext context, {
+    required String title,
+    required List<String> options,
+    required String? selected,
+  }) {
+    return Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _LocationPickerPage(
+          title: title,
+          options: options,
+          selected: selected,
+        ),
+      ),
+    );
+  }
+
+  @override
+  State<_LocationPickerPage> createState() => _LocationPickerPageState();
+}
+
+class _LocationPickerPageState extends State<_LocationPickerPage> {
+  String _query = '';
+
+  List<String> get _matches {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return widget.options;
+    // Names that start with the query first, then the rest that contain it.
+    final starts = <String>[];
+    final contains = <String>[];
+    for (final option in widget.options) {
+      final lower = option.toLowerCase();
+      if (lower.startsWith(query)) {
+        starts.add(option);
+      } else if (lower.contains(query)) {
+        contains.add(option);
+      }
+    }
+    return [...starts, ...contains];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final matches = _matches;
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: TextField(
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'Search',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+          ),
+          Expanded(
+            child: matches.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No matches. Try another spelling or pick the closest one.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.outline),
+                    ),
+                  )
+                : ListView.builder(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    itemCount: matches.length,
+                    itemBuilder: (context, index) {
+                      final option = matches[index];
+                      final isSelected = option == widget.selected;
+                      return ListTile(
+                        title: Text(option),
+                        selected: isSelected,
+                        trailing: isSelected
+                            ? Icon(Icons.check,
+                                color: theme.colorScheme.primary)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(option),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

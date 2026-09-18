@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../logic/game_state.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 
 /// When the user signs in after playing offline, merges local progress with cloud.
 class AuthSessionListener extends StatefulWidget {
@@ -23,15 +23,23 @@ class _AuthSessionListenerState extends State<AuthSessionListener> {
   @override
   void initState() {
     super.initState();
-    final supabase = SupabaseService.instance;
-    if (!supabase.isInitialized) return;
+    // This widget is built before Firebase has started (that happens on the
+    // loading screen), so subscribe once it has.
+    BackendService.settled.then((_) {
+      if (mounted) _subscribe();
+    });
+  }
 
-    _sub = supabase.authStateChanges().listen((data) {
+  void _subscribe() {
+    final backend = BackendService.instance;
+    if (!backend.isInitialized || _sub != null) return;
+
+    _sub = backend.authStateChanges().listen((user) {
       if (_firstAuthEvent) {
         _firstAuthEvent = false;
         return;
       }
-      final signedIn = data.session != null;
+      final signedIn = user != null;
       if (!signedIn || !mounted) return;
       final gameState = context.read<GameState>();
       unawaited(() async {

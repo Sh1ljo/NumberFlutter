@@ -2,110 +2,80 @@
 
 Incremental number game built with Flutter.
 
-## Supabase Setup
+## Firebase Setup
 
-1. In Supabase SQL Editor, run `supabase/schema.sql`.
-2. Create OAuth providers in Supabase Auth (Google and Apple), plus email/password.
-3. Rotate any exposed secret/service keys and keep them out of the app codebase.
+The backend is Firebase: **Auth** for accounts and **Firestore** for profiles, cloud saves and the leaderboard. The Firebase project is `number-65099`. Its app config is generated into `lib/firebase_options.dart`, `android/app/google-services.json` and `firebase.json` by `flutterfire configure`.
 
-### Configure the app (choose one)
+1. **Authentication → Sign-in method:** enable **Email/Password** and **Google** (and **Apple** if you ship on iOS).
+2. **Firestore Database:** create it in production mode.
+3. **Deploy the rules and indexes** from the repo root:
 
-**Option A — `assets/.env` (default, plain `flutter run`)**
+   ```bash
+   firebase deploy --only firestore:rules,firestore:indexes
+   ```
 
-1. Copy `.env.example` to `assets/.env` (or edit the committed `assets/.env` stub).
-2. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` from **Project Settings → API** (use the **anon** key only).
-3. **Google / Apple sign-in:** add these to **Supabase → Authentication → URL Configuration → Redirect URLs** (add both so trailing slashes never break the flow):
-   - `com.example.number_flutter://login-callback`
-   - `com.example.number_flutter://login-callback/`
-4. **Google Cloud (OAuth client used by Supabase):** under **Credentials → your Web client → Authorized redirect URIs**, include Supabase's callback (copy from **Supabase → Authentication → Providers → Google**), usually:
-   - `https://<YOUR_PROJECT_REF>.supabase.co/auth/v1/callback`
-5. Rebuild the app after changing Android deep links (`flutter run` or a clean build).
+   Rules live in `firestore.rules`, and the composite indexes for the country and city leaderboards are in `firestore.indexes.json`.
 
-If Google opens in the browser but then shows **"This site can't be reached"**, the browser failed to hand off the custom URL to the app. The project sets `flutter_deeplinking_enabled` to `false` so `app_links` (used by `supabase_flutter`) can receive the OAuth return URL; `MainActivity` uses `singleTask` and `onNewIntent` for a reliable return on Android.
-6. Optional: set `SUPABASE_OAUTH_REDIRECT_URL` in `assets/.env` only if you use a custom redirect; otherwise the default above is used.
+### Data model
+
+| Collection | Doc ID | Who can read | Contents |
+|---|---|---|---|
+| `profiles` | uid | any signed-in player | name, country, city, tutorial flag, session stats |
+| `profiles/{uid}/sessions` | auto | owner | one doc per archived prestige run |
+| `player_progress` | uid | owner | the full cloud save (`PlayerProgress.toDatabase()`) |
+| `leaderboard` | uid | any signed-in player | public ranking row, written alongside every cloud save |
+
+Firestore can't sort huge numbers stored as text, so each leaderboard row also stores `highest_number_log10`, which sorts in the same order (see `lib/logic/leaderboard_ranking.dart`). The app computes ranks and caches leaderboard results for 3 minutes to save reads.
 
 ### Google Sign-In on Android (native, no browser)
 
-The app uses the native **Google Sign-In** SDK on Android/iOS via `google_sign_in` and hands the resulting ID token to Supabase with `signInWithIdToken`. This avoids browser redirects, custom URL schemes, and Supabase's redirect allow list entirely. You **must** complete these one-time Google Cloud steps or sign-in will fail with "No ID token returned by Google":
+The app uses the native **Google Sign-In** SDK on Android/iOS via `google_sign_in` and hands the resulting ID token to Firebase with `signInWithCredential`. One-time setup:
 
-1. **Web application client ID (already exists).**
-   In Google Cloud Console → **APIs & Services → Credentials**, find the **Web application** OAuth 2.0 client you already created for Supabase (Authorized redirect URI `https://<ref>.supabase.co/auth/v1/callback`). Copy its Client ID and put it in `assets/.env` as `GOOGLE_WEB_CLIENT_ID=...`.
-
-2. **Android OAuth client — REQUIRED.**
-   Still in **Credentials**, click **+ CREATE CREDENTIALS → OAuth client ID → Android**.
-   - **Package name:** `com.example.number_flutter`
-   - **SHA-1 certificate fingerprint:** your debug keystore's SHA-1. Get it with either:
-
-     ```powershell
-     # From repo root, Windows PowerShell (easiest):
-     cd android
-     .\gradlew signingReport
-     ```
-
-     In the output, find the block where `Variant: debug` and `Config: debug`, then copy the `SHA1:` value (looks like `AA:BB:CC:...`).
-
-     Or directly with keytool:
-
-     ```powershell
-     keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
-     ```
-
-   Click **Create**. You don't need to copy this client ID anywhere — Google Play Services looks it up automatically by matching your app's package name and signing fingerprint at runtime.
-
-3. **Supabase → Authentication → Providers → Google.**
-   Make sure the **Web application Client ID** from step 1 is in the **Client IDs** field (comma-separated list). The **Client Secret** must also be set (from the Web client). The toggle must be **enabled**. Save.
-
-4. **Rebuild.** After changing `assets/.env` or adding the Android client:
+1. **Web client ID.** Firebase console → **Authentication → Sign-in method → Google → Web SDK configuration**. Copy the **Web client ID** into `assets/.env` as `GOOGLE_WEB_CLIENT_ID=...` (see `.env.example`).
+2. **SHA-1 fingerprint.** Get your debug keystore's SHA-1:
 
    ```powershell
+   cd android
+   .\gradlew signingReport
+   ```
+
+   Copy the `SHA1:` value from the `Variant: debug` block and add it in Firebase console → **Project settings → Your apps → Android app → Add fingerprint**.
+3. **Refresh the config** so `google-services.json` includes the new OAuth client, then rebuild:
+
+   ```powershell
+   flutterfire configure
    flutter clean
-   flutter pub get
    flutter run
    ```
 
-5. **Release builds** use a different keystore, so you must add a second SHA-1 to the Android OAuth client (or create a separate one) for the Play Store upload/release certificate.
+4. **Release builds** use a different keystore, so add its SHA-1 (and the Play Store app signing SHA-1) too.
 
 ### Troubleshooting
 
-**"Account created, check your email" but no email arrives**
-
-Supabase's default shared SMTP service is limited to roughly 2 emails/hour and frequently fails to deliver (especially to Gmail / Outlook). You have two options:
-
-- **Easiest (recommended for development):** disable email confirmation.
-  Supabase dashboard → **Authentication → Providers → Email** → turn off **"Confirm email"** → save. New signups will be logged in instantly with no email required.
-- **Production-ready:** configure your own SMTP provider.
-  Supabase dashboard → **Authentication → Emails → SMTP Settings** → enable custom SMTP and fill in credentials from Resend / Postmark / SendGrid / Mailgun / etc. Then re-send or retry signup.
-
 **Google Sign-In errors on Android**
 
-- `PlatformException(sign_in_failed, ..., ApiException: 10)` — Android OAuth client doesn't exist for this package+SHA-1 combination. Re-check step 2 above; the SHA-1 must match the keystore that signed the APK you're running (debug vs release).
-- `No ID token returned by Google` — you forgot to set `GOOGLE_WEB_CLIENT_ID` or used the Android client ID instead of the Web client ID. Must be the **Web application** client.
-- Invalid ID token / audience mismatch in Supabase logs — the `GOOGLE_WEB_CLIENT_ID` in `.env` and the **Client IDs** list in Supabase → Google provider don't match. They should be the same Web client.
-- Google opens then immediately closes with no sign-in — device has no Google account, or Play Services is out of date. Add a Google account in Settings and update Play Services from the Play Store.
+- `PlatformException(sign_in_failed, ..., ApiException: 10)` — no SHA-1 is registered for the keystore that signed the APK you're running (debug vs release). Re-check step 2 above.
+- `No ID token returned by Google` — `GOOGLE_WEB_CLIENT_ID` is missing or is the Android client ID instead of the Web client ID.
+- Google opens then immediately closes with no sign-in — device has no Google account, or Play Services is out of date.
 
-**Google Sign-In on other platforms**
+**Other platforms**
 
-- **Web / desktop**: the app automatically falls back to the browser OAuth flow. For web, make sure `http://localhost:PORT` is listed in **Supabase → Authentication → URL Configuration**.
-- **Windows / macOS / Linux desktop**: native Google Sign-In is not supported by `google_sign_in`; use email/password for desktop testing.
+- **Web:** Google uses a browser popup.
+- **Windows / macOS / Linux desktop:** Firebase has no Google sign-in flow there, so the button is hidden; use email/password.
+- **iOS:** Google and Apple sign-in are wired up but untested. Google also needs the iOS OAuth client's reversed client ID added as a URL scheme in `ios/Runner/Info.plist`.
 
-**Option B — compile-time defines (CI / no env file)**
+**Compile-time defines (CI / no env file)**
 
 ```bash
-flutter run \
-  --dart-define=SUPABASE_PROJECT_ID=your-project-id \
-  --dart-define=SUPABASE_URL=https://your-project-id.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=your-anon-key \
-  --dart-define=SUPABASE_OAUTH_REDIRECT_URL=com.example.number_flutter://login-callback
+flutter run --dart-define=GOOGLE_WEB_CLIENT_ID=your-web-client-id
 ```
 
 Values in `assets/.env` override empty `--dart-define` entries when both are present.
 
-Do not place `sb_secret` or service-role keys inside Flutter client code.
-
 ## Data Ownership
 
 - Apple App Store and Google Play distribute the app.
-- User progression, accounts, and leaderboard data are stored in Supabase.
+- User progression, accounts, and leaderboard data are stored in Firebase (Auth + Firestore).
 - Local `SharedPreferences` remains as offline cache and migration source.
 
 ## Offline-first account (optional)

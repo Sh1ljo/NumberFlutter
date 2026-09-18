@@ -1,5 +1,5 @@
 import '../models/player_progress.dart';
-import 'supabase_service.dart';
+import 'backend_service.dart';
 
 enum SyncWinner { local, remote }
 
@@ -11,16 +11,16 @@ class SyncResult {
 }
 
 class SyncService {
-  SyncService({SupabaseService? supabaseService})
-      : _supabaseService = supabaseService ?? SupabaseService.instance;
+  SyncService({BackendService? backendService})
+      : _backendService = backendService ?? BackendService.instance;
 
-  final SupabaseService _supabaseService;
+  final BackendService _backendService;
   static const Duration _cloudRequestTimeout = Duration(seconds: 6);
 
   String? _ensuredProfileUserId;
 
-  bool get isAvailable => _supabaseService.isInitialized;
-  String? get currentUserId => _supabaseService.currentUser?.id;
+  bool get isAvailable => _backendService.isInitialized;
+  String? get currentUserId => _backendService.currentUserId;
 
   Future<SyncResult?> syncProgress({
     required PlayerProgress localProgress,
@@ -34,12 +34,12 @@ class SyncService {
     // user per session is enough; this ran on every sync (~20s) and reset
     // the player's chosen display name each time.
     if (_ensuredProfileUserId != userId) {
-      await _supabaseService
+      await _backendService
           .ensureProfile(userId: userId)
           .timeout(_cloudRequestTimeout);
       _ensuredProfileUserId = userId;
     }
-    final remoteProgress = await _supabaseService
+    final remoteProgress = await _backendService
         .fetchProgress(userId: userId)
         .timeout(_cloudRequestTimeout);
     final resolved = _pickWinner(
@@ -48,7 +48,7 @@ class SyncService {
       forceUpload: forceUpload,
     );
 
-    await _supabaseService
+    await _backendService
         .upsertProgress(resolved.resolved)
         .timeout(_cloudRequestTimeout);
     return resolved;

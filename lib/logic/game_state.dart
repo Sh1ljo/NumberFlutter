@@ -8,7 +8,7 @@ import '../data/nexus_data.dart';
 import '../models/neural_network.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
-import 'supabase_service.dart';
+import 'backend_service.dart';
 import 'tutorial_step.dart';
 
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
@@ -1595,7 +1595,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _updateHighestNumber();
       final sessionSnapshot = _buildLocalProgress(userId);
       try {
-        await SupabaseService.instance.archiveSession(
+        await BackendService.instance.archiveSession(
           userId: userId,
           sessionProgress: sessionSnapshot,
         );
@@ -1983,7 +1983,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Apply the cloud profile's tutorial flag.
   ///
-  /// Completion only ever syncs **upward**. A fresh Supabase row defaults
+  /// Completion only ever syncs **upward**. A fresh profile doc defaults
   /// `tutorial_completed` to false, and this runs on every profile fetch, so
   /// honouring a remote `false` meant signing in could restart onboarding on
   /// top of a mature local save.
@@ -2009,7 +2009,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (userId == null) return;
     _tutorialNeedsCloudSync = false;
     try {
-      await SupabaseService.instance.setProfileTutorialCompleted(
+      await BackendService.instance.setProfileTutorialCompleted(
         userId: userId,
         completed: _tutorialCompleted,
       );
@@ -2023,7 +2023,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (userId == null) return;
     try {
       final profile =
-          await SupabaseService.instance.fetchProfile(userId: userId);
+          await BackendService.instance.fetchProfile(userId: userId);
       if (profile != null) {
         setTutorialCompletionFromProfile(profile.tutorialCompleted);
       }

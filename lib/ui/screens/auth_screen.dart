@@ -1,8 +1,9 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../utils/network_error_utils.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -24,11 +25,10 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void initState() {
     super.initState();
-    final service = SupabaseService.instance;
+    final service = BackendService.instance;
     if (!service.isInitialized) return;
-    _authSub = service.authStateChanges().listen((data) {
-      final session = data.session;
-      if (session != null && mounted && Navigator.canPop(context)) {
+    _authSub = service.authStateChanges().listen((user) {
+      if (user != null && mounted && Navigator.canPop(context)) {
         Navigator.of(context).pop();
       }
     });
@@ -50,21 +50,14 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      final service = SupabaseService.instance;
+      final service = BackendService.instance;
       if (_isSignUp) {
-        final response = await service.signUpWithEmailPassword(
+        // Firebase signs the new account in straight away; the auth
+        // listener above closes this screen.
+        await service.signUpWithEmailPassword(
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
-        // Supabase returns a user but null session when email confirmation is required.
-        if (response.session == null && mounted) {
-          setState(() {
-            _errorMessage =
-                'Account created. If a confirmation email does not arrive within a few minutes, '
-                'disable "Confirm email" in Supabase → Authentication → Providers → Email, '
-                'or configure a custom SMTP provider. Then sign in here.';
-          });
-        }
       } else {
         await service.signInWithEmailPassword(
           email: _emailController.text.trim(),
@@ -74,7 +67,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = cloudErrorMessage(
+        _errorMessage = _authErrorMessage(
           error,
           offlineMessage:
               'No internet connection. Please reconnect and try again.',
@@ -100,7 +93,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = cloudErrorMessage(
+        _errorMessage = _authErrorMessage(
           error,
           offlineMessage:
               'No internet connection. Please reconnect and try again.',
@@ -116,10 +109,50 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Firebase auth errors carry a code we can explain; anything else falls
+  /// back to the generic offline / failure message.
+  String _authErrorMessage(
+    Object error, {
+    required String offlineMessage,
+    required String fallbackMessage,
+  }) {
+    if (error is FirebaseAuthException) {
+      switch (error.code) {
+        case 'invalid-credential':
+        case 'wrong-password':
+        case 'user-not-found':
+          return 'Wrong email or password.';
+        case 'invalid-email':
+          return 'That email address is not valid.';
+        case 'email-already-in-use':
+          return 'An account with this email already exists. Sign in instead.';
+        case 'weak-password':
+          return 'Password is too weak. Use at least 6 characters.';
+        case 'too-many-requests':
+          return 'Too many attempts. Wait a minute and try again.';
+        case 'sign-in-cancelled':
+        case 'popup-closed-by-user':
+        case 'web-context-canceled':
+          return 'Sign in was cancelled.';
+        case 'network-request-failed':
+          return offlineMessage;
+        case 'google-not-configured':
+        case 'missing-id-token':
+          return error.message ?? fallbackMessage;
+      }
+    }
+    return cloudErrorMessage(
+      error,
+      offlineMessage: offlineMessage,
+      fallbackMessage: fallbackMessage,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final configured = SupabaseService.instance.isConfigured;
+    final service = BackendService.instance;
+    final configured = service.isConfigured;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -155,7 +188,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       padding: const EdgeInsets.all(12),
                       color: theme.colorScheme.errorContainer,
                       child: Text(
-                        'Supabase is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY in assets/.env (or use --dart-define).',
+                        'Could not reach the cloud. Check your connection and restart the game to sign in.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onErrorContainer,
                         ),
@@ -213,26 +246,26 @@ class _AuthScreenState extends State<AuthScreen> {
                           : 'Need an account? Sign up',
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: _isBusy || !configured
-                        ? null
-                        : () => _oauthSignIn(
-                              SupabaseService.instance.signInWithGoogle,
-                            ),
-                    icon: const Icon(Icons.login),
-                    label: const Text('Continue with Google'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: _isBusy || !configured
-                        ? null
-                        : () => _oauthSignIn(
-                              SupabaseService.instance.signInWithApple,
-                            ),
-                    icon: const Icon(Icons.apple),
-                    label: const Text('Continue with Apple'),
-                  ),
+                  if (service.supportsGoogleSignIn) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _isBusy || !configured
+                          ? null
+                          : () => _oauthSignIn(service.signInWithGoogle),
+                      icon: const Icon(Icons.login),
+                      label: const Text('Continue with Google'),
+                    ),
+                  ],
+                  if (service.supportsAppleSignIn) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _isBusy || !configured
+                          ? null
+                          : () => _oauthSignIn(service.signInWithApple),
+                      icon: const Icon(Icons.apple),
+                      label: const Text('Continue with Apple'),
+                    ),
+                  ],
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 16),
                     Text(

@@ -1,6 +1,7 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-/// Loads [assets/.env] at runtime (see README). Values override empty
+/// Loads [assets/.env] at runtime (see README). Firebase itself is
+/// configured by the generated `lib/firebase_options.dart`. Values override empty
 /// `--dart-define` compile-time defaults when set.
 class AppConfig {
   AppConfig._();
@@ -25,44 +26,14 @@ class AppConfig {
     return fromDefine;
   }
 
-  static String get supabaseProjectId => _resolve(
-        'SUPABASE_PROJECT_ID',
-        const String.fromEnvironment('SUPABASE_PROJECT_ID'),
-      );
-
-  static String get supabaseUrl => _resolve(
-        'SUPABASE_URL',
-        const String.fromEnvironment('SUPABASE_URL'),
-      );
-
-  static String get supabaseAnonKey => _resolve(
-        'SUPABASE_ANON_KEY',
-        const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      );
-
-  /// Must match [AndroidManifest] / iOS URL types and Supabase Auth redirect allow list.
-  static const String defaultOauthRedirectUrl =
-      'com.example.number_flutter://login-callback';
-
-  static String get oauthRedirectUrl {
-    final v = _resolve(
-      'SUPABASE_OAUTH_REDIRECT_URL',
-      const String.fromEnvironment('SUPABASE_OAUTH_REDIRECT_URL'),
-    );
-    return v.isNotEmpty ? v : defaultOauthRedirectUrl;
-  }
-
-  /// Google Cloud **Web application** OAuth Client ID.
+  /// The Firebase project's **Web client ID** (Firebase → Authentication →
+  /// Sign-in method → Google → Web SDK configuration).
   /// Used as `serverClientId` by `google_sign_in` so the ID token we receive
-  /// is audience-bound to Supabase's registered client. Also listed in
-  /// Supabase → Authentication → Providers → Google → Client IDs.
+  /// has an audience Firebase Auth accepts.
   static String get googleWebClientId => _resolve(
         'GOOGLE_WEB_CLIENT_ID',
         const String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
       );
-
-  static bool get hasSupabaseConfig =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
   static bool get hasGoogleSignInConfig => googleWebClientId.isNotEmpty;
 }

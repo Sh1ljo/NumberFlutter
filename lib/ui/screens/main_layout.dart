@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/login_prompt_policy.dart';
 import '../../logic/tutorial_step.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../utils/network_error_utils.dart';
 import '../widgets/app_background.dart';
 import '../widgets/offline_gains_dialog.dart';
@@ -211,8 +211,8 @@ class _MainLayoutState extends State<MainLayout> {
   /// live widget tree.
   Future<void> _maybeShowLoginPrompt() async {
     if (_loginPromptSettledThisSession || _loginPromptCheckInFlight) return;
-    final supabase = SupabaseService.instance;
-    if (!supabase.isConfigured || !supabase.isInitialized) return;
+    final backend = BackendService.instance;
+    if (!backend.isConfigured || !backend.isInitialized) return;
 
     // Cheap gates first: this runs off the game-state listener, which fires
     // ~10x/s, and must not hit SharedPreferences on every tick. A player who
@@ -231,7 +231,7 @@ class _MainLayoutState extends State<MainLayout> {
     final bool allowed;
     try {
       allowed = await _loginPromptPolicy.shouldPrompt(
-        signedIn: supabase.currentSession != null,
+        signedIn: backend.isSignedIn,
         tutorialCompleted: gameState.tutorialCompleted,
         highestNumber: gameState.highestNumber,
       );
@@ -304,7 +304,7 @@ class _MainLayoutState extends State<MainLayout> {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
         );
-        if (SupabaseService.instance.currentSession != null) {
+        if (BackendService.instance.isSignedIn) {
           await _loginPromptPolicy.retire();
         } else {
           // Backed out of the auth screen without finishing: same as LATER.
@@ -314,9 +314,9 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   void _maybePromptForLocation() {
-    final supabase = SupabaseService.instance;
-    if (!supabase.isConfigured || !supabase.isInitialized) return;
-    final userId = supabase.currentSession?.user.id;
+    final backend = BackendService.instance;
+    if (!backend.isConfigured || !backend.isInitialized) return;
+    final userId = backend.currentUserId;
     if (userId == null) {
       _promptedProfileUserId = null;
       return;
@@ -327,7 +327,7 @@ class _MainLayoutState extends State<MainLayout> {
     _promptedProfileUserId = userId;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final profile = await supabase.fetchOrCreateProfile(userId: userId);
+        final profile = await backend.fetchOrCreateProfile(userId: userId);
         if (!mounted) return;
         final gameState = context.read<GameState>();
         gameState.setTutorialCompletionFromProfile(profile.tutorialCompleted);

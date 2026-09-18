@@ -39,7 +39,7 @@ This document first lists the currently available features, then describes the a
 
 - Local save/load through SharedPreferences.
 - Offline gains calculation and return dialog.
-- Cloud sync through Supabase when authenticated.
+- Cloud sync through Firebase (Firestore) when authenticated.
 - Manual sync trigger in `System`.
 - Deterministic conflict resolution (progress score + tie-breakers).
 

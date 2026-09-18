@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
-import '../../logic/supabase_service.dart';
+import '../../logic/backend_service.dart';
 import '../../utils/number_formatter.dart';
 import 'profile_screen.dart';
 import 'leaderboard_screen.dart';
@@ -28,12 +28,12 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
 
   Future<void> _openProfileEditor() async {
     if (_profileActionBusy) return;
-    final supabase = SupabaseService.instance;
-    if (!supabase.isConfigured || !supabase.isInitialized) {
+    final backend = BackendService.instance;
+    if (!backend.isConfigured || !backend.isInitialized) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content:
-              Text('Profile editing needs Supabase configured in assets/.env.'),
+              Text('Profile editing needs a connection to the cloud.'),
         ),
       );
       return;
@@ -44,12 +44,12 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
     });
 
     try {
-      if (supabase.currentSession == null) {
+      if (!backend.isSignedIn) {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
         );
       }
-      if (!mounted || supabase.currentSession == null) return;
+      if (!mounted || !backend.isSignedIn) return;
       await Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
       );
