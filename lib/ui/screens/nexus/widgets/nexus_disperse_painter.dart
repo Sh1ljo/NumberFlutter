@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
+import 'sphere_points.dart';
+
 class NexusDispersePainter extends CustomPainter {
   final double stabilizeT;
   final double sphereAngle;
@@ -12,9 +14,14 @@ class NexusDispersePainter extends CustomPainter {
   /// the compressed sphere was.
   final double sphereScale;
 
-  static const int _nSphere = 100;
+  static const int _nSphere = nexusSphereDotCount;
   static const int _nParticles = 36;
-  static const double _goldenAngle = 2.399963229728653;
+
+  /// Sphere dot indices claimed by the ambient particles. Constant, but it
+  /// used to be rebuilt as a new Set every frame.
+  static final Set<int> _mappedIndices = {
+    for (int i = 0; i < _nParticles; i++) (i * _nSphere) ~/ _nParticles,
+  };
   // Sphere widget is 180x180, r = 90 * 0.82
   static const double _sphereR = 90.0 * 0.82;
 
@@ -31,18 +38,13 @@ class NexusDispersePainter extends CustomPainter {
 
   List<Offset> _spherePositions(double cx, double cy) {
     final positions = <Offset>[];
+    // Loop-invariant; these were recomputed for every dot.
+    final cosA = math.cos(sphereAngle);
+    final sinA = math.sin(sphereAngle);
     for (int i = 0; i < _nSphere; i++) {
-      final t = i / (_nSphere - 1);
-      final inclination = math.acos(1 - 2 * t);
-      final azimuth = _goldenAngle * i;
-
-      final sx = math.sin(inclination) * math.cos(azimuth);
-      final sy = math.sin(inclination) * math.sin(azimuth);
-      final sz = math.cos(inclination);
+      final (sx, sy, sz) = nexusSpherePoints[i];
 
       final osc = 1.0 + 0.045 * math.sin(sphereAngle * 3.2 + i * 0.31);
-      final cosA = math.cos(sphereAngle);
-      final sinA = math.sin(sphereAngle);
       final rx = sx * cosA + sz * sinA;
 
       positions.add(Offset(cx + rx * _r * osc, cy + sy * _r * osc));
@@ -67,10 +69,11 @@ class NexusDispersePainter extends CustomPainter {
     final spherePos = _spherePositions(cx, cy);
 
     // Which sphere dot indices are claimed by the 36 ambient particles
-    final mappedIndices = <int>{};
-    for (int i = 0; i < _nParticles; i++) {
-      mappedIndices.add((i * _nSphere) ~/ _nParticles);
-    }
+    final mappedIndices = _mappedIndices;
+    final fill = Paint();
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
 
     // --- 36 ambient-bound particles ---
     for (int i = 0; i < _nParticles; i++) {
@@ -105,7 +108,7 @@ class NexusDispersePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(curX, curY),
         r,
-        Paint()..color = primary.withValues(alpha: alpha * 0.75),
+        fill..color = primary.withValues(alpha: alpha * 0.75),
       );
 
       if (i % 4 == 0 && disperseT > 0.6) {
@@ -114,10 +117,7 @@ class NexusDispersePainter extends CustomPainter {
         canvas.drawCircle(
           Offset(curX, curY),
           r + 3.0 + pulse * 4.0,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 0.8
-            ..color = outline.withValues(alpha: ringAlpha),
+          ring..color = outline.withValues(alpha: ringAlpha),
         );
       }
     }
@@ -142,7 +142,7 @@ class NexusDispersePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(flyX, flyY),
         1.0 + easedDisperse * 0.8,
-        Paint()..color = primary.withValues(alpha: alpha * 0.75),
+        fill..color = primary.withValues(alpha: alpha * 0.75),
       );
     }
   }

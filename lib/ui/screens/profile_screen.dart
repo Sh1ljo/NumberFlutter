@@ -130,7 +130,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final gameState = context.watch<GameState>();
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -330,67 +329,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _StatsCard(
-                          title: 'OVERVIEW',
-                          children: [
-                            _StatRow(
-                              label: 'Current Number',
-                              value: NumberFormatter.format(gameState.number),
+                        // Only the stats listen to the game ticker (~10x/s),
+                        // so the form above doesn't rebuild while typing.
+                        Consumer<GameState>(
+                          builder: (context, gameState, _) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                            _StatsCard(
+                              title: 'OVERVIEW',
+                              children: [
+                                _StatRow(
+                                  label: 'Current Number',
+                                  value: NumberFormatter.format(gameState.number),
+                                ),
+                                _StatRow(
+                                  label: 'Highest Number Reached',
+                                  value: NumberFormatter.format(
+                                      gameState.highestNumber),
+                                ),
+                                _StatRow(
+                                  label: 'Total Prestiges',
+                                  value: gameState.prestigeCount.toString(),
+                                ),
+                              ],
                             ),
-                            _StatRow(
-                              label: 'Highest Number Reached',
-                              value: NumberFormatter.format(
-                                  gameState.highestNumber),
+                            const SizedBox(height: 14),
+                            _StatsCard(
+                              title: 'PRODUCTION',
+                              children: [
+                                _StatRow(
+                                  label: 'Auto-Click Rate (Base)',
+                                  value:
+                                      '${NumberFormatter.formatDouble(gameState.autoClickRate)} / sec',
+                                ),
+                                _StatRow(
+                                  label: 'Idle Output (Effective)',
+                                  value:
+                                      '${NumberFormatter.formatDouble(gameState.totalIdleRate)} / sec',
+                                ),
+                              ],
                             ),
-                            _StatRow(
-                              label: 'Total Prestiges',
-                              value: gameState.prestigeCount.toString(),
+                            const SizedBox(height: 14),
+                            _StatsCard(
+                              title: 'PRESTIGE',
+                              children: [
+                                _StatRow(
+                                  label: 'Prestige Multiplier',
+                                  value:
+                                      'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
+                                ),
+                                _StatRow(
+                                  label: 'Prestige Currency',
+                                  value: NumberFormatter.formatDouble(
+                                    gameState.prestigeCurrency,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        _StatsCard(
-                          title: 'PRODUCTION',
-                          children: [
-                            _StatRow(
-                              label: 'Auto-Click Rate (Base)',
-                              value:
-                                  '${NumberFormatter.formatDouble(gameState.autoClickRate)} / sec',
+                            const SizedBox(height: 14),
+                            _StatsCard(
+                              title: 'UPGRADES',
+                              children: [
+                                _StatRow(
+                                  label: 'Upgrades Purchased',
+                                  value:
+                                      '${gameState.upgrades.where((upgrade) => upgrade.level > 0).length} / ${gameState.upgrades.length}',
+                                ),
+                              ],
                             ),
-                            _StatRow(
-                              label: 'Idle Output (Effective)',
-                              value:
-                                  '${NumberFormatter.formatDouble(gameState.totalIdleRate)} / sec',
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        _StatsCard(
-                          title: 'PRESTIGE',
-                          children: [
-                            _StatRow(
-                              label: 'Prestige Multiplier',
-                              value:
-                                  'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
-                            ),
-                            _StatRow(
-                              label: 'Prestige Currency',
-                              value: NumberFormatter.formatDouble(
-                                gameState.prestigeCurrency,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        _StatsCard(
-                          title: 'UPGRADES',
-                          children: [
-                            _StatRow(
-                              label: 'Upgrades Purchased',
-                              value:
-                                  '${gameState.upgrades.where((upgrade) => upgrade.level > 0).length} / ${gameState.upgrades.length}',
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),

@@ -38,7 +38,39 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
+    );
+  }
+
+  /// The pulse only drives tutorial highlights, so it only ticks while one
+  /// is on screen instead of requesting frames for the sheet's whole life.
+  void _syncPulse(bool needed) {
+    if (needed && !_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!needed && _pulseCtrl.isAnimating) {
+      _pulseCtrl.stop();
+    }
+  }
+
+  /// Everything the sheet renders that can change while it is open. The
+  /// ticker notifies ~10x/s, but the sheet only needs to rebuild when the
+  /// network, the tutorial step, or one of its affordability checks flips.
+  (Object, TutorialStep, int) _rebuildKey(GameState state) {
+    final neuron = state.neuralNetwork.findNeuron(widget.neuron.id);
+    int affordMask = 0;
+    if (neuron != null) {
+      final number = state.number;
+      if (number >= neuron.gradientUpgradeCost) affordMask |= 1;
+      final network = state.neuralNetwork;
+      if (number >= network.addLayerCost(network.layers.length)) {
+        affordMask |= 2;
+      }
+      for (int i = 0; i < activationFunctions.length; i++) {
+        if (number >= neuron.activationChangeCost(activationFunctions[i])) {
+          affordMask |= 4 << i;
+        }
+      }
+    }
+    return (state.neuralTopologyKey, state.tutorialStep, affordMask);
   }
 
   @override
@@ -223,12 +255,17 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Consumer<GameState>(
-      builder: (context, state, _) {
+    return Selector<GameState, (Object, TutorialStep, int)>(
+      selector: (_, state) => _rebuildKey(state),
+      builder: (context, _, __) {
+        final state = context.read<GameState>();
         final currentNeuron =
             state.neuralNetwork.findNeuron(widget.neuron.id);
         if (currentNeuron == null) {
-          Navigator.of(context).pop();
+          // Popping during build asserts; do it once the frame is done.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.of(context).pop();
+          });
           return const SizedBox.shrink();
         }
 
@@ -258,7 +295,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
         final activationBonus = activationMatchesPreferred ? 1.10 : 1.0;
         final neuronContribution =
             (currentNeuron.gradientLevel + 1) * depthBonus * activationBonus;
-        final networkStrength = state.neuralNetwork.computeStrength();
+        final networkStrength = state.neuralNetworkStrength;
         double sumContributions = 0.0;
         for (final l in state.neuralNetwork.layers) {
           final db = 1.0 + 0.25 * l.index;
@@ -282,6 +319,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
         final isBranchTutorial = tutStep == TutorialStep.neuralBranchNeuron;
         final hasTutorialHint =
             isGradientTutorial || isActivationTutorial || isBranchTutorial;
+        _syncPulse(hasTutorialHint);
 
         return Container(
           decoration: BoxDecoration(

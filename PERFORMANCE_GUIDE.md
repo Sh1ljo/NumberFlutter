@@ -1,31 +1,63 @@
 # Performance Optimization Guide
 
+## Rules for new code
+
+`GameState`'s ticker calls `notifyListeners()` every 100ms (10x/s), plus once
+per tap. Anything that listens to the whole `GameState` rebuilds at that rate.
+
+- **Never `context.watch<GameState>()` or `Consumer<GameState>` at a screen's
+  root.** Use `context.select` / `Selector` on exactly the values you render,
+  and put the per-tick bit (usually the `number` text) in its own small
+  `Selector`. Records work as multi-value selector results.
+- Values mutated in place (upgrade/research levels, neurons) need a value key:
+  a record of the fields, `Selector(shouldRebuild: listEquals)` for lists, or
+  `GameState.neuralTopologyKey` for the neural network.
+- Anything that animates continuously sits under its own `RepaintBoundary`.
+- `CustomPainter`s driven by a controller take it as `repaint:` instead of
+  being rebuilt through `AnimatedBuilder`; don't allocate `Paint`s, shaders or
+  constant geometry per frame.
+- Never create `CurvedAnimation`/`Tween.animate` inside `build` or a builder:
+  each one adds a listener to the controller that is never removed.
+- Don't recompute in getters what only changes on purchase/prestige; see the
+  memoized `prestigeRequirement`, `neuralNetworkStrength` and cost multiplier.
+
 ## What Was Optimized
 
-### 1. **Granular State Management**
-- **Before**: The entire main screen rebuilt on every state change (every 100ms + every click)
-- **After**: Using `Selector` widgets to only rebuild specific parts when their data changes
-  - Number display only rebuilds when `number` changes
-  - Idle rate only rebuilds when `totalIdleRate` changes
-  - Momentum bar only rebuilds when momentum data changes
+### Rebuilds
+- Upgrades, Prestige, Nexus tree/nodes/sheet, Settings, Profile (stats only),
+  the tutorial overlay and the neuron sheet select narrow slices instead of
+  rebuilding wholesale 10x/s. Upgrade rows each select their own purchase
+  info; only the affordability bar follows the number.
+- Tap particles live in their own layer (`FloatingTapTextLayer`), so a tap no
+  longer rebuilds the game screen; particles move with a paint-time transform
+  instead of re-laying out the Stack every frame.
 
-### 2. **RepaintBoundary Isolation**
-- Added `RepaintBoundary` widgets around frequently updating areas
-- Prevents repainting cascades across the widget tree
-- Each isolated section only repaints when its own data changes
+### Game loop
+- Upgrade/research lookups are O(1) id→index maps (levels still read live).
+- `prestigeRequirement` (BigInt powers) is memoized per prestige count.
+- Neural strength is cached against the network's revision.
+- Purchase cost multipliers extend incrementally instead of looping from level
+  0 on every call; `test/perf_caches_test.dart` pins them to the old maths.
 
-### 3. **Reduced Animation Overhead**
-- Changed `AnimatedFractionallySizedBox` to `FractionallySizedBox` in momentum bar
-- Reduces unnecessary animation calculations during rapid clicks
+### Animation
+- Neural canvas: correct `TickerProviderStateMixin` (two controllers), one
+  shared curve for all neurons, neuron layer behind a `RepaintBoundary`, ring
+  opacity baked into colour instead of `Opacity` layers.
+- Fixed a listener leak on the neural unlock screen (~120 listeners/s).
+- Nexus sphere points are computed once (`sphere_points.dart`); sorting and
+  paint objects reuse buffers; the ambient background repaints off its
+  controller with a cached base shader.
 
-### 4. **Improved Momentum System**
-- Added 2-second grace period before momentum starts decaying
-- Visual improvements: white progress bar for better visibility
-- Fixed progress bar calculation for accurate display
-
-### 5. **Optimized State Notifications**
-- Granular updates ensure UI components only rebuild when necessary
-- Prevents cascading rebuilds across the entire widget tree
+### I/O
+- Saves skip SharedPreferences keys whose value hasn't changed and run one at
+  a time (no interleaved snapshots). A save is flushed when the app is
+  backgrounded.
+- Failed automatic cloud syncs back off (20s → 5min) instead of retrying on
+  every save.
+- The 1.45MB countries JSON is parsed on a background isolate.
+- The leaderboard no longer refetches on unrelated rebuilds or twice per
+  pull-to-refresh.
+- Fonts are bundled in `assets/google_fonts/` (runtime fetching disabled).
 
 ## Running in Release Mode
 

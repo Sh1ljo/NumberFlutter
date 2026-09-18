@@ -5,25 +5,31 @@ import '../../../models/neural_network.dart';
 class NeuralPainter extends CustomPainter {
   final List<NeuralLayer> layers;
   final Map<String, Offset> neuronPositions;
-  final double animationValue; // 0.0 → 1.0, looping
+  /// Looping 0.0 → 1.0 driver. Passed as `repaint` so the pulse repaints
+  /// straight off the controller without rebuilding any widgets.
+  final Animation<double> animation;
   final ColorScheme cs;
 
   NeuralPainter({
     required this.layers,
     required this.neuronPositions,
-    required this.animationValue,
+    required this.animation,
     required this.cs,
-  });
+  }) : super(repaint: animation);
 
   @override
   void paint(Canvas canvas, Size size) {
     if (layers.length < 2) return;
 
+    final animationValue = animation.value;
     final linePaint = Paint()
+      ..color = cs.primary.withValues(alpha: 0.12)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
-    final dotPaint = Paint()..style = PaintingStyle.fill;
+    final dotPaint = Paint()
+      ..color = cs.primary.withValues(alpha: 0.55)
+      ..style = PaintingStyle.fill;
 
     int lineIndex = 0;
     int totalLines = 0;
@@ -44,7 +50,6 @@ class NeuralPainter extends CustomPainter {
           if (to == null) continue;
 
           // Base connection line
-          linePaint.color = cs.primary.withValues(alpha: 0.12);
           canvas.drawLine(from, to, linePaint);
 
           // Animated pulse dot travelling along the line.
@@ -61,7 +66,6 @@ class NeuralPainter extends CustomPainter {
             from.dx + (to.dx - from.dx) * phase,
             from.dy + (to.dy - from.dy) * phase,
           );
-          dotPaint.color = cs.primary.withValues(alpha: 0.55);
           canvas.drawCircle(pulsePos, 2.0, dotPaint);
 
           lineIndex++;
@@ -74,7 +78,7 @@ class NeuralPainter extends CustomPainter {
   bool shouldRepaint(NeuralPainter oldDelegate) =>
       // neuronPositions is rebuilt each time the network changes, so an
       // identity comparison on it was always true and made this unconditional.
-      oldDelegate.animationValue != animationValue ||
+      oldDelegate.animation != animation ||
       oldDelegate.cs != cs ||
       !identical(oldDelegate.layers, layers) ||
       oldDelegate.neuronPositions.length != neuronPositions.length;

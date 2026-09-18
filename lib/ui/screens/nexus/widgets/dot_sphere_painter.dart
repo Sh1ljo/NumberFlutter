@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+
+import 'sphere_points.dart';
 
 class DotSpherePainter extends CustomPainter {
   final double angle;
@@ -17,8 +21,16 @@ class DotSpherePainter extends CustomPainter {
   /// 0..1 opacity of the orbiting energy rings.
   final double ringStrength;
 
-  static const int _n = 100;
+  static const int _n = nexusSphereDotCount;
   static const int _trailGhosts = 4;
+
+  // Scratch buffers reused by every _paintDots call, instead of allocating
+  // and sorting 100 records per call (5 calls a frame during the trail).
+  // Painting is single-threaded, so sharing them is safe.
+  static final Float64List _xs = Float64List(_n);
+  static final Float64List _ys = Float64List(_n);
+  static final Float64List _depths = Float64List(_n);
+  static final List<int> _order = List<int>.filled(_n, 0);
 
   const DotSpherePainter({
     required this.angle,
@@ -67,36 +79,35 @@ class DotSpherePainter extends CustomPainter {
     double rot,
     double opacity,
   ) {
-    const goldenAngle = 2.399963229728653;
     final cosA = math.cos(rot);
     final sinA = math.sin(rot);
-    final dots = <(double, double, double)>[];
+    final xs = _xs, ys = _ys, depths = _depths, order = _order;
 
     for (int i = 0; i < _n; i++) {
-      final t = i / (_n - 1);
-      final inclination = math.acos(1 - 2 * t);
-      final azimuth = goldenAngle * i;
-
-      final sx = math.sin(inclination) * math.cos(azimuth);
-      final sy = math.sin(inclination) * math.sin(azimuth);
-      final sz = math.cos(inclination);
+      final (sx, sy, sz) = nexusSpherePoints[i];
 
       final osc = 1.0 + 0.045 * math.sin(rot * 3.2 + i * 0.31);
 
       final rx = sx * cosA + sz * sinA;
       final rz = -sx * sinA + sz * cosA;
 
-      dots.add((cx + rx * r * osc, cy + sy * r * osc, (rz + 1) / 2));
+      xs[i] = cx + rx * r * osc;
+      ys[i] = cy + sy * r * osc;
+      depths[i] = (rz + 1) / 2;
+      order[i] = i;
     }
 
-    dots.sort((a, b) => a.$3.compareTo(b.$3));
+    // Back-to-front, sorting indices from the same starting order the
+    // records used to be in, so ties resolve identically.
+    order.sort((a, b) => depths[a].compareTo(depths[b]));
 
     final paint = Paint()..style = PaintingStyle.fill;
-    for (final (dx, dy, depth) in dots) {
+    for (final i in order) {
+      final depth = depths[i];
       final dotR = 1.0 + depth * 2.6;
       final alpha = (0.08 + depth * 0.72) * 0.75 * opacity;
       paint.color = primaryColor.withValues(alpha: alpha);
-      canvas.drawCircle(Offset(dx, dy), dotR, paint);
+      canvas.drawCircle(Offset(xs[i], ys[i]), dotR, paint);
     }
   }
 

@@ -68,24 +68,18 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
     }
   }
 
-  double _calculateAffordabilityProgress(BigInt amount, BigInt target) {
-    if (target <= BigInt.zero) return 1.0;
-    if (amount <= BigInt.zero) return 0.0;
-    if (amount >= target) return 1.0;
-
-    final commonShift =
-        math.max(0, math.max(amount.bitLength, target.bitLength) - 53);
-    final scaledAmount = (amount >> commonShift).toDouble();
-    final scaledTarget = (target >> commonShift).toDouble();
-    if (scaledTarget <= 0) return 0.0;
-    return (scaledAmount / scaledTarget).clamp(0.0, 1.0);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final gameState = context.watch<GameState>();
+    // Only what shapes the list is selected here. The ticker notifies ~10x/s;
+    // the number text and each row listen for their own slice below, so this
+    // screen no longer rebuilds wholesale on every tick.
+    final selectedCategory =
+        context.select<GameState, String>((gs) => gs.selectedUpgradeCategory);
+    final buyAmount = context.select<GameState, int>((gs) => gs.buyAmount);
+    final prestigeCount =
+        context.select<GameState, int>((gs) => gs.prestigeCount);
+    final gameState = context.read<GameState>();
     final theme = Theme.of(context);
-    final selectedCategory = gameState.selectedUpgradeCategory;
     // MainLayout folds the nav bar's height into this inset.
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
@@ -106,10 +100,14 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   Icon(Icons.toll, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      NumberFormatter.format(gameState.number),
-                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 24),
-                      overflow: TextOverflow.ellipsis,
+                    child: Selector<GameState, BigInt>(
+                      selector: (_, gs) => gs.number,
+                      builder: (context, number, _) => Text(
+                        NumberFormatter.format(number),
+                        style:
+                            theme.textTheme.titleLarge?.copyWith(fontSize: 24),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                   Row(
@@ -205,7 +203,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   ButtonSegment(value: -2, label: Text('NEXT')),
                   ButtonSegment(value: -1, label: Text('MAX')),
                 ],
-                selected: {gameState.buyAmount},
+                selected: {buyAmount},
                 showSelectedIcon: false,
                 onSelectionChanged: (Set<int> newSelection) {
                   context.read<GameState>().setBuyAmount(newSelection.first);
@@ -228,15 +226,9 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
               final filteredUpgrades = gameState.upgrades
                   .where((upgrade) => upgrade.effectType == selectedCategory)
                   .where((upgrade) =>
-                      gameState.prestigeCount >=
+                      prestigeCount >=
                       gameState.minPrestigeForUpgrade(upgrade.id))
                   .toList();
-              final entries = filteredUpgrades.map((upgrade) {
-                final info = gameState.getPurchaseInfo(upgrade);
-                final canAfford =
-                    info.amount > 0 && gameState.number >= info.cost;
-                return (upgrade: upgrade, info: info, canAfford: canAfford);
-              }).toList();
 
               return Expanded(
                 child: RawScrollbar(
@@ -255,22 +247,11 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                     // even before the user scrolls (needed for tutorial highlights).
                     cacheExtent: 10000,
                     padding: EdgeInsets.fromLTRB(24, 6, 24, bottomInset + 8),
-                    itemCount: entries.length,
+                    itemCount: filteredUpgrades.length,
                     itemBuilder: (context, index) {
-                      final entry = entries[index];
-                      final milestoneMultiplier =
-                          gameState.upgradeMilestoneMultiplier(entry.upgrade);
-                      final row = _UpgradeItem(
-                        upgrade: entry.upgrade,
-                        canAfford: entry.canAfford,
-                        info: entry.info,
-                        milestoneMultiplier: milestoneMultiplier,
-                        affordabilityProgress: _calculateAffordabilityProgress(
-                          gameState.number,
-                          entry.info.cost,
-                        ),
-                      );
-                      final gk = widget.upgradeRowKeys?[entry.upgrade.id];
+                      final upgrade = filteredUpgrades[index];
+                      final row = _UpgradeRow(upgrade: upgrade);
+                      final gk = widget.upgradeRowKeys?[upgrade.id];
                       if (gk != null) {
                         return KeyedSubtree(key: gk, child: row);
                       }
@@ -287,19 +268,67 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
   }
 }
 
+double _calculateAffordabilityProgress(BigInt amount, BigInt target) {
+  if (target <= BigInt.zero) return 1.0;
+  if (amount <= BigInt.zero) return 0.0;
+  if (amount >= target) return 1.0;
+
+  final commonShift =
+      math.max(0, math.max(amount.bitLength, target.bitLength) - 53);
+  final scaledAmount = (amount >> commonShift).toDouble();
+  final scaledTarget = (target >> commonShift).toDouble();
+  if (scaledTarget <= 0) return 0.0;
+  return (scaledAmount / scaledTarget).clamp(0.0, 1.0);
+}
+
+/// Everything a row renders apart from the affordability bar.
+typedef _UpgradeRowData = ({
+  int level,
+  bool isMaxed,
+  ({BigInt cost, int amount}) info,
+  bool canAfford,
+  int milestoneMultiplier,
+});
+
+/// One upgrade row, listening only to its own purchase info. Rows used to be
+/// rebuilt (and their costs recomputed) wholesale on every ticker notify.
+class _UpgradeRow extends StatelessWidget {
+  final Upgrade upgrade;
+
+  const _UpgradeRow({required this.upgrade});
+
+  @override
+  Widget build(BuildContext context) {
+    final data = context.select<GameState, _UpgradeRowData>((gs) {
+      final info = gs.getPurchaseInfo(upgrade);
+      return (
+        level: upgrade.level,
+        isMaxed: upgrade.isMaxed,
+        info: info,
+        canAfford: info.amount > 0 && gs.number >= info.cost,
+        milestoneMultiplier: gs.upgradeMilestoneMultiplier(upgrade),
+      );
+    });
+    return _UpgradeItem(
+      upgrade: upgrade,
+      canAfford: data.canAfford,
+      info: data.info,
+      milestoneMultiplier: data.milestoneMultiplier,
+    );
+  }
+}
+
 class _UpgradeItem extends StatelessWidget {
   final Upgrade upgrade;
   final bool canAfford;
   final ({BigInt cost, int amount}) info;
   final int milestoneMultiplier;
-  final double affordabilityProgress;
 
   const _UpgradeItem({
     required this.upgrade,
     required this.canAfford,
     required this.info,
     required this.milestoneMultiplier,
-    required this.affordabilityProgress,
   });
 
   @override
@@ -441,11 +470,18 @@ class _UpgradeItem extends StatelessWidget {
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: affordabilityProgress,
-                minHeight: 1.5,
-                backgroundColor: Colors.white.withValues(alpha: 0.12),
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              // The only part of a row that moves with every tick, so it
+              // listens to the number on its own.
+              child: Selector<GameState, double>(
+                selector: (_, gs) =>
+                    _calculateAffordabilityProgress(gs.number, info.cost),
+                builder: (context, progress, _) => LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 1.5,
+                  backgroundColor: Colors.white.withValues(alpha: 0.12),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
               ),
             ),
           ],

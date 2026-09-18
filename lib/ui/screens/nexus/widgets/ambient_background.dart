@@ -32,19 +32,14 @@ class _AmbientBackgroundState extends State<AmbientBackground>
     final theme = Theme.of(context);
     return IgnorePointer(
       child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            return CustomPaint(
-              painter: AmbientPainter(
-                progress: _controller.value,
-                primary: theme.colorScheme.primary,
-                surface: theme.colorScheme.surface,
-                outline: theme.colorScheme.outline,
-              ),
-              size: Size.infinite,
-            );
-          },
+        child: CustomPaint(
+          painter: AmbientPainter(
+            progress: _controller,
+            primary: theme.colorScheme.primary,
+            surface: theme.colorScheme.surface,
+            outline: theme.colorScheme.outline,
+          ),
+          size: Size.infinite,
         ),
       ),
     );

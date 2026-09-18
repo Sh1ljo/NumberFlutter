@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../logic/game_state.dart';
@@ -9,10 +10,12 @@ class StabilizedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final gameState = context.watch<GameState>();
+    // Selected rather than watched: the ticker notifies ~10x/s and this view
+    // only depends on prestige currency and the tree's levels.
+    final pp = context.select<GameState, double>((gs) => gs.prestigeCurrency);
+    final gameState = context.read<GameState>();
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final pp = gameState.prestigeCurrency;
     final ppStr = pp < 10 ? pp.toStringAsFixed(2) : pp.toStringAsFixed(1);
 
     return Stack(
@@ -72,7 +75,16 @@ class StabilizedView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 36),
-              TechTree(nodes: gameState.researchNodes),
+              // Levels are mutated in place, so compare them by value to
+              // repaint the connection lines when a purchase unlocks one.
+              Selector<GameState, List<int>>(
+                selector: (_, gs) => [
+                  for (final node in gs.researchNodes) node.level,
+                ],
+                shouldRebuild: (prev, next) => !listEquals(prev, next),
+                builder: (context, _, __) =>
+                    TechTree(nodes: gameState.researchNodes),
+              ),
               const SizedBox(height: 20),
             ],
           ),

@@ -137,11 +137,16 @@ class NeuralCanvas extends StatefulWidget {
 }
 
 class _NeuralCanvasState extends State<NeuralCanvas>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const NeuralLayout _layout = NeuralLayout();
 
   late final AnimationController _connCtrl;
   late final AnimationController _pulseCtrl;
+
+  /// Eased view of [_pulseCtrl], built once and shared by every neuron.
+  /// Building a CurvedAnimation per neuron per build leaked a status
+  /// listener on the controller each time.
+  late final Animation<double> _pulseCurve;
   late TransformationController _transformCtrl;
   Size? _lastViewport;
   Size? _lastCanvas;
@@ -162,6 +167,7 @@ class _NeuralCanvasState extends State<NeuralCanvas>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+    _pulseCurve = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
     _transformCtrl = TransformationController();
   }
 
@@ -237,43 +243,56 @@ class _NeuralCanvasState extends State<NeuralCanvas>
                           child: CustomPaint(painter: _GridPainter(cs: cs)),
                         ),
                       ),
-                      // Only the connection pulse is animated per-frame, so
-                      // only it sits under the AnimatedBuilder.
+                      // The connection pulse repaints straight off the
+                      // controller, so animating it never rebuilds widgets.
                       Positioned.fill(
                         child: RepaintBoundary(
-                          child: AnimatedBuilder(
-                            animation: _connCtrl,
-                            builder: (_, __) => CustomPaint(
-                              painter: NeuralPainter(
-                                layers: layers,
-                                neuronPositions: positions,
-                                animationValue: _connCtrl.value,
-                                cs: cs,
-                              ),
+                          child: CustomPaint(
+                            painter: NeuralPainter(
+                              layers: layers,
+                              neuronPositions: positions,
+                              animation: _connCtrl,
+                              cs: cs,
                             ),
                           ),
                         ),
                       ),
-                      for (final layer in layers)
-                        for (final neuron in layer.neurons)
-                          if (positions[neuron.id] != null)
-                            Positioned(
-                              left: positions[neuron.id]!.dx - NeuralLayout.neuronSize / 2,
-                              top: positions[neuron.id]!.dy - NeuralLayout.neuronSize / 2,
-                              child: NeuronWidget(
-                                key: neuron.id == widget.tutorialNeuronId
-                                    ? widget.neuralNeuronKey
-                                    : null,
-                                neuron: neuron,
-                                pulse: _pulseCtrl,
-                                highlight:
-                                    widget.network.canNeuronBranch(neuron.id),
-                                onTap: () {
-                                  context.read<GameState>().onNeuronTapped();
-                                  NeuronDetailSheet.show(context, neuron);
-                                },
-                              ),
-                            ),
+                      // The neurons breathe every frame; isolate them so that
+                      // doesn't repaint the HUD and nav bar around the canvas.
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              for (final layer in layers)
+                                for (final neuron in layer.neurons)
+                                  if (positions[neuron.id] != null)
+                                    Positioned(
+                                      left: positions[neuron.id]!.dx -
+                                          NeuralLayout.neuronSize / 2,
+                                      top: positions[neuron.id]!.dy -
+                                          NeuralLayout.neuronSize / 2,
+                                      child: NeuronWidget(
+                                        key: neuron.id == widget.tutorialNeuronId
+                                            ? widget.neuralNeuronKey
+                                            : null,
+                                        neuron: neuron,
+                                        pulse: _pulseCurve,
+                                        highlight: widget.network
+                                            .canNeuronBranch(neuron.id),
+                                        onTap: () {
+                                          context
+                                              .read<GameState>()
+                                              .onNeuronTapped();
+                                          NeuronDetailSheet.show(
+                                              context, neuron);
+                                        },
+                                      ),
+                                    ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

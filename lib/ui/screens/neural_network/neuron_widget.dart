@@ -5,10 +5,13 @@ class NeuronWidget extends StatelessWidget {
   final NeuralNeuron neuron;
   final VoidCallback onTap;
 
-  /// Shared breathing animation, driven by the canvas. Every neuron used to
-  /// own its own repeating controller, which meant up to 22 of them running
-  /// concurrently for one visual effect.
+  /// Shared breathing animation, driven by the canvas and already eased.
+  /// Every neuron used to own its own repeating controller, which meant up to
+  /// 22 of them running concurrently for one visual effect.
   final Animation<double> pulse;
+
+  static final Tween<double> _scaleTween = Tween<double>(begin: 1.0, end: 1.15);
+  static final Tween<double> _opacityTween = Tween<double>(begin: 0.2, end: 0.6);
 
   // When true, the neuron is eligible for branching and should be highlighted.
   final bool highlight;
@@ -25,9 +28,6 @@ class NeuronWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final level = neuron.gradientLevel;
-    final curved = CurvedAnimation(parent: pulse, curve: Curves.easeInOut);
-    final scale = Tween<double>(begin: 1.0, end: 1.15).animate(curved);
-    final opacity = Tween<double>(begin: 0.2, end: 0.6).animate(curved);
 
     // Outer ring opacity increases with gradient level
     final ringBaseOpacity = 0.20 + level * 0.08;
@@ -42,24 +42,29 @@ class NeuronWidget extends StatelessWidget {
         child: AnimatedBuilder(
           animation: pulse,
           builder: (_, __) {
+            final t = pulse.value;
+            final scale = _scaleTween.transform(t);
+            final opacity = _opacityTween.transform(t);
+            // The rings are single strokes, so baking the animated opacity
+            // into the border colour looks identical to an Opacity widget
+            // without forcing an offscreen layer per ring per frame.
             return Stack(
               alignment: Alignment.center,
               children: [
                 // Outer animated ring
                 Transform.scale(
-                  scale: scale.value,
-                  child: Opacity(
-                    opacity: (opacity.value * (ringBaseOpacity / 0.2))
-                        .clamp(0.0, 1.0),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: cs.primary,
-                          width: 1.0 + level * 0.2,
+                  scale: scale,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: _fade(
+                          cs.primary,
+                          (opacity * (ringBaseOpacity / 0.2)).clamp(0.0, 1.0),
                         ),
+                        width: 1.0 + level * 0.2,
                       ),
                     ),
                   ),
@@ -67,19 +72,18 @@ class NeuronWidget extends StatelessWidget {
                 // Secondary ring for higher gradient levels
                 if (level >= 3)
                   Transform.scale(
-                    scale: scale.value * 0.8,
-                    child: Opacity(
-                      opacity: (opacity.value * 0.5 * ((level - 2) / 3))
-                          .clamp(0.0, 1.0),
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: cs.primary,
-                            width: 0.8,
+                    scale: scale * 0.8,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _fade(
+                            cs.primary,
+                            (opacity * 0.5 * ((level - 2) / 3)).clamp(0.0, 1.0),
                           ),
+                          width: 0.8,
                         ),
                       ),
                     ),
@@ -119,4 +123,7 @@ class NeuronWidget extends StatelessWidget {
       ),
     );
   }
+
+  static Color _fade(Color c, double opacity) =>
+      c.withValues(alpha: c.a * opacity);
 }

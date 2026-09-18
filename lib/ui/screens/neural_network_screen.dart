@@ -180,9 +180,8 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                       Expanded(
                         // The canvas only cares about topology, which changes
                         // on branch/upgrade — not on every loss tick.
-                        child: Selector<GameState, String>(
-                          selector: (_, state) =>
-                              state.neuralNetworkTopologySignature,
+                        child: Selector<GameState, (Object, int)>(
+                          selector: (_, state) => state.neuralTopologyKey,
                           builder: (context, _, __) => NeuralCanvas(
                             network: context.read<GameState>().neuralNetwork,
                             neuralNeuronKey: widget.neuralNeuronKey,

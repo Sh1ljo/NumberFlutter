@@ -220,10 +220,26 @@ class _PrestigeScreenState extends State<PrestigeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final gameState = context.watch<GameState>();
+    // Selected, not watched: the ticker notifies ~10x/s but only the header
+    // number moves with it (it listens on its own below). Everything else
+    // here changes on prestige, or when the requirement is crossed.
+    final (
+      requirement,
+      canPrestige,
+      prestigeMultiplier,
+      prestigeCount,
+      multiplierAfterNext,
+    ) = context.select<GameState, (BigInt, bool, double, int, double)>((gs) {
+      final requirement = gs.prestigeRequirement;
+      return (
+        requirement,
+        gs.number >= requirement,
+        gs.prestigeMultiplier,
+        gs.prestigeCount,
+        gs.prestigeMultiplierAfterNext,
+      );
+    });
     final theme = Theme.of(context);
-    final requirement = gameState.prestigeRequirement;
-    final canPrestige = gameState.number >= requirement;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -243,11 +259,14 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       Icon(Icons.toll, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          NumberFormatter.format(gameState.number),
-                          style: theme.textTheme.titleLarge
-                              ?.copyWith(fontSize: 24),
-                          overflow: TextOverflow.ellipsis,
+                        child: Selector<GameState, BigInt>(
+                          selector: (_, gs) => gs.number,
+                          builder: (context, number, _) => Text(
+                            NumberFormatter.format(number),
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontSize: 24),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                       Row(
@@ -335,7 +354,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                                         icon: Icons.stars,
                                         label: 'PRESTIGE MULTIPLIER',
                                         value:
-                                            'x${gameState.prestigeMultiplier.toStringAsFixed(3)}',
+                                            'x${prestigeMultiplier.toStringAsFixed(3)}',
                                         theme: theme,
                                       ),
                                     ),
@@ -346,7 +365,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                                       icon: Icons.replay,
                                       label: 'TOTAL PRESTIGES',
                                       value: NumberFormatter.format(
-                                        BigInt.from(gameState.prestigeCount),
+                                        BigInt.from(prestigeCount),
                                       ),
                                       theme: theme,
                                     ),
@@ -359,7 +378,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                                 child: PrestigeGainCard(
                                   prestigeRequirement: requirement,
                                   multiplierAfterPrestige:
-                                      gameState.prestigeMultiplierAfterNext,
+                                      multiplierAfterNext,
                                 ),
                               ),
                               const SizedBox(height: 20),

@@ -169,8 +169,17 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<GameState>(
-      builder: (context, gameState, _) {
+    // Selected rather than consumed: this overlay is mounted for the whole
+    // session and the game ticker notifies ~10x/s, but what it renders only
+    // depends on these three values.
+    return Selector<GameState, (bool, TutorialStep, String)>(
+      selector: (_, gs) => (
+        gs.isTutorialActive,
+        gs.tutorialStep,
+        gs.selectedUpgradeCategory,
+      ),
+      builder: (context, _, __) {
+        final gameState = context.read<GameState>();
         if (!gameState.isTutorialActive) return const SizedBox.shrink();
 
         final step = gameState.tutorialStep;
@@ -416,26 +425,30 @@ class _PulseOutlineState extends State<_PulseOutline>
       top: rect.top,
       width: rect.width,
       height: rect.height,
+      // Pulses at 60fps for as long as a spotlight is up; keep that from
+      // repainting the whole screen underneath.
       child: IgnorePointer(
-        child: AnimatedBuilder(
-          animation: _ctrl,
-          builder: (context, child) {
-            final t = Curves.easeInOut.transform(_ctrl.value);
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.35 + t * 0.45),
-                  width: 2,
+        child: RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, child) {
+              final t = Curves.easeInOut.transform(_ctrl.value);
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: 0.35 + t * 0.45),
+                    width: 2,
+                  ),
                 ),
-              ),
-              child: child,
-            );
-          },
-          child: const SizedBox.expand(),
+                child: child,
+              );
+            },
+            child: const SizedBox.expand(),
+          ),
         ),
       ),
     );

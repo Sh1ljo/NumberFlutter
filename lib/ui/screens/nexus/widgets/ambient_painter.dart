@@ -2,17 +2,29 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 class AmbientPainter extends CustomPainter {
-  final double progress;
+  /// Looping 0..1 driver. Passed as `repaint` so each frame repaints straight
+  /// off the controller instead of rebuilding a widget and a new painter.
+  final Animation<double> progress;
   final Color primary;
   final Color surface;
   final Color outline;
 
-  const AmbientPainter({
+  AmbientPainter({
     required this.progress,
     required this.primary,
     required this.surface,
     required this.outline,
-  });
+  }) : super(repaint: progress);
+
+  // The base gradient doesn't move with the animation, so its shader is
+  // built once per size instead of every frame.
+  Size? _baseSize;
+  Paint? _basePaint;
+
+  final Paint _particlePaint = Paint();
+  final Paint _ringPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.8;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -20,22 +32,25 @@ class AmbientPainter extends CustomPainter {
     final h = size.height;
     if (w <= 0 || h <= 0) return;
 
-    final t = progress * math.pi * 2;
+    final t = progress.value * math.pi * 2;
 
     // Base gradient
     final baseRect = Offset.zero & size;
-    final base = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(0, -0.2),
-        radius: 1.15,
-        colors: [
-          surface.withValues(alpha: 0.10),
-          surface.withValues(alpha: 0.03),
-          Colors.transparent,
-        ],
-        stops: const [0.0, 0.58, 1.0],
-      ).createShader(baseRect);
-    canvas.drawRect(baseRect, base);
+    if (_basePaint == null || _baseSize != size) {
+      _baseSize = size;
+      _basePaint = Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.2),
+          radius: 1.15,
+          colors: [
+            surface.withValues(alpha: 0.10),
+            surface.withValues(alpha: 0.03),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.58, 1.0],
+        ).createShader(baseRect);
+    }
+    canvas.drawRect(baseRect, _basePaint!);
 
     // Drifting glow blobs
     const glowSeeds = <(double x, double y, double r, double phase)>[
@@ -80,17 +95,14 @@ class AmbientPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(x, y),
         r,
-        Paint()..color = primary.withValues(alpha: alpha),
+        _particlePaint..color = primary.withValues(alpha: alpha),
       );
 
       if (i % 4 == 0) {
         canvas.drawCircle(
           Offset(x, y),
           r + 3.0 + pulse * 4.0,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 0.8
-            ..color = outline.withValues(alpha: 0.07 + pulse * 0.04),
+          _ringPaint..color = outline.withValues(alpha: 0.07 + pulse * 0.04),
         );
       }
     }

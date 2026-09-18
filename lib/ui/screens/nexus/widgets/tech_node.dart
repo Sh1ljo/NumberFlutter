@@ -14,7 +14,12 @@ class TechNode extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final gameState = context.watch<GameState>();
+    // Selected rather than watched: the game ticker notifies ~10x/s, and
+    // this only changes with prestige currency or the tree's levels.
+    context.select<GameState, (double, int, bool)>(
+      (gs) => (gs.prestigeCurrency, node.level, node.prereqsMet(allNodes)),
+    );
+    final gameState = context.read<GameState>();
 
     final prereqsMet = node.prereqsMet(allNodes);
     final canAfford =

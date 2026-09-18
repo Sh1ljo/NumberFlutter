@@ -22,6 +22,38 @@ class StorageService {
   static const String _keyNeuralNetwork = 'neural_network';
   static const String _keyTestEnvironmentEnabled = 'testEnvironmentEnabled';
 
+  SharedPreferences? _prefs;
+
+  /// Last value this service wrote per key. A save runs every 5s and after
+  /// every tap burst, but most of its ~19 values rarely change, and each
+  /// write is a platform call (a full file commit on Android). Unchanged
+  /// values are skipped; the stored data is identical either way.
+  final Map<String, Object> _lastWritten = {};
+
+  Future<SharedPreferences> _instance() async =>
+      _prefs ??= await SharedPreferences.getInstance();
+
+  Future<void> _setString(
+      SharedPreferences prefs, String key, String value) async {
+    if (_lastWritten[key] == value) return;
+    // Remembered only once the write succeeded, so a failure is retried.
+    if (await prefs.setString(key, value)) _lastWritten[key] = value;
+  }
+
+  Future<void> _setInt(
+      SharedPreferences prefs, String key, int value) async {
+    if (_lastWritten[key] == value) return;
+    // Remembered only once the write succeeded, so a failure is retried.
+    if (await prefs.setInt(key, value)) _lastWritten[key] = value;
+  }
+
+  Future<void> _setBool(
+      SharedPreferences prefs, String key, bool value) async {
+    if (_lastWritten[key] == value) return;
+    // Remembered only once the write succeeded, so a failure is retried.
+    if (await prefs.setBool(key, value)) _lastWritten[key] = value;
+  }
+
   Future<void> saveGame({
     required BigInt number,
     required BigInt clickPower,
@@ -41,34 +73,37 @@ class StorageService {
     String? neuralNetworkJson,
     bool testEnvironmentEnabled = false,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyNumber, number.toString());
-    await prefs.setString(_keyClickPower, clickPower.toString());
-    await prefs.setString(_keyAutoClickRate, autoClickRate.toString());
-    await prefs.setString(_keyPrestigeCurrency, prestigeCurrency.toString());
-    await prefs.setString(
-        _keyPrestigeMultiplier, prestigeMultiplier.toString());
-    await prefs.setInt(_keyPrestigeCount, prestigeCount);
-    await prefs.setString(_keyUpgradeLevels, jsonEncode(upgradeLevels));
-    await prefs.setString(_keyHighestNumber, highestNumber.toString());
-    await prefs.setString(_keyNexusLevels, jsonEncode(nexusLevels));
-    await prefs.setBool(_keyTutorialCompleted, tutorialCompleted);
+    final prefs = await _instance();
+    await _setString(prefs, _keyNumber, number.toString());
+    await _setString(prefs, _keyClickPower, clickPower.toString());
+    await _setString(prefs, _keyAutoClickRate, autoClickRate.toString());
+    await _setString(
+        prefs, _keyPrestigeCurrency, prestigeCurrency.toString());
+    await _setString(
+        prefs, _keyPrestigeMultiplier, prestigeMultiplier.toString());
+    await _setInt(prefs, _keyPrestigeCount, prestigeCount);
+    await _setString(prefs, _keyUpgradeLevels, jsonEncode(upgradeLevels));
+    await _setString(prefs, _keyHighestNumber, highestNumber.toString());
+    await _setString(prefs, _keyNexusLevels, jsonEncode(nexusLevels));
+    await _setBool(prefs, _keyTutorialCompleted, tutorialCompleted);
     // Stored by NAME, never by index — an enum reorder would silently
     // reinterpret every saved step if this were an ordinal.
-    await prefs.setString(_keyTutorialStep, tutorialStep);
-    await prefs.setBool(_keyNexusTutorialSeen, nexusTutorialSeen);
-    await prefs.setBool(_keyNeuralTutorialSeen, neuralTutorialSeen);
-    await prefs.setBool(_keyUpgradeTutorialSeen, upgradeTutorialSeen);
-    await prefs.setBool(_keyNexusStabilized, nexusStabilized);
-    await prefs.setBool(_keyTestEnvironmentEnabled, testEnvironmentEnabled);
+    await _setString(prefs, _keyTutorialStep, tutorialStep);
+    await _setBool(prefs, _keyNexusTutorialSeen, nexusTutorialSeen);
+    await _setBool(prefs, _keyNeuralTutorialSeen, neuralTutorialSeen);
+    await _setBool(prefs, _keyUpgradeTutorialSeen, upgradeTutorialSeen);
+    await _setBool(prefs, _keyNexusStabilized, nexusStabilized);
+    await _setBool(
+        prefs, _keyTestEnvironmentEnabled, testEnvironmentEnabled);
     if (neuralNetworkJson != null) {
-      await prefs.setString(_keyNeuralNetwork, neuralNetworkJson);
+      await _setString(prefs, _keyNeuralNetwork, neuralNetworkJson);
     }
-    await prefs.setInt(_keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
+    await _setInt(
+        prefs, _keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<Map<String, dynamic>> loadGame() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
 
     final numberStr = prefs.getString(_keyNumber) ?? '0';
     final clickPowerStr = prefs.getString(_keyClickPower) ?? '1';
@@ -134,7 +169,8 @@ class StorageService {
   }
 
   Future<void> clearAllData() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _instance();
+    _lastWritten.clear();
     await prefs.remove(_keyNumber);
     await prefs.remove(_keyClickPower);
     await prefs.remove(_keyAutoClickRate);

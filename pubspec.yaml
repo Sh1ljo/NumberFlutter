@@ -67,6 +67,9 @@ flutter:
   assets:
     - assets/.env
     - lib/countries/countries.json
+    # Bundled so text never waits on (or re-lays out after) a runtime font
+    # download. google_fonts finds these by file name.
+    - assets/google_fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

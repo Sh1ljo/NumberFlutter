@@ -58,8 +58,10 @@ class NumberFormatter {
     return suffixes;
   }
 
+  static final BigInt _thousand = BigInt.from(1000);
+
   static String format(BigInt value) {
-    if (value < BigInt.from(1000)) {
+    if (value < _thousand) {
       return value.toString();
     }
 

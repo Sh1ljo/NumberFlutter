@@ -132,7 +132,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final gameState = context.watch<GameState>();
+    // Selected rather than watched: the ticker notifies ~10x/s, and apart
+    // from the top-bar number (which listens on its own) nothing on this
+    // page moves with it.
+    context.select<GameState, (bool, bool)>(
+      (gs) => (gs.cloudSyncInProgress, gs.testEnvironmentEnabled),
+    );
+    final gameState = context.read<GameState>();
     final supabase = SupabaseService.instance;
 
     return Scaffold(
@@ -149,9 +155,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Icon(Icons.toll, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
-                  Text(
-                    NumberFormatter.format(gameState.number),
-                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 24),
+                  Selector<GameState, BigInt>(
+                    selector: (_, gs) => gs.number,
+                    builder: (context, number, _) => Text(
+                      NumberFormatter.format(number),
+                      style:
+                          theme.textTheme.titleLarge?.copyWith(fontSize: 24),
+                    ),
                   ),
                 ],
               ),

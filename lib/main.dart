@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'config/app_config.dart';
 import 'logic/game_state.dart';
@@ -12,6 +13,9 @@ import 'ui/widgets/auth_session_listener.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The theme's font variants ship in assets/google_fonts, so never hit the
+  // network for them.
+  GoogleFonts.config.allowRuntimeFetching = false;
   await AppConfig.load();
   try {
     // Never block app launch on network-backed service boot.

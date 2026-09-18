@@ -218,15 +218,19 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width: 180,
-                    height: 180,
-                    child: AnimatedBuilder(
-                      animation: _ctrl,
-                      builder: (_, __) => CustomPaint(
-                        painter: DotSpherePainter(
-                          angle: _ctrl.value * 3.14159265359 * 2,
-                          primaryColor: cs.primary,
+                  // Spins forever while this tab is open; isolate it so each
+                  // frame doesn't repaint the text and button around it.
+                  RepaintBoundary(
+                    child: SizedBox(
+                      width: 180,
+                      height: 180,
+                      child: AnimatedBuilder(
+                        animation: _ctrl,
+                        builder: (_, __) => CustomPaint(
+                          painter: DotSpherePainter(
+                            angle: _ctrl.value * 3.14159265359 * 2,
+                            primaryColor: cs.primary,
+                          ),
                         ),
                       ),
                     ),

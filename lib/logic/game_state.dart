@@ -87,6 +87,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   BigInt highestNumber = BigInt.zero;
   DateTime? _lastSavedAt;
   DateTime? _lastCloudPushAt;
+
+  /// Automatic pushes back off after failures. Every save used to retry a
+  /// failed sync straight away, so offline play fired up to 3 network calls
+  /// every 5s (and after every tap burst). Manual syncs ignore this.
+  DateTime? _cloudRetryAfter;
+  int _cloudFailureStreak = 0;
+  static const Duration _cloudPushInterval = Duration(seconds: 20);
+  static const Duration _cloudMaxBackoff = Duration(minutes: 5);
   bool _cloudSyncInProgress = false;
   String? _lastCloudSyncError;
 
@@ -376,8 +384,41 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   /// ── NEXUS research getters ─────────────────────────────────────────────
 
-  int _nexusLevel(String id) =>
-      researchNodes.where((n) => n.id == id).firstOrNull?.level ?? 0;
+  int _nexusLevel(String id) => _researchNodeById(id)?.level ?? 0;
+
+  // Id -> index lookups. These getters run several times per tick and per
+  // tap, and used to linearly scan the lists each time. The index only maps
+  // ids to positions; levels are always read live, so nothing can go stale.
+  List<ResearchNode>? _indexedResearchNodes;
+  Map<String, int> _researchNodeIndex = const {};
+  List<Upgrade>? _indexedUpgrades;
+  Map<String, int> _upgradeIndex = const {};
+
+  ResearchNode? _researchNodeById(String id) {
+    final nodes = researchNodes;
+    if (!identical(nodes, _indexedResearchNodes) ||
+        _researchNodeIndex.length != nodes.length) {
+      _indexedResearchNodes = nodes;
+      _researchNodeIndex = {
+        for (int i = nodes.length - 1; i >= 0; i--) nodes[i].id: i,
+      };
+    }
+    final idx = _researchNodeIndex[id];
+    return idx == null ? null : nodes[idx];
+  }
+
+  Upgrade? _upgradeById(String id) {
+    final list = upgrades;
+    if (!identical(list, _indexedUpgrades) ||
+        _upgradeIndex.length != list.length) {
+      _indexedUpgrades = list;
+      _upgradeIndex = {
+        for (int i = list.length - 1; i >= 0; i--) list[i].id: i,
+      };
+    }
+    final idx = _upgradeIndex[id];
+    return idx == null ? null : list[idx];
+  }
 
   /// Factor to multiply upgrade costs by. e.g. 0.93 = 7% cheaper.
   double get upgradeCostReductionFactor {
@@ -427,6 +468,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     prestigeCurrency -= cost;
     node.level++;
     if (nodeId == 'neural_genesis' && !neuralNetwork.unlocked) {
+      _neuralRevision++;
       neuralNetwork.unlocked = true;
       neuralNetwork.layers = [
         NeuralLayer(
@@ -456,6 +498,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (number < cost) return false;
     number -= cost;
     neuron.gradientLevel++;
+    _neuralRevision++;
     if (_tutorialStep == TutorialStep.neuralUpgradeGradient) {
       _tutorialStep = TutorialStep.neuralChangeActivation;
     }
@@ -472,6 +515,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (cost > BigInt.zero) number -= cost;
     neuron.activationFn = fn;
     if (fn != 'linear') neuron.unlockedActivations.add(fn);
+    _neuralRevision++;
     if (_tutorialStep == TutorialStep.neuralChangeActivation) {
       _tutorialStep = TutorialStep.neuralBranchNeuron;
     }
@@ -491,6 +535,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
     number -= cost;
     neuron.hasBranched = true;
+    _neuralRevision++;
 
     // Spawn this parent's slice of the next layer immediately, so children
     // appear as each sibling branches rather than all at once at the end.
@@ -642,10 +687,30 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const int maxPrestigeRequirementExponent = 1000;
 
   /// Number required to perform the next prestige.
-  BigInt get prestigeRequirement => _prestigeRequirementAtCount(
-        prestigeCount,
-        testEnvironment: _testEnvironmentEnabled,
-      );
+  ///
+  /// Memoized: MainLayout's listener reads this on every notify (~10x/s) and
+  /// it is a pair of BigInt powers, but it only moves with [prestigeCount] or
+  /// the test-environment flag.
+  BigInt get prestigeRequirement {
+    final cached = _prestigeRequirementCache;
+    if (cached != null &&
+        _prestigeRequirementCacheCount == prestigeCount &&
+        _prestigeRequirementCacheTestEnv == _testEnvironmentEnabled) {
+      return cached;
+    }
+    final value = _prestigeRequirementAtCount(
+      prestigeCount,
+      testEnvironment: _testEnvironmentEnabled,
+    );
+    _prestigeRequirementCache = value;
+    _prestigeRequirementCacheCount = prestigeCount;
+    _prestigeRequirementCacheTestEnv = _testEnvironmentEnabled;
+    return value;
+  }
+
+  BigInt? _prestigeRequirementCache;
+  int _prestigeRequirementCacheCount = -1;
+  bool _prestigeRequirementCacheTestEnv = false;
 
   /// Fixed reward for the next prestige activation.
   double get nextPrestigeReward => prestigeRewardAtCount(prestigeCount);
@@ -822,7 +887,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       if (neuralNetworkUnlocked && neuralNetwork.loss > _neuralMinLoss) {
-        final s = neuralNetwork.computeStrength();
+        final s = neuralNetworkStrength;
         if (s > 0) {
           final oldAccuracy = neuralNetwork.accuracy;
           final newLoss =
@@ -866,7 +931,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       // of whether the player has an auto-clicker. Loss generally decays
       // (driven by network strength) but includes realistic training noise.
       if (neuralNetworkUnlocked && neuralNetwork.loss > _neuralMinLoss) {
-        final s = neuralNetwork.computeStrength();
+        final s = neuralNetworkStrength;
         if (s > 0) {
           final next =
               neuralNetwork.loss * math.exp(-_neuralDecayK * s * _neuralDt);
@@ -918,10 +983,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get momentumProgress => _momentumProgress;
   bool get hasMomentumUpgrade => _isUpgradeActive(momentumId);
 
-  int get _cascadeResonatorLevel {
-    final idx = upgrades.indexWhere((u) => u.id == cascadeResonatorId);
-    return idx == -1 ? 0 : upgrades[idx].level;
-  }
+  int get _cascadeResonatorLevel =>
+      _upgradeById(cascadeResonatorId)?.level ?? 0;
 
   double get totalIdleRate {
     // Require at least one actual idle generator upgrade before any idle
@@ -946,21 +1009,33 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Raw (uncapped) multiplier from the network's current loss. Exposed so
   /// the HUD can detect when the soft cap is the binding constraint without
   /// having to know `_neuralBoostScale` itself.
-  /// Cheap value-equality handle on the network's *shape* — neuron count per
-  /// layer plus each neuron's gradient level and activation.
+  /// Bumped by every in-place mutation of [neuralNetwork]'s shape: neuron
+  /// count, gradient level, activation, branching. Replacing the network
+  /// object is caught by identity instead.
+  int _neuralRevision = 0;
+
+  /// Cheap value-equality handle on the network's *shape*.
   ///
   /// Lets the neural canvas rebuild only when the topology actually changes,
-  /// instead of on every 100ms loss tick.
-  String get neuralNetworkTopologySignature {
-    final parts = <String>[];
-    for (final layer in neuralNetwork.layers) {
-      parts.add('${layer.index}');
-      for (final neuron in layer.neurons) {
-        parts.add(
-            '${neuron.id}:${neuron.gradientLevel}:${neuron.activationFn}:${neuron.hasBranched}');
-      }
+  /// instead of on every 100ms loss tick. This used to build and join a
+  /// string over every neuron on each notify just to compare it.
+  (NeuralNetwork, int) get neuralTopologyKey =>
+      (neuralNetwork, _neuralRevision);
+
+  NeuralNetwork? _strengthCacheNetwork;
+  int _strengthCacheRevision = -1;
+  double _strengthCache = 0.0;
+
+  /// [NeuralNetwork.computeStrength], cached against [neuralTopologyKey].
+  /// Strength depends only on the shape, but the ticker needs it 10x/s.
+  double get neuralNetworkStrength {
+    if (!identical(_strengthCacheNetwork, neuralNetwork) ||
+        _strengthCacheRevision != _neuralRevision) {
+      _strengthCache = neuralNetwork.computeStrength();
+      _strengthCacheNetwork = neuralNetwork;
+      _strengthCacheRevision = _neuralRevision;
     }
-    return parts.join('|');
+    return _strengthCache;
   }
 
   double get neuralLossRawMultiplier {
@@ -983,7 +1058,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Live decay rate (loss-units per second per current loss) for HUD display.
   double get neuralDecayRate {
     if (!neuralNetworkUnlocked) return 0.0;
-    return _neuralDecayK * neuralNetwork.computeStrength();
+    return _neuralDecayK * neuralNetworkStrength;
   }
 
   int upgradeMilestoneMultiplierForLevel(int level) {
@@ -1043,9 +1118,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   int _upgradeLevel(String id) {
-    final idx = upgrades.indexWhere((u) => u.id == id);
-    if (idx == -1) return 0;
-    final upgrade = upgrades[idx];
+    final upgrade = _upgradeById(id);
+    if (upgrade == null) return 0;
     return upgrade.level * upgradeMilestoneMultiplier(upgrade);
   }
 
@@ -1114,11 +1188,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return math.min(180, 30 + (level - 1) * 5);
   }
 
-  bool _isUpgradeActive(String id) {
-    final idx = upgrades.indexWhere((u) => u.id == id);
-    if (idx == -1) return false;
-    return upgrades[idx].level > 0;
-  }
+  bool _isUpgradeActive(String id) => (_upgradeById(id)?.level ?? 0) > 0;
 
   bool _updateMomentumDecay() {
     if (!_isUpgradeActive(momentumId) || _lastManualClickTime == null) {
@@ -1207,7 +1277,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _clickStreak++;
     _lastManualClickTime = now;
 
-    bool momentumChanged = false;
     if (_isUpgradeActive(momentumId)) {
       final comboBonus = (_clickStreak - 1) * _momentumPerClickBonus;
       final newMultiplier = (1.0 + comboBonus).clamp(1.0, _momentumCap);
@@ -1216,22 +1285,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       // Always update on click to ensure UI stays responsive
       _momentumMultiplier = newMultiplier;
       _momentumProgress = newProgress;
-      momentumChanged = true;
     } else {
-      if (_momentumMultiplier != 1.0 || _momentumProgress != 0.0) {
-        _momentumMultiplier = 1.0;
-        _momentumProgress = 0.0;
-        momentumChanged = true;
-      }
+      _momentumMultiplier = 1.0;
+      _momentumProgress = 0.0;
     }
 
-    bool overclockChanged = false;
     if (_isUpgradeActive(overclockId) &&
         _clickStreak >= _overclockStreakRequirement &&
         !_overclockTriggeredThisChain) {
       _overclockTriggeredThisChain = true;
       _activateOverclock();
-      overclockChanged = true;
     }
 
     if (_tutorialStep == TutorialStep.triggerProbabilityStrike) {
@@ -1268,13 +1331,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     final personalBestReached = highestNumber > previousHighest;
 
-    // Only notify if momentum or overclock changed, number update is handled by Selector
-    if (momentumChanged || overclockChanged) {
-      notifyListeners();
-    } else {
-      // Still need to notify for number changes, but this is already optimized by Selector
-      notifyListeners();
-    }
+    // The number always changes on a click, so this always notifies;
+    // Selectors keep the resulting rebuilds narrow.
+    notifyListeners();
 
     _scheduleStateSave();
     return (
@@ -1301,10 +1360,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool get isTemporalCollapseActive => _temporalCollapseActive;
   bool get isTemporalCollapseCoolingDown => _temporalCollapseCoolingDown;
 
-  int get _temporalCollapseLevel {
-    final idx = upgrades.indexWhere((u) => u.id == temporalCollapseId);
-    return idx == -1 ? 0 : upgrades[idx].level;
-  }
+  int get _temporalCollapseLevel =>
+      _upgradeById(temporalCollapseId)?.level ?? 0;
 
   int get temporalCollapseDurationSeconds {
     final lvl = _temporalCollapseLevel;
@@ -1408,10 +1465,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     BigInt totalCost = BigInt.zero;
     BigInt remainingNumber = number;
 
-    double currentMultiplier = 1.0;
-    for (int i = 0; i < upgrade.level; i++) {
-      currentMultiplier *= upgrade.costMultiplier;
-    }
+    double currentMultiplier = _costMultiplierAtLevel(upgrade);
 
     final costFactor = upgradeCostReductionFactor;
     while (bought < toBuy) {
@@ -1450,6 +1504,29 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       return (cost: singleCost, amount: 0);
     }
     return (cost: totalCost, amount: finalAmount);
+  }
+
+  /// `costMultiplier ^ level`, computed as the repeated product it has always
+  /// been (not `math.pow`, which can round differently) but extended
+  /// incrementally from the last level seen instead of from zero. The
+  /// upgrades list rebuilds every row on each tick, so the from-zero loop
+  /// cost O(level) per row per tick.
+  final Map<String, (int, double)> _costMultiplierCache = {};
+
+  double _costMultiplierAtLevel(Upgrade upgrade) {
+    final level = upgrade.level;
+    final cached = _costMultiplierCache[upgrade.id];
+    int i = 0;
+    double multiplier = 1.0;
+    if (cached != null && cached.$1 <= level) {
+      i = cached.$1;
+      multiplier = cached.$2;
+    }
+    for (; i < level; i++) {
+      multiplier *= upgrade.costMultiplier;
+    }
+    _costMultiplierCache[upgrade.id] = (level, multiplier);
+    return multiplier;
   }
 
   int minPrestigeForUpgrade(String id) {
@@ -1717,10 +1794,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       _lastCloudPushAt = DateTime.now().toUtc();
+      _cloudFailureStreak = 0;
+      _cloudRetryAfter = null;
       await _persistState(skipCloudUpload: true);
       notifyListeners();
     } catch (error) {
       _lastCloudSyncError = error.toString();
+      // 20s, 40s, 80s, ... capped at 5 minutes.
+      final backoff = _cloudPushInterval * (1 << _cloudFailureStreak.clamp(0, 4));
+      _cloudRetryAfter = DateTime.now().add(
+        backoff > _cloudMaxBackoff ? _cloudMaxBackoff : backoff,
+      );
+      _cloudFailureStreak++;
       notifyListeners();
     } finally {
       _cloudSyncInProgress = false;
@@ -1732,7 +1817,31 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     await _persistState(skipCloudUpload: false);
   }
 
-  Future<void> _persistState({required bool skipCloudUpload}) async {
+  /// Saves run one at a time, in order. The ticker, the tap debounce and
+  /// purchases can all ask for a save at once, and overlapping saves used to
+  /// interleave their writes key by key, which could mix two snapshots. A
+  /// request that arrives while one is already queued joins it, since the
+  /// queued save reads the state when it starts.
+  Future<void> _persistTail = Future<void>.value();
+  Future<void>? _queuedPersist;
+  bool _queuedPersistSkipsCloud = true;
+
+  Future<void> _persistState({required bool skipCloudUpload}) {
+    _queuedPersistSkipsCloud = _queuedPersistSkipsCloud && skipCloudUpload;
+    final queued = _queuedPersist;
+    if (queued != null) return queued;
+    final run = _persistTail.then((_) {
+      _queuedPersist = null;
+      final skip = _queuedPersistSkipsCloud;
+      _queuedPersistSkipsCloud = true;
+      return _writeState(skipCloudUpload: skip);
+    });
+    _queuedPersist = run;
+    _persistTail = run.then((_) {}, onError: (_) {});
+    return run;
+  }
+
+  Future<void> _writeState({required bool skipCloudUpload}) async {
     _updateHighestNumber();
     await _storageService.saveGame(
       number: number,
@@ -1766,8 +1875,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     final now = DateTime.now();
+    final retryAfter = _cloudRetryAfter;
+    if (retryAfter != null && now.isBefore(retryAfter)) return;
     final shouldPush = _lastCloudPushAt == null ||
-        now.difference(_lastCloudPushAt!).inSeconds >= 20;
+        now.difference(_lastCloudPushAt!) >= _cloudPushInterval;
     if (shouldPush) {
       unawaited(syncWithCloud());
     }
@@ -1780,6 +1891,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      // The OS may kill a backgrounded app without warning. Flush now so the
+      // last few seconds since the periodic save aren't lost.
+      _saveDebounceTimer?.cancel();
+      unawaited(_saveState());
+    }
     if (state == AppLifecycleState.resumed) {
       // When app resumes, update lastPlayed to current time so we don't
       // accumulate offline gains for the time the app was paused
@@ -2117,12 +2234,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Number the player must reach before the tutorial sends them to buy the
   /// first Auto-Clicker. Derived from the Auto-Clicker's own base cost so a
   /// future price change can't strand the step on an unaffordable purchase.
-  static BigInt get tutorialFirstClickTarget =>
+  static final BigInt tutorialFirstClickTarget =
       defaultUpgrades().firstWhere((u) => u.id == autoClickerId).baseCost;
 
   /// Number the player must reach while watching idle income accumulate,
   /// before being sent to buy Click Power.
-  static BigInt get tutorialIdleWatchTarget =>
+  static final BigInt tutorialIdleWatchTarget =
       defaultUpgrades().firstWhere((u) => u.id == clickPowerId).baseCost * BigInt.two;
 
   void _advanceTutorialOnNumberReached() {

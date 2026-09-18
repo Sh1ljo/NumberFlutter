@@ -24,20 +24,12 @@ class MainGameScreen extends StatefulWidget {
 }
 
 class _MainGameScreenState extends State<MainGameScreen> {
-  final List<FloatingTapText> _floatingTexts = [];
+  final GlobalKey<FloatingTapTextLayerState> _floatingLayerKey = GlobalKey();
   final GlobalKey<PulseNumberState> _numberKey = GlobalKey();
-  static const int _maxFloatingTexts = 18;
 
   final List<DateTime> _recentTaps = [];
   DateTime _lastWarningTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool _profileActionBusy = false;
-
-  void _removeFloatingTextByKey(Key key) {
-    if (!mounted) return;
-    setState(() {
-      _floatingTexts.removeWhere((widget) => widget.key == key);
-    });
-  }
 
   void _onTapAnywhere(Offset globalPosition) {
     final now = DateTime.now();
@@ -53,26 +45,14 @@ class _MainGameScreenState extends State<MainGameScreen> {
     _numberKey.currentState?.pulse();
     final clickResult = gameState.click();
 
-    // Add floating text - optimized to avoid full setState
-    if (_floatingTexts.length >= _maxFloatingTexts) {
-      _floatingTexts.removeAt(0);
-    }
-    final text = '+${NumberFormatter.format(clickResult.gain)}';
-    final floatingKey = UniqueKey();
-
-    setState(() {
-      _floatingTexts.add(
-        FloatingTapText(
-          key: floatingKey,
-          text: text,
-          isProbabilityStrike: clickResult.probabilityStrikeTriggered,
-          position: globalPosition - const Offset(20, 20),
-          onComplete: () {
-            _removeFloatingTextByKey(floatingKey);
-          },
-        ),
-      );
-    });
+    // Only the particle layer rebuilds; this screen used to setState (and
+    // rebuild every header, bar and Selector) on each tap and each particle
+    // finishing.
+    _floatingLayerKey.currentState?.add(
+      text: '+${NumberFormatter.format(clickResult.gain)}',
+      isProbabilityStrike: clickResult.probabilityStrikeTriggered,
+      position: globalPosition - const Offset(20, 20),
+    );
   }
 
   Future<void> _openProfileEditor() async {
@@ -283,7 +263,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
           ),
 
           // Floating texts overlay
-          ..._floatingTexts,
+          Positioned.fill(child: FloatingTapTextLayer(key: _floatingLayerKey)),
         ],
       ),
     );

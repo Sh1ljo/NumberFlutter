@@ -13,6 +13,11 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulseCtrl;
 
+  /// Built once. Creating these inside the AnimatedBuilder added two status
+  /// listeners to [_pulseCtrl] every frame, none of which were ever removed.
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
   @override
   void initState() {
     super.initState();
@@ -20,6 +25,9 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+    final curved = CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut);
+    _scale = Tween<double>(begin: 1.0, end: 1.2).animate(curved);
+    _opacity = Tween<double>(begin: 0.3, end: 0.8).animate(curved);
   }
 
   @override
@@ -33,21 +41,26 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Consumer<GameState>(
-      builder: (context, state, _) {
-        final resonance =
-            state.researchNodes.where((n) => n.id == 'resonance_core').firstOrNull;
-        final echo =
-            state.researchNodes.where((n) => n.id == 'echo_protocol').firstOrNull;
-        final genesis =
-            state.researchNodes.where((n) => n.id == 'neural_genesis').firstOrNull;
+    // Selected rather than consumed: the game ticker notifies ~10x/s and none
+    // of these values move with it.
+    final (resonanceLevel, echoLevel, genesisAvailable) = context.select<
+        GameState, (int, int, bool)>((state) {
+      final nodes = state.researchNodes;
+      final resonance =
+          nodes.where((n) => n.id == 'resonance_core').firstOrNull;
+      final echo = nodes.where((n) => n.id == 'echo_protocol').firstOrNull;
+      final genesis = nodes.where((n) => n.id == 'neural_genesis').firstOrNull;
+      return (
+        resonance?.level ?? 0,
+        echo?.level ?? 0,
+        genesis != null && genesis.prereqsMet(nodes),
+      );
+    });
 
-        final resonanceLevel = resonance?.level ?? 0;
-        final echoLevel = echo?.level ?? 0;
+    return Builder(
+      builder: (context) {
         final resonanceMet = resonanceLevel >= 5;
         final echoMet = echoLevel >= 5;
-        final genesisAvailable =
-            genesis != null && genesis.prereqsMet(state.researchNodes);
 
         return Center(
           child: SingleChildScrollView(
@@ -58,14 +71,8 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                 AnimatedBuilder(
                   animation: _pulseCtrl,
                   builder: (_, __) {
-                    final scale = Tween<double>(begin: 1.0, end: 1.2)
-                        .animate(CurvedAnimation(
-                            parent: _pulseCtrl, curve: Curves.easeInOut))
-                        .value;
-                    final opacity = Tween<double>(begin: 0.3, end: 0.8)
-                        .animate(CurvedAnimation(
-                            parent: _pulseCtrl, curve: Curves.easeInOut))
-                        .value;
+                    final scale = _scale.value;
+                    final opacity = _opacity.value;
 
                     return Transform.scale(
                       scale: scale,
@@ -82,17 +89,17 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            Opacity(
-                              opacity: opacity,
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: cs.primary,
-                                    width: 1.0,
-                                  ),
+                            // A single stroke, so the alpha is baked into
+                            // the colour instead of an Opacity layer.
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: cs.primary.withValues(
+                                      alpha: cs.primary.a * opacity),
+                                  width: 1.0,
                                 ),
                               ),
                             ),

@@ -19,6 +19,24 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   LeaderboardScope _scope = LeaderboardScope.global;
   LeaderboardMetric _metric = LeaderboardMetric.number;
 
+  /// The fetch for the current user/metric/scope/refresh. It used to be
+  /// created inside build(), so any rebuild of the auth StreamBuilder (a
+  /// token refresh, a keyboard or MediaQuery change) started a new network
+  /// fetch.
+  String? _rowsKey;
+  Future<_LeaderboardData>? _rowsFuture;
+
+  String _rowsKeyFor(String userId) =>
+      '${userId}_${_metric.name}_${_scope.name}_$_refreshEpoch';
+
+  Future<_LeaderboardData> _rowsFor(String key) {
+    if (key != _rowsKey || _rowsFuture == null) {
+      _rowsKey = key;
+      _rowsFuture = _fetchRows();
+    }
+    return _rowsFuture!;
+  }
+
   String _formatLeaderboardNumber(dynamic value) {
     final raw = value?.toString() ?? '0';
     final parsed = BigInt.tryParse(raw);
@@ -212,10 +230,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               ),
                             );
                           }
+                          final rowsKey = _rowsKeyFor(session.user.id);
                           return FutureBuilder<_LeaderboardData>(
-                            key: ValueKey<String>(
-                                '${session.user.id}_${_metric.name}_${_scope.name}_$_refreshEpoch'),
-                            future: _fetchRows(),
+                            key: ValueKey<String>(rowsKey),
+                            future: _rowsFor(rowsKey),
                             builder: (context, snapshot) {
                               if (snapshot.connectionState !=
                                   ConnectionState.done) {
@@ -260,9 +278,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
                               return RefreshIndicator(
                                 onRefresh: () async {
-                                  await _fetchRows();
+                                  final refreshed = _fetchRows();
+                                  await refreshed;
                                   if (!mounted) return;
-                                  setState(() => _refreshEpoch++);
+                                  // Show the rows just fetched rather than
+                                  // fetching them a second time.
+                                  setState(() {
+                                    _refreshEpoch++;
+                                    _rowsKey =
+                                        _rowsKeyFor(session.user.id);
+                                    _rowsFuture = refreshed;
+                                  });
                                 },
                                 child: ListView(
                                   children: [
