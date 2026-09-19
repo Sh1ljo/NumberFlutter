@@ -164,6 +164,19 @@ class _MainLayoutState extends State<MainLayout> {
   /// Reacts to GameState changes outside of build, so dialogs, overlays and
   /// network fetches are never triggered as a build side effect.
   void _onGameStateChanged() {
+    final _perfSw = Stopwatch()..start(); // TEMP-PERF-PROBE
+    try {
+      _onGameStateChangedInner();
+    } finally {
+      _perfSw.stop(); // TEMP-PERF-PROBE
+      if (_perfSw.elapsedMilliseconds > 6) {
+        debugPrint('[PERF] _onGameStateChanged() took '
+            '${_perfSw.elapsedMilliseconds}ms');
+      }
+    }
+  }
+
+  void _onGameStateChangedInner() {
     if (!mounted) return;
 
     // notifyListeners() can in principle land mid-frame. Inserting an
@@ -448,11 +461,27 @@ class _MainLayoutState extends State<MainLayout> {
     final pending = gameState.pendingUnlockedUpgradeIds;
     if (pending.isEmpty) return;
 
-    final upgradeId = pending.first;
-    gameState.dismissUnlockNotice(upgradeId);
-    final upgrade =
-        gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
-    if (upgrade == null) return;
+    // The tutorial already walks the player through every upgrade it wants
+    // seen, on its own schedule — an unrelated "new upgrade" popup firing
+    // mid-tutorial is confusing, not helpful. Drain the queue silently so it
+    // doesn't all dump on the player the instant the tutorial ends.
+    if (!gameState.tutorialCompleted) {
+      for (final id in List<String>.from(pending)) {
+        gameState.dismissUnlockNotice(id);
+      }
+      return;
+    }
+
+    // Drain everything queued so far in one go, not just the head of the
+    // list. Early game, a single balance jump (or the several seconds this
+    // notice stays on screen) can cross several upgrades' affordability at
+    // once — showing one popup per upgrade back-to-back reads as spam, so a
+    // burst collapses into a single "N new upgrades available" notice
+    // instead.
+    final upgradeIds = List<String>.from(pending);
+    for (final id in upgradeIds) {
+      gameState.dismissUnlockNotice(id);
+    }
 
     _unlockNoticeVisible = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -462,16 +491,39 @@ class _MainLayoutState extends State<MainLayout> {
       }
       final overlay = Overlay.of(context, rootOverlay: true);
       _unlockNoticeEntry?.remove();
-      _unlockNoticeEntry = OverlayEntry(
-        builder: (ctx) => _UpgradeUnlockedNotice(
-          upgradeName: upgrade.name,
-          onClosed: _removeUnlockNotice,
-          onTap: () {
-            _removeUnlockNotice();
-            _revealUpgrade(upgradeId, upgrade.effectType);
-          },
-        ),
-      );
+
+      if (upgradeIds.length == 1) {
+        final upgradeId = upgradeIds.first;
+        final upgrade =
+            gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
+        if (upgrade == null) {
+          _unlockNoticeVisible = false;
+          return;
+        }
+        _unlockNoticeEntry = OverlayEntry(
+          builder: (ctx) => _UpgradeUnlockedNotice(
+            label: 'NEW UPGRADE',
+            message: upgrade.name,
+            onClosed: _removeUnlockNotice,
+            onTap: () {
+              _removeUnlockNotice();
+              _revealUpgrade(upgradeId, upgrade.effectType);
+            },
+          ),
+        );
+      } else {
+        _unlockNoticeEntry = OverlayEntry(
+          builder: (ctx) => _UpgradeUnlockedNotice(
+            label: 'NEW UPGRADES',
+            message: '${upgradeIds.length} new upgrades available',
+            onClosed: _removeUnlockNotice,
+            onTap: () {
+              _removeUnlockNotice();
+              _goToUpgradesTab();
+            },
+          ),
+        );
+      }
       overlay.insert(_unlockNoticeEntry!);
     });
   }
@@ -486,11 +538,15 @@ class _MainLayoutState extends State<MainLayout> {
   /// scrolls the given upgrade row to the middle of the viewport.
   void _revealUpgrade(String upgradeId, String category) {
     context.read<GameState>().setSelectedUpgradeCategory(category);
+    _goToUpgradesTab();
+    _scrollToUpgradeRow(upgradeId);
+  }
+
+  void _goToUpgradesTab() {
     if (_currentIndex != 1) {
       setState(() => _currentIndex = 1);
       context.read<GameState>().onMainTabChanged(1);
     }
-    _scrollToUpgradeRow(upgradeId);
   }
 
   void _scrollToUpgradeRow(String upgradeId, [int attempt = 0]) {
@@ -877,16 +933,21 @@ class _TopBannerState extends State<_TopBanner>
   }
 }
 
-/// Slides in from the right when a new upgrade becomes available. Tapping it
-/// navigates to and centers that upgrade in the Upgrades list.
+/// Slides in from the right when one or more new upgrades become available.
+/// A single unlock names the upgrade and, on tap, centers it in the Upgrades
+/// list; a burst of several collapses into one "N new upgrades" notice that
+/// just jumps to the Upgrades tab, so a wave of unlocks doesn't spam the
+/// player with a popup per upgrade.
 class _UpgradeUnlockedNotice extends StatefulWidget {
   const _UpgradeUnlockedNotice({
-    required this.upgradeName,
+    required this.label,
+    required this.message,
     required this.onTap,
     required this.onClosed,
   });
 
-  final String upgradeName;
+  final String label;
+  final String message;
   final VoidCallback onTap;
   final VoidCallback onClosed;
 
@@ -1000,7 +1061,7 @@ class _UpgradeUnlockedNoticeState extends State<_UpgradeUnlockedNotice>
                                 color: theme.colorScheme.primary, size: 18),
                             const SizedBox(width: 6),
                             Text(
-                              'NEW UPGRADE',
+                              widget.label,
                               style: theme.textTheme.labelSmall?.copyWith(
                                 letterSpacing: 1.2,
                                 color: theme.colorScheme.primary,
@@ -1010,7 +1071,7 @@ class _UpgradeUnlockedNoticeState extends State<_UpgradeUnlockedNotice>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          widget.upgradeName,
+                          widget.message,
                           style: theme.textTheme.titleSmall,
                         ),
                         const SizedBox(height: 4),
