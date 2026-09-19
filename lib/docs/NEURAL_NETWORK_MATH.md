@@ -9,6 +9,10 @@ The previous revision of this file was wrong on nearly every constant — it doc
 true. It also claimed "~3 hours to loss 0.01", which was off by roughly two orders of
 magnitude.
 
+> **V0.20:** the network now grows past the pyramid into four prestige-gated **deep layers**
+> and loops through **Epochs**. See §9. Where the sections below say "22 neurons" or "GL9",
+> that's the pyramid and Epoch 0.
+
 ---
 
 ## 1. Structure
@@ -196,9 +200,9 @@ versions itself properly, and it's the pattern the rest of the game should follo
 `lowestLossEver` is monotonic and is merged across devices by taking the **minimum** of local
 and remote, so a stale upload can never wipe a better training run.
 
-**Not persisted to the cloud: the network topology itself.** `PlayerProgress` carries only
-`neuralLoss` and `neuralLowestLoss`, so restoring on a new device yields a maxed accuracy value
-attached to an empty canvas. This is a known data-loss bug — see `PROD_READINESS.md` item 8.
+**V0.20:** the full network JSON (`_saveVersion = 5`, adds `epochs`) now syncs to the cloud
+as `player_progress.neural_network`. Rows written by older builds only carry the loss values,
+and for those the local topology is kept.
 
 A corrupt `neural_network` blob currently resets to `NeuralNetwork.initial()` **silently**,
 with no warning and no backup (item 12).
@@ -228,3 +232,39 @@ target pyramid. Using targets meant that with layers 0(1), 1(2), 2(4), 3(2-of-8)
 content spanned y 104→504 (centre 304) while the fit box spanned 80→688 (centre 384) — the
 network rendered 80 px high and zoomed out over mostly-empty canvas until every slot filled.
 See Part 3 of `IMPLEMENTATION_PLAN.md`.
+
+---
+
+## 9. Deep layers and Epochs (V0.20)
+
+### Deep layers
+
+```
+layerTargets = [1, 2, 4, 8, 4, 2, 1,   2, 4, 2, 1]     // 22 pyramid + 9 deep = 31
+deep layer 7 / 8 / 9 / 10 unlock at prestige 18 / 22 / 26 / 30
+```
+
+Eligibility is now a formula over `layerTargets` (it reproduces the old hand-written pyramid
+rule exactly; `test/neural_expansion_test.dart` checks it). When growing into a bigger layer
+every neuron branches. When shrinking, the first `ceil(next/2)` do. A neuron whose next layer
+is still prestige-locked reports `NeuronBranchBlock.depthLocked`.
+
+- Branch cost keeps the ×8 curve, so layer 7 costs ~262B and layer 10 ~134T.
+- Deep gradient levels cost `10^(layer − 6)` times the pyramid price.
+- Each existing deep layer raises the boost scale by 10, from `30` up to `70`. Deep layers
+  raise the ceiling instead of only making training faster.
+
+### Epochs
+
+Available once `loss ≤ 0.01`. An Epoch resets `loss` to 1 and every gradient level to 0, and
+keeps the topology, activations and `lowestLossEver`. Each Epoch permanently grants:
+
+```
+production          × (1 + 0.1 × epochs)             // via globalProductionMultiplier
+soft cap / prestige   5 + epochs
+gradient cap          min(9 + epochs, 15)
+decay k               k × 0.85^epochs                 // each Epoch trains slower
+```
+
+So each loop takes longer than the last but pays more, and the higher gradient cap adds
+something new to buy every time.

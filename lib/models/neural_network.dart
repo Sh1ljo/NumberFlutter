@@ -4,6 +4,7 @@ import 'dart:math' as math;
 enum NeuronBranchBlock {
   alreadyBranched,
   terminal,
+  depthLocked,
   previousLayerIncomplete,
   networkComplete,
   unknown,
@@ -46,16 +47,18 @@ class NeuralNeuron {
     Set<String>? unlockedActivations,
   }) : unlockedActivations = unlockedActivations ?? <String>{};
 
-  /// Highest reachable gradient level. Drives both the cost ladder and the
-  /// pip row / "GR x/y" badge in NeuronDetailSheet.
-  static const int maxGradientLevel = 9;
+  /// Layer index parsed from the id (`layer_<L>_neuron_<slot>`).
+  int get layerIndex {
+    final parts = id.split('_');
+    return parts.length >= 2 ? int.tryParse(parts[1]) ?? 0 : 0;
+  }
 
-  bool get isGradientMaxed => gradientLevel >= maxGradientLevel;
-
-  BigInt get gradientUpgradeCost {
-    if (isGradientMaxed) return BigInt.zero;
-    // 9 levels: 10K, 100K, 1M, 10M, 100M, 1B, 10B, 100B, 1T
-    return BigInt.from(10000) * BigInt.from(10).pow(gradientLevel);
+  /// Price of the next gradient level, ignoring the cap. Deep layers (past
+  /// the original pyramid) cost 10x more per layer of depth.
+  BigInt get baseGradientCost {
+    final depth = layerIndex - (NeuralNetwork.pyramidLayerCount - 1);
+    final deepFactor = depth > 0 ? BigInt.from(10).pow(depth) : BigInt.one;
+    return BigInt.from(10000) * BigInt.from(10).pow(gradientLevel) * deepFactor;
   }
 
   BigInt activationChangeCost(String targetFn) {
@@ -122,6 +125,8 @@ class NeuralLayer {
 ///   1–4 (hidden)     → relu
 ///   5 (deep hidden)  → tanh (squash before output)
 ///   6 (output)       → linear
+///   7–9 (deep)       → sigmoid, relu, tanh
+///   10 (deep output) → linear
 const Map<int, String> preferredActivationByLayer = {
   0: 'linear',
   1: 'relu',
@@ -130,12 +135,30 @@ const Map<int, String> preferredActivationByLayer = {
   4: 'relu',
   5: 'tanh',
   6: 'linear',
+  7: 'sigmoid',
+  8: 'relu',
+  9: 'tanh',
+  10: 'linear',
 };
 
 class NeuralNetwork {
   // v4: per-neuron unlockedActivations set so paid activation buys persist
   // across switches. Older saves seed the set from the current activationFn.
-  static const int _saveVersion = 4;
+  // v5: epochs.
+  static const int _saveVersion = 5;
+
+  /// Full-expansion neuron count per layer: the original 1-2-4-8-4-2-1
+  /// pyramid, then a prestige-gated deep block.
+  static const List<int> layerTargets = [1, 2, 4, 8, 4, 2, 1, 2, 4, 2, 1];
+  static const int pyramidLayerCount = 7;
+  static int get maxLayerCount => layerTargets.length;
+
+  static const int baseGradientCap = 9;
+  static const int maxGradientCap = 15;
+  static const double basePreferredBonus = 1.10;
+
+  /// Loss at or below which the network can be sent into a new Epoch.
+  static const double epochLossThreshold = 0.01;
 
   List<NeuralLayer> layers;
   bool unlocked;
@@ -148,12 +171,44 @@ class NeuralNetwork {
   /// for the neural leaderboard. Persists across prestige.
   double lowestLossEver;
 
+  /// Completed Epochs. Each one resets training and gradients in exchange
+  /// for permanent bonuses (see GameState).
+  int epochs;
+
   NeuralNetwork({
     required this.layers,
     this.unlocked = false,
     this.loss = 1.0,
     this.lowestLossEver = 1.0,
+    this.epochs = 0,
   });
+
+  /// Highest gradient level reachable right now; each Epoch adds one.
+  int get gradientCap => math.min(baseGradientCap + epochs, maxGradientCap);
+
+  bool isGradientMaxed(NeuralNeuron neuron) =>
+      neuron.gradientLevel >= gradientCap;
+
+  BigInt gradientUpgradeCost(NeuralNeuron neuron) =>
+      isGradientMaxed(neuron) ? BigInt.zero : neuron.baseGradientCost;
+
+  bool get canStartEpoch => unlocked && loss <= epochLossThreshold;
+
+  /// Resets training and every gradient level. Topology, activations and
+  /// lowestLossEver are kept.
+  void startEpoch() {
+    epochs++;
+    loss = 1.0;
+    for (final layer in layers) {
+      for (final neuron in layer.neurons) {
+        neuron.gradientLevel = 0;
+      }
+    }
+  }
+
+  /// Existing layers past the original pyramid.
+  int get deepLayerCount =>
+      layers.where((l) => l.index >= pyramidLayerCount).length;
 
   /// Strength is computed from the current network state every tick. Higher
   /// strength → faster loss decay. Log-shaped so late-game decay slows down
@@ -163,18 +218,32 @@ class NeuralNetwork {
   ///                     × layerDepthBonus(layer.index)
   ///                     × activationBonus(layer.index, fn)
   /// strength = ln(1 + Σ contributions)
-  double computeStrength() {
+  double computeStrength({double preferredBonus = basePreferredBonus}) =>
+      math.log(1.0 + contributionSum(preferredBonus: preferredBonus));
+
+  double contributionSum({double preferredBonus = basePreferredBonus}) {
     double sum = 0.0;
     for (final layer in layers) {
-      final depthBonus = 1.0 + 0.25 * layer.index;
-      final preferred = preferredActivationByLayer[layer.index];
       for (final neuron in layer.neurons) {
-        final activationBonus =
-            (preferred != null && neuron.activationFn == preferred) ? 1.10 : 1.0;
-        sum += (neuron.gradientLevel + 1) * depthBonus * activationBonus;
+        sum += neuronContribution(layer.index, neuron,
+            preferredBonus: preferredBonus);
       }
     }
-    return math.log(1.0 + sum);
+    return sum;
+  }
+
+  static double neuronContribution(
+    int layerIndex,
+    NeuralNeuron neuron, {
+    double preferredBonus = basePreferredBonus,
+  }) {
+    final depthBonus = 1.0 + 0.25 * layerIndex;
+    final preferred = preferredActivationByLayer[layerIndex];
+    final activationBonus =
+        (preferred != null && neuron.activationFn == preferred)
+            ? preferredBonus
+            : 1.0;
+    return (neuron.gradientLevel + 1) * depthBonus * activationBonus;
   }
 
   /// Log-shaped accuracy for display: fast early gains, asymptotes toward 1.0
@@ -196,65 +265,58 @@ class NeuralNetwork {
   }
 
   /// Maximum number of neurons that should exist in [layerIndex] when fully
-  /// expanded. Encodes the pyramid: 1 → 2 → 4 → 8 → 4 → 2 → 1.
+  /// expanded.
   static int targetNeuronCountForLayer(int layerIndex) {
-    switch (layerIndex) {
-      case 0:
-        return 1;
-      case 1:
-        return 2;
-      case 2:
-        return 4;
-      case 3:
-        return 8;
-      case 4:
-        return 4;
-      case 5:
-        return 2;
-      case 6:
-        return 1;
-      default:
-        return 0;
-    }
+    if (layerIndex < 0 || layerIndex >= layerTargets.length) return 0;
+    return layerTargets[layerIndex];
   }
 
   /// True if the neuron at array index [i] in [layerIndex] is eligible to
-  /// branch (independent of whether it has already branched).
-  static bool isEligibleParentIndex(int layerIndex, int i) {
-    if (layerIndex < 0 || layerIndex >= 6) return false;
-    if (layerIndex < 3) return true;
-    // Pyramid shrinking: only the leading neurons branch.
-    // Layer 3: neurons 0, 1 (creates 4 in layer 4).
-    // Layer 4: neuron 0 (creates 2 in layer 5).
-    // Layer 5: neuron 0 (creates 1 in layer 6).
-    if (layerIndex == 3) return i <= 1;
-    if (layerIndex == 4) return i == 0;
-    if (layerIndex == 5) return i == 0;
-    return false;
+  /// branch (independent of whether it has already branched), given that
+  /// only the first [layerLimit] layers may exist.
+  ///
+  /// Growing into a bigger layer every neuron branches; shrinking, only the
+  /// first ceil(next/2) do. For the original pyramid this is exactly the old
+  /// hand-written rule (layer 3: i<=1, layers 4-5: i==0, layer 6 terminal).
+  static bool isEligibleParentIndex(
+    int layerIndex,
+    int i, {
+    int layerLimit = pyramidLayerCount,
+  }) {
+    final limit = math.min(layerLimit, maxLayerCount);
+    if (layerIndex < 0 || layerIndex + 1 >= limit || i < 0) return false;
+    final current = layerTargets[layerIndex];
+    final next = layerTargets[layerIndex + 1];
+    if (next >= current) return i < current;
+    return i < (next + 1) ~/ 2;
   }
 
   /// True once every eligible parent in [layerIndex] has branched AND the
   /// layer holds its full target count of neurons.
-  bool isLayerComplete(int layerIndex) {
+  bool isLayerComplete(int layerIndex, {int layerLimit = pyramidLayerCount}) {
     final layer = layers.where((l) => l.index == layerIndex).firstOrNull;
     if (layer == null) return false;
     if (layer.neurons.length < targetNeuronCountForLayer(layerIndex)) {
       return false;
     }
     for (int i = 0; i < layer.neurons.length; i++) {
-      if (!isEligibleParentIndex(layerIndex, i)) continue;
+      if (!isEligibleParentIndex(layerIndex, i, layerLimit: layerLimit)) {
+        continue;
+      }
       if (!layer.neurons[i].hasBranched) return false;
     }
     return true;
   }
 
-  /// The index of the leftmost layer that still has eligible neurons to branch.
-  /// Returns -1 once the network is fully expanded.
-  int get activeExpansionLayerIndex {
+  /// The index of the leftmost layer that still has eligible neurons to
+  /// branch. Returns -1 once the network is expanded as far as [layerLimit]
+  /// allows.
+  int activeExpansionLayerIndex({int layerLimit = pyramidLayerCount}) {
     for (final layer in layers) {
-      if (layer.index >= 6) continue;
       for (int i = 0; i < layer.neurons.length; i++) {
-        if (!isEligibleParentIndex(layer.index, i)) continue;
+        if (!isEligibleParentIndex(layer.index, i, layerLimit: layerLimit)) {
+          continue;
+        }
         if (layer.neurons[i].hasBranched) continue;
         return layer.index;
       }
@@ -262,38 +324,30 @@ class NeuralNetwork {
     return -1;
   }
 
-  bool canNeuronBranch(String neuronId) {
-    final activeIdx = activeExpansionLayerIndex;
-    if (activeIdx < 0) return false;
-    if (activeIdx >= 6) return false;
-
-    for (final layer in layers) {
-      if (layer.index != activeIdx) continue;
-      for (int i = 0; i < layer.neurons.length; i++) {
-        final neuron = layer.neurons[i];
-        if (neuron.id != neuronId) continue;
-        if (neuron.hasBranched) return false;
-        return isEligibleParentIndex(activeIdx, i);
-      }
-    }
-    return false;
-  }
+  bool canNeuronBranch(String neuronId, {int layerLimit = pyramidLayerCount}) =>
+      branchBlockReason(neuronId, layerLimit: layerLimit) == null;
 
   /// Reason a neuron cannot branch right now, for UI messaging.
   /// Returns null if the neuron CAN branch.
-  NeuronBranchBlock? branchBlockReason(String neuronId) {
+  NeuronBranchBlock? branchBlockReason(
+    String neuronId, {
+    int layerLimit = pyramidLayerCount,
+  }) {
     final neuron = findNeuron(neuronId);
     final layer = findNeuronLayer(neuronId);
     if (neuron == null || layer == null) return NeuronBranchBlock.unknown;
     if (neuron.hasBranched) return NeuronBranchBlock.alreadyBranched;
-    if (layer.index >= 6) return NeuronBranchBlock.terminal;
 
     final i = layer.neurons.indexOf(neuron);
-    if (!isEligibleParentIndex(layer.index, i)) {
+    // Structural check against the full design first, then the prestige gate.
+    if (!isEligibleParentIndex(layer.index, i, layerLimit: maxLayerCount)) {
       return NeuronBranchBlock.terminal;
     }
+    if (!isEligibleParentIndex(layer.index, i, layerLimit: layerLimit)) {
+      return NeuronBranchBlock.depthLocked;
+    }
 
-    final activeIdx = activeExpansionLayerIndex;
+    final activeIdx = activeExpansionLayerIndex(layerLimit: layerLimit);
     if (activeIdx < 0) return NeuronBranchBlock.networkComplete;
     if (layer.index != activeIdx) {
       return NeuronBranchBlock.previousLayerIncomplete;
@@ -329,6 +383,7 @@ class NeuralNetwork {
         'unlocked': unlocked,
         'loss': loss,
         'lowestLossEver': lowestLossEver,
+        'epochs': epochs,
       };
 
   factory NeuralNetwork.fromJson(Map<String, dynamic> j) {
@@ -346,6 +401,7 @@ class NeuralNetwork {
       unlocked: (j['unlocked'] as bool?) ?? false,
       loss: loadedLoss.clamp(0.0, 1.0),
       lowestLossEver: loadedLowest.clamp(0.0, 1.0),
+      epochs: ((j['epochs'] as num?)?.toInt() ?? 0).clamp(0, 1000000),
     );
 
     // Migrate v0 saves: non-last-layer neurons were implicitly fully branched

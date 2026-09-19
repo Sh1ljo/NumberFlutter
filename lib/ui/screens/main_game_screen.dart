@@ -10,6 +10,7 @@ import '../widgets/pulse_number.dart';
 import '../widgets/floating_tap_text.dart';
 import '../widgets/profile_editor_dialog.dart';
 import '../widgets/tap_ripple_effect.dart';
+import 'achievements_screen.dart';
 import 'auth_screen.dart';
 import 'player_stats_screen.dart';
 import 'profile_screen.dart';
@@ -240,6 +241,12 @@ class _MainGameScreenState extends State<MainGameScreen> {
                           ),
                           Row(
                             children: [
+                              IconButton(
+                                tooltip: 'Achievements',
+                                onPressed: () =>
+                                    AchievementsScreen.open(context),
+                                icon: const Icon(Icons.military_tech_outlined),
+                              ),
                               IconButton(
                                 tooltip: 'Ranks',
                                 onPressed: _openLeaderboard,

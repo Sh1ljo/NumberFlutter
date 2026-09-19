@@ -273,13 +273,17 @@ class _NeuralCanvasState extends State<NeuralCanvas>
                                       top: positions[neuron.id]!.dy -
                                           NeuralLayout.neuronSize / 2,
                                       child: NeuronWidget(
-                                        key: neuron.id == widget.tutorialNeuronId
-                                            ? widget.neuralNeuronKey
-                                            : null,
+                                        key:
+                                            neuron.id == widget.tutorialNeuronId
+                                                ? widget.neuralNeuronKey
+                                                : null,
                                         neuron: neuron,
                                         pulse: _pulseCurve,
                                         highlight: widget.network
-                                            .canNeuronBranch(neuron.id),
+                                            .canNeuronBranch(neuron.id,
+                                                layerLimit: context
+                                                    .read<GameState>()
+                                                    .neuralLayerLimit),
                                         onTap: () {
                                           context
                                               .read<GameState>()

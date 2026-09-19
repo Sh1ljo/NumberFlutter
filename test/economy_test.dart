@@ -265,10 +265,14 @@ void main() {
   group('neural network', () {
     test('gradient cap is shared by the cost ladder and the UI', () {
       final neuron = NeuralNeuron(id: 'layer_0_neuron_0');
-      expect(NeuralNeuron.maxGradientLevel, 9);
-      neuron.gradientLevel = NeuralNeuron.maxGradientLevel;
-      expect(neuron.isGradientMaxed, isTrue);
-      expect(neuron.gradientUpgradeCost, BigInt.zero);
+      final network = NeuralNetwork(layers: [
+        NeuralLayer(index: 0, neurons: [neuron]),
+      ]);
+      expect(network.gradientCap, NeuralNetwork.baseGradientCap);
+      expect(NeuralNetwork.baseGradientCap, 9);
+      neuron.gradientLevel = network.gradientCap;
+      expect(network.isGradientMaxed(neuron), isTrue);
+      expect(network.gradientUpgradeCost(neuron), BigInt.zero);
     });
 
     test('a maxed network trains in days, not weeks', () {

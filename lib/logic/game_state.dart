@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/upgrade.dart';
 import '../models/research_node.dart';
 import '../models/player_progress.dart';
 import '../data/nexus_data.dart';
+import '../data/achievement_data.dart';
+import '../data/artifact_data.dart';
+import '../models/artifact.dart';
 import '../models/neural_network.dart';
 import 'connectivity_service.dart';
 import 'storage_service.dart';
@@ -83,6 +87,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _temporalCollapseActive = false;
   bool _temporalCollapseCoolingDown = false;
 
+  /// Temporal Collapse doubles production while active. Kept as its own
+  /// factor rather than written into [prestigeMultiplier]: that used to make
+  /// the doubling permanent if the player prestiged or saved mid-window.
+  double get _temporalCollapseFactor => _temporalCollapseActive ? 2.0 : 1.0;
+
+  final List<double> _echoRecentGains = [];
+  int _echoClickCounter = 0;
+  double _overclockCoreElapsed = 0.0;
+  double _compoundVaultElapsed = 0.0;
+
   BigInt offlineGainsThisSession = BigInt.zero;
   double offlineAccuracyGain = 0.0;
   BigInt highestNumber = BigInt.zero;
@@ -156,6 +170,99 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _affordabilityNotified = {};
 
   List<ResearchNode> researchNodes = NexusData.allNodes();
+
+  // ── Achievements ───────────────────────────────────────────────────────
+  /// Manual taps across every run. Persisted; never reset by prestige.
+  int lifetimeClicks = 0;
+  final Set<String> _unlockedAchievements = {};
+  final List<String> _pendingAchievementNotices = [];
+
+  Set<String> get unlockedAchievements =>
+      Set.unmodifiable(_unlockedAchievements);
+  List<String> get pendingAchievementIds =>
+      List.unmodifiable(_pendingAchievementNotices);
+  void dismissAchievementNotice(String id) {
+    _pendingAchievementNotices.remove(id);
+  }
+
+  /// Each unlocked achievement adds a flat 1% to all production.
+  double get achievementBonus =>
+      1.0 + _unlockedAchievements.length * Achievements.bonusPerAchievement;
+
+  bool _unlockAchievement(String id) {
+    if (!_unlockedAchievements.add(id)) return false;
+    _pendingAchievementNotices.add(id);
+    return true;
+  }
+
+  /// Polls every state-based achievement. Returns true if any unlocked.
+  bool _checkAchievements() {
+    var unlocked = false;
+    for (final a in Achievements.all) {
+      final check = a.isMet;
+      if (check == null || _unlockedAchievements.contains(a.id)) continue;
+      if (check(this) && _unlockAchievement(a.id)) unlocked = true;
+    }
+    if (unlocked) _scheduleStateSave();
+    return unlocked;
+  }
+
+  // ── Artifacts ──────────────────────────────────────────────────────────
+  ArtifactState artifactState = ArtifactState();
+
+  int _artifactLevel(String id) => artifactState.levelOf(id);
+
+  int get pendingArtifactChoices =>
+      artifactState.pendingChoices(prestigeCount);
+
+  /// The three artifacts on offer for the next unclaimed milestone.
+  List<String>? get currentArtifactOffer =>
+      artifactState.ensureOffer(prestigeCount, Artifacts.allIds);
+
+  bool chooseArtifact(String id) {
+    currentArtifactOffer;
+    if (!artifactState.choose(id)) return false;
+    _onArtifactsChanged();
+    return true;
+  }
+
+  double empowerCostFor(String id) =>
+      ArtifactState.empowerCost(_artifactLevel(id));
+
+  bool empowerArtifact(String id) {
+    final level = _artifactLevel(id);
+    if (level <= 0) return false;
+    final cost = ArtifactState.empowerCost(level);
+    if (prestigeCurrency < cost) return false;
+    prestigeCurrency -= cost;
+    artifactState.levels[id] = level + 1;
+    _onArtifactsChanged();
+    return true;
+  }
+
+  void _onArtifactsChanged() {
+    // Milestone Compass feeds click power / idle rate, Synapse Crown feeds
+    // neural strength and costs.
+    _recalculateDerivedStatsFromUpgrades();
+    _neuralRevision++;
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
+  }
+
+  /// Resonance Prism: bonus per maxed Nexus node.
+  double get resonancePrismMultiplier {
+    final per = Artifacts.prismPerMaxedNode(
+        _artifactLevel(Artifacts.resonancePrism));
+    if (per <= 0) return 1.0;
+    final maxed = researchNodes.where((n) => n.isMaxed).length;
+    return 1.0 + per * maxed;
+  }
+
+  /// Everything that multiplies all production (idle and click) outside of
+  /// the prestige multiplier: achievements, Resonance Prism, Epochs.
+  double get globalProductionMultiplier =>
+      achievementBonus * resonancePrismMultiplier * epochProductionMultiplier;
 
   NeuralNetwork neuralNetwork = NeuralNetwork.initial();
   bool get neuralNetworkUnlocked => _nexusLevel('neural_genesis') >= 1;
@@ -499,8 +606,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Multiplier on offline gains (Quick Resume).
   double get offlineGainMultiplier {
     final level = _nexusLevel('quick_resume');
-    return 1.0 + level * 0.10;
+    return (1.0 + level * 0.10) *
+        Artifacts.chronoOfflineMultiplier(_artifactLevel(Artifacts.chronoLens));
   }
+
+  /// Offline time beyond this is not credited (idle income only; neural
+  /// training still runs for the whole absence).
+  static const double baseOfflineCapHours = 12.0;
+  double get offlineCapHours =>
+      baseOfflineCapHours +
+      Artifacts.chronoCapBonusHours(_artifactLevel(Artifacts.chronoLens));
 
   /// Flat addition to the momentum cap (Kinetic Surge).
   double get momentumCapBonus => _nexusLevel('kinetic_surge') * 0.1;
@@ -516,6 +631,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final level = _nexusLevel('echo_protocol');
     return 1.0 + level * 0.10;
   }
+
+  /// Tithe Engine: extra PP per artifact owned.
+  double get titheMultiplier =>
+      1.0 +
+      Artifacts.titheBonusPerArtifact(_artifactLevel(Artifacts.titheEngine)) *
+          artifactState.ownedCount;
 
   void purchaseResearch(String nodeId) {
     final node = researchNodes.where((n) => n.id == nodeId).firstOrNull;
@@ -545,6 +666,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _tutorialStep == TutorialStep.nexusResearchOptProtocol) {
       _tutorialStep = TutorialStep.nexusGoal;
     }
+    _checkAchievements();
     notifyListeners();
     _saveState();
   }
@@ -553,10 +675,74 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── Neural Network ─────────────────────────────────────────────────────
 
+  /// Prestige counts at which deep layers 7, 8, 9 and 10 become growable.
+  static const List<int> deepLayerPrestigeGates = [18, 22, 26, 30];
+
+  /// How many layers the network may have at the current prestige count.
+  int get neuralLayerLimit =>
+      NeuralNetwork.pyramidLayerCount +
+      deepLayerPrestigeGates.where((g) => prestigeCount >= g).length;
+
+  /// Prestige count that unlocks the next deep layer, or null if all are.
+  int? get nextDeepLayerGate {
+    for (final g in deepLayerPrestigeGates) {
+      if (g > prestigeCount) return g;
+    }
+    return null;
+  }
+
+  bool canBranchNeuron(String neuronId) =>
+      neuralNetwork.canNeuronBranch(neuronId, layerLimit: neuralLayerLimit);
+
+  NeuronBranchBlock? neuronBranchBlockReason(String neuronId) =>
+      neuralNetwork.branchBlockReason(neuronId, layerLimit: neuralLayerLimit);
+
+  int get neuralActiveExpansionLayer =>
+      neuralNetwork.activeExpansionLayerIndex(layerLimit: neuralLayerLimit);
+
+  BigInt _applyNeuralDiscount(BigInt cost) {
+    final factor =
+        Artifacts.synapseCostFactor(_artifactLevel(Artifacts.synapseCrown));
+    if (factor >= 1.0) return cost;
+    return cost * BigInt.from((factor * 10000).round()) ~/ BigInt.from(10000);
+  }
+
+  BigInt get neuralBranchCost => _applyNeuralDiscount(
+      neuralNetwork.addLayerCost(neuralNetwork.layers.length));
+
+  BigInt neuronGradientCost(NeuralNeuron neuron) =>
+      _applyNeuralDiscount(neuralNetwork.gradientUpgradeCost(neuron));
+
+  double get _neuralPreferredBonus =>
+      Artifacts.synapsePreferredBonus(_artifactLevel(Artifacts.synapseCrown));
+  double get neuralPreferredBonus => _neuralPreferredBonus;
+
+  // ── Epochs ──
+  bool get canStartEpoch =>
+      neuralNetworkUnlocked && neuralNetwork.canStartEpoch;
+
+  /// Permanent production bonus from completed Epochs.
+  double get epochProductionMultiplier => 1.0 + 0.1 * neuralNetwork.epochs;
+
+  /// Each Epoch trains 15% slower, so the loop keeps getting longer.
+  double get _effectiveNeuralDecayK =>
+      _neuralDecayK * math.pow(0.85, neuralNetwork.epochs).toDouble();
+
+  bool startEpoch() {
+    if (!canStartEpoch) return false;
+    neuralNetwork.startEpoch();
+    _neuralRevision++;
+    _unlockAchievement(Achievements.firstEpoch);
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
+    return true;
+  }
+
   bool upgradeNeuronGradient(String neuronId) {
     final neuron = neuralNetwork.findNeuron(neuronId);
-    if (neuron == null || neuron.isGradientMaxed) return false;
-    final cost = neuron.gradientUpgradeCost;
+    if (neuron == null || neuralNetwork.isGradientMaxed(neuron)) return false;
+    final cost = neuronGradientCost(neuron);
     if (number < cost) return false;
     number -= cost;
     neuron.gradientLevel++;
@@ -587,8 +773,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool branchNeuron(String neuronId) {
-    if (!neuralNetwork.canNeuronBranch(neuronId)) return false;
-    final cost = neuralNetwork.addLayerCost(neuralNetwork.layers.length);
+    if (!canBranchNeuron(neuronId)) return false;
+    final cost = neuralBranchCost;
     if (number < cost) return false;
 
     final neuron = neuralNetwork.findNeuron(neuronId);
@@ -607,7 +793,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       int eligibleCount = 0;
       int eligibleIndexOfParent = -1;
       for (int i = 0; i < layer.neurons.length; i++) {
-        if (!NeuralNetwork.isEligibleParentIndex(layer.index, i)) continue;
+        if (!NeuralNetwork.isEligibleParentIndex(layer.index, i,
+            layerLimit: neuralLayerLimit)) {
+          continue;
+        }
         if (layer.neurons[i].id == neuron.id) {
           eligibleIndexOfParent = eligibleCount;
         }
@@ -648,6 +837,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       // loss HUD from a frame where the sheet was still covering it.
       _pendingNeuralAccuracyStep = true;
     }
+    _checkAchievements();
     notifyListeners();
     _scheduleStateSave();
     return true;
@@ -814,13 +1004,51 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double calculatePrestigePoints(BigInt currentNumber) {
     final requirement = prestigeRequirement;
     if (currentNumber < requirement) return 0.0;
-    return nextPrestigeReward * prestigePointsMultiplier;
+    return nextPrestigeReward * prestigePointsMultiplier * titheMultiplier;
   }
 
   // Testing utility: add prestige currency directly
   void addPrestigePointsForTesting(int amount) {
     prestigeCurrency = prestigeCurrency + amount;
     notifyListeners();
+  }
+
+  // Testing utility: add number without touching anything else.
+  void addNumberForTesting(BigInt amount) {
+    number += amount;
+    _updateHighestNumber();
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
+  }
+
+  // Testing utility: count [count] prestiges (and their multiplier gain)
+  // without resetting the run, so deep layers and artifact milestones can
+  // be reached quickly.
+  void addPrestigesForTesting(int count) {
+    final old = prestigeCount;
+    for (var i = 0; i < count; i++) {
+      prestigeMultiplier += nextPrestigeDelta;
+      prestigeCount++;
+    }
+    _queueNewlyUnlockedUpgrades(old, prestigeCount);
+    _recalculateDerivedStatsFromUpgrades();
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
+  }
+
+  // Testing utility: jump neural training to the loss floor so Epochs can
+  // be tried without waiting days.
+  void finishNeuralTrainingForTesting() {
+    if (!neuralNetworkUnlocked) return;
+    neuralNetwork.loss = _neuralMinLoss;
+    if (neuralNetwork.loss < neuralNetwork.lowestLossEver) {
+      neuralNetwork.lowestLossEver = neuralNetwork.loss;
+    }
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
   }
 
   /// Resolve a persisted step by name, falling back to the start of the
@@ -914,6 +1142,21 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
+      lifetimeClicks = (data['lifetimeClicks'] as int?) ?? 0;
+      _unlockedAchievements
+        ..clear()
+        ..addAll((data['achievements'] as List<String>?) ?? const []);
+      final artifactsJson = data['artifacts'] as String?;
+      if (artifactsJson != null) {
+        try {
+          artifactState = ArtifactState.fromJson(
+              jsonDecode(artifactsJson) as Map<String, dynamic>);
+        } catch (_) {
+          artifactState = ArtifactState();
+        }
+      }
+      _recalculateDerivedStatsFromUpgrades();
+
       final nnJson = data['neuralNetwork'] as String?;
       if (nnJson != null) {
         try {
@@ -956,9 +1199,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (lastPlayed != null) {
       final diff = (now ?? DateTime.now()).difference(lastPlayed).inSeconds;
       if (diff <= 0) return;
+      if (diff >= 8 * 3600) _unlockAchievement(Achievements.longAbsence);
 
+      final capSeconds = (offlineCapHours * 3600).floor();
+      final credited = diff < capSeconds ? diff : capSeconds;
       if (totalIdleRate > 0) {
-        final offlineGains = totalIdleRate * diff * offlineGainMultiplier;
+        final offlineGains = totalIdleRate * credited * offlineGainMultiplier;
         offlineGainsThisSession = BigInt.from(offlineGains.floor());
         number += offlineGainsThisSession;
         _updateHighestNumber();
@@ -970,7 +1216,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         if (s > 0) {
           final oldAccuracy = neuralNetwork.accuracy;
           final newLoss =
-              neuralNetwork.loss * math.exp(-_neuralDecayK * s * diff);
+              neuralNetwork.loss * math.exp(-_effectiveNeuralDecayK * s * diff);
           neuralNetwork.loss =
               newLoss < _neuralMinLoss ? _neuralMinLoss : newLoss;
           if (neuralNetwork.loss < neuralNetwork.lowestLossEver) {
@@ -1019,7 +1265,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         final s = neuralNetworkStrength;
         if (s > 0) {
           final next =
-              neuralNetwork.loss * math.exp(-_neuralDecayK * s * _neuralDt);
+              neuralNetwork.loss * math.exp(-_effectiveNeuralDecayK * s * _neuralDt);
 
           // Temporarily disable stochastic jitter so accuracy progression is
           // strictly monotonic from live training updates.
@@ -1029,6 +1275,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
           }
           hasStateChange = true;
         }
+      }
+
+      if (_tickArtifacts()) hasStateChange = true;
+      if (timer.tick % 10 == 0 && _checkAchievements()) {
+        hasStateChange = true;
       }
 
       // Periodically persist — pulled out of the autoClickRate>0 block so
@@ -1043,6 +1294,42 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
       }
     });
+  }
+
+  /// Overclock Core and Compound Vault, advanced once per 100ms tick.
+  bool _tickArtifacts() {
+    var changed = false;
+    final coreInterval = Artifacts.overclockCoreInterval(
+        _artifactLevel(Artifacts.overclockCore));
+    if (coreInterval != null) {
+      _overclockCoreElapsed += _neuralDt;
+      if (_overclockCoreElapsed >= coreInterval) {
+        _overclockCoreElapsed = 0.0;
+        if (!_overclockActive) {
+          _activateOverclock();
+          changed = true;
+        }
+      }
+    }
+
+    final vaultLevel = _artifactLevel(Artifacts.compoundVault);
+    if (vaultLevel > 0) {
+      _compoundVaultElapsed += _neuralDt;
+      if (_compoundVaultElapsed >= Artifacts.compoundIntervalSeconds) {
+        _compoundVaultElapsed = 0.0;
+        final share = number.toDouble() * Artifacts.compoundShare(vaultLevel);
+        final cap = totalIdleRate *
+            60 *
+            Artifacts.compoundCapMinutes(vaultLevel);
+        final payout = share < cap ? share : cap;
+        if (payout.isFinite && payout >= 1) {
+          number += BigInt.from(payout.floor());
+          _updateHighestNumber();
+          changed = true;
+        }
+      }
+    }
+    return changed;
   }
 
   // ── Neural network decay tuning ────────────────────────────────────────
@@ -1060,8 +1347,19 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// the "days" band rather than drifting back into a multi-week timer.
   static double get neuralDecayK => _neuralDecayK;
   static const double _neuralMinLoss = 0.001; // floor: max accuracy ≈ 99.96%
-  static const double _neuralBoostScale = 30.0;
-  static const double _neuralSoftCapPerPrestige = 5.0;
+  static const double _neuralBaseBoostScale = 30.0;
+  static const double _neuralBoostPerDeepLayer = 10.0;
+  static const double _neuralBaseSoftCapPerPrestige = 5.0;
+
+  /// Max multiplier from a fully trained network. Deep layers raise the
+  /// ceiling instead of only making training faster.
+  double get _neuralBoostScale =>
+      _neuralBaseBoostScale +
+      _neuralBoostPerDeepLayer * neuralNetwork.deepLayerCount;
+
+  /// Each Epoch lifts the per-prestige soft cap by one.
+  double get _neuralSoftCapPerPrestige =>
+      _neuralBaseSoftCapPerPrestige + neuralNetwork.epochs;
 
   bool get isOverclockActive => _overclockActive;
   double get momentumMultiplier => _momentumMultiplier;
@@ -1079,8 +1377,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
     double idleRate = (autoClickRate + permanentIdleBonus) *
         prestigeMultiplier *
+        _temporalCollapseFactor *
         resonanceMultiplier *
-        neuralLossMultiplier;
+        neuralLossMultiplier *
+        globalProductionMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
@@ -1109,16 +1409,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   NeuralNetwork? _strengthCacheNetwork;
   int _strengthCacheRevision = -1;
+  double _strengthCacheBonus = -1;
   double _strengthCache = 0.0;
 
   /// [NeuralNetwork.computeStrength], cached against [neuralTopologyKey].
   /// Strength depends only on the shape, but the ticker needs it 10x/s.
   double get neuralNetworkStrength {
+    final bonus = _neuralPreferredBonus;
     if (!identical(_strengthCacheNetwork, neuralNetwork) ||
-        _strengthCacheRevision != _neuralRevision) {
-      _strengthCache = neuralNetwork.computeStrength();
+        _strengthCacheRevision != _neuralRevision ||
+        _strengthCacheBonus != bonus) {
+      _strengthCache = neuralNetwork.computeStrength(preferredBonus: bonus);
       _strengthCacheNetwork = neuralNetwork;
       _strengthCacheRevision = _neuralRevision;
+      _strengthCacheBonus = bonus;
     }
     return _strengthCache;
   }
@@ -1143,7 +1447,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Live decay rate (loss-units per second per current loss) for HUD display.
   double get neuralDecayRate {
     if (!neuralNetworkUnlocked) return 0.0;
-    return _neuralDecayK * neuralNetworkStrength;
+    return _effectiveNeuralDecayK * neuralNetworkStrength;
   }
 
   int upgradeMilestoneMultiplierForLevel(int level) {
@@ -1155,7 +1459,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         reachedMilestones++;
       }
     }
-    return 1 << reachedMilestones;
+    final base =
+        Artifacts.milestoneBase(_artifactLevel(Artifacts.milestoneCompass));
+    if (base == 2.0) return 1 << reachedMilestones;
+    return math.pow(base, reachedMilestones).round();
   }
 
   int upgradeMilestoneMultiplier(Upgrade upgrade) {
@@ -1211,7 +1518,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get _probabilityStrikeChance {
     final level = _upgradeLevel(probabilityStrikeId);
     if (level <= 0) return 0.0;
-    return 0.05; // Fixed 5% chance
+    return Artifacts.strikeChance(_artifactLevel(Artifacts.loadedDice));
   }
 
   double get _probabilityStrikeMultiplier {
@@ -1361,6 +1668,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     _clickStreak++;
+    lifetimeClicks++;
     _lastManualClickTime = now;
 
     if (_isUpgradeActive(momentumId)) {
@@ -1391,18 +1699,35 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
             (_rng.nextDouble() < _probabilityStrikeChance ||
                 _tutorialForcesStrike);
 
-    final baseClickGain =
-        clickPower.toDouble() * prestigeMultiplier * neuralLossMultiplier;
-    // kineticBonus inherits neuralLossMultiplier via totalIdleRate, so we
-    // don't multiply it again here.
+    final baseClickGain = clickPower.toDouble() *
+        prestigeMultiplier *
+        _temporalCollapseFactor *
+        neuralLossMultiplier *
+        globalProductionMultiplier;
+    // kineticBonus inherits every multiplier via totalIdleRate, so we don't
+    // multiply it again here.
     final kineticBonus = totalIdleRate * _kineticSynergyShare;
 
-    double gain = (baseClickGain + kineticBonus) * _momentumMultiplier;
+    double gain = (baseClickGain + kineticBonus) * _effectiveMomentumMultiplier;
     if (probabilityStrikeTriggered) {
+      _unlockAchievement(Achievements.firstStrike);
+      final unstruck = gain;
       gain *= _probabilityStrikeMultiplier;
+      // Loaded Dice: each chain pays another full strike.
+      final chainChance =
+          Artifacts.strikeChainChance(_artifactLevel(Artifacts.loadedDice));
+      var chains = 0;
+      while (chains < 3 && _rng.nextDouble() < chainChance) {
+        gain += unstruck * _probabilityStrikeMultiplier;
+        chains++;
+      }
     }
     if (_neuralSparkBoostMultiplier != 1.0) {
       gain *= _neuralSparkBoostMultiplier;
+    }
+    gain += _echoChamberBonus(gain);
+    if (_momentumProgress >= 1.0) {
+      _unlockAchievement(Achievements.maxMomentum);
     }
 
     final previousHighest = highestNumber;
@@ -1437,6 +1762,33 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  /// Perpetual Motion keeps momentum from dropping below a share of its cap.
+  double get _effectiveMomentumMultiplier {
+    final floorShare =
+        Artifacts.momentumFloor(_artifactLevel(Artifacts.perpetualMotion));
+    if (floorShare <= 0 || !_isUpgradeActive(momentumId)) {
+      return _momentumMultiplier;
+    }
+    final floor = 1.0 + (_momentumCap - 1.0) * floorShare;
+    return _momentumMultiplier > floor ? _momentumMultiplier : floor;
+  }
+
+  /// Echo Chamber: records [gain], and on every Nth tap returns a share of
+  /// the last few taps' total as a bonus.
+  double _echoChamberBonus(double gain) {
+    final level = _artifactLevel(Artifacts.echoChamber);
+    if (level <= 0) return 0.0;
+    _echoRecentGains.add(gain);
+    if (_echoRecentGains.length > Artifacts.echoWindow) {
+      _echoRecentGains.removeAt(0);
+    }
+    _echoClickCounter++;
+    if (_echoClickCounter < Artifacts.echoInterval) return 0.0;
+    _echoClickCounter = 0;
+    final total = _echoRecentGains.fold<double>(0.0, (a, b) => a + b);
+    return total * Artifacts.echoShare(level);
+  }
+
   /// Called when the player catches a "Neural Spark" — the tap minigame
   /// spawned by [MainGameScreen]. Grants a temporary click-power multiplier
   /// so catching one rewards a short burst of active play, distinct from the
@@ -1447,6 +1799,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }) {
     _neuralSparkBoostTimer?.cancel();
     _neuralSparkBoostMultiplier = multiplier;
+    _unlockAchievement(Achievements.sparkCatcher);
     notifyListeners();
 
     _neuralSparkBoostTimer = Timer(duration, () {
@@ -1459,6 +1812,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _overclockTimer?.cancel();
     final durationSeconds = _overclockDurationSeconds;
     _overclockActive = true;
+    _unlockAchievement(Achievements.firstOverclock);
     notifyListeners();
 
     _overclockTimer = Timer(Duration(seconds: durationSeconds), () {
@@ -1477,12 +1831,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   int get temporalCollapseDurationSeconds {
     final lvl = _temporalCollapseLevel;
-    return 30 + lvl * 15;
+    final factor =
+        Artifacts.tempoDurationFactor(_artifactLevel(Artifacts.tempoAnchor));
+    return ((30 + lvl * 15) * factor).round();
   }
 
   int get temporalCollapseCooldownSeconds {
     final lvl = _temporalCollapseLevel;
-    return math.max(80, 180 - lvl * 20);
+    final base = math.max(80, 180 - lvl * 20);
+    final anchor = _artifactLevel(Artifacts.tempoAnchor);
+    if (anchor <= 0) return base;
+    return math.max(Artifacts.tempoCooldownFloorSeconds,
+        (base * Artifacts.tempoCooldownFactor(anchor)).round());
   }
 
   bool get canActivateTemporalCollapse =>
@@ -1499,19 +1859,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     number += burst;
     _updateHighestNumber();
 
-    // Temporarily double prestige multiplier for the duration
-    prestigeMultiplier *= 2.0;
+    // Doubles production for the duration via _temporalCollapseFactor.
     _temporalCollapseActive = true;
-    _recalculateDerivedStatsFromUpgrades();
+    _unlockAchievement(Achievements.firstCollapse);
     notifyListeners();
 
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseActiveTimer =
         Timer(Duration(seconds: temporalCollapseDurationSeconds), () {
-      prestigeMultiplier /= 2.0;
       _temporalCollapseActive = false;
       _temporalCollapseCoolingDown = true;
-      _recalculateDerivedStatsFromUpgrades();
       notifyListeners();
 
       _temporalCollapseCooldownTimerRef?.cancel();
@@ -1662,6 +2019,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       upgrade.level += info.amount;
       _recalculateDerivedStatsFromUpgrades();
       _advanceTutorialOnPurchase(id);
+      _checkAchievements();
       notifyListeners();
       _saveState();
     }
@@ -1717,6 +2075,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     for (var u in upgrades) {
       u.level = 0;
     }
+    final genesisLevel =
+        Artifacts.genesisStartLevel(_artifactLevel(Artifacts.genesisKit));
+    if (genesisLevel > 0) {
+      for (final id in Artifacts.genesisKitTiers) {
+        _upgradeById(id)?.level = genesisLevel;
+      }
+    }
+    _echoRecentGains.clear();
+    _echoClickCounter = 0;
     _recalculateDerivedStatsFromUpgrades();
 
     final carryBps = surgeProtocolNetWorthCarryBps;
@@ -1730,6 +2097,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     _completeTutorialOnPrestige();
+    _checkAchievements();
     _startTicker();
     notifyListeners();
     _saveState();
@@ -1792,6 +2160,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     _affordabilityNotified.clear();
     _pendingUnlockNotices.clear();
+    lifetimeClicks = 0;
+    _unlockedAchievements.clear();
+    _pendingAchievementNotices.clear();
+    artifactState = ArtifactState();
+    _echoRecentGains.clear();
+    _echoClickCounter = 0;
+    _overclockCoreElapsed = 0.0;
+    _compoundVaultElapsed = 0.0;
     neuralNetwork = NeuralNetwork.initial();
     if (!preserveTutorial) {
       _tutorialCompleted = false;
@@ -1839,6 +2215,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       ),
       neuralLoss: neuralNetwork.loss,
       neuralLowestLoss: neuralNetwork.lowestLossEver,
+      neuralNetworkJson: neuralNetwork.toJsonString(),
+      achievements: _unlockedAchievements.toList()..sort(),
+      lifetimeClicks: lifetimeClicks,
+      artifactsJson: jsonEncode(artifactState.toJson()),
       updatedAt: _loadFailed
           ? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
           : (_lastSavedAt?.toUtc() ?? now),
@@ -1870,10 +2250,35 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       node.level = (progress.nexusLevels[node.id] ?? 0).clamp(0, node.maxLevel);
     }
 
+    // The cloud copy carries the whole network when it was uploaded by a
+    // build that syncs topology; older rows only have the loss values.
+    final remoteNetworkJson = progress.neuralNetworkJson;
+    if (remoteNetworkJson != null) {
+      try {
+        final bestLocal = neuralNetwork.lowestLossEver;
+        neuralNetwork = NeuralNetwork.fromJsonString(remoteNetworkJson);
+        if (bestLocal < neuralNetwork.lowestLossEver) {
+          neuralNetwork.lowestLossEver = bestLocal;
+        }
+      } catch (_) {}
+    }
+
+    _unlockedAchievements.addAll(progress.achievements);
+    if (progress.lifetimeClicks > lifetimeClicks) {
+      lifetimeClicks = progress.lifetimeClicks;
+    }
+    final remoteArtifacts = progress.artifactsJson;
+    if (remoteArtifacts != null) {
+      try {
+        artifactState = ArtifactState.fromJson(
+            jsonDecode(remoteArtifacts) as Map<String, dynamic>);
+      } catch (_) {}
+    }
+
     // Carry forward neural loss from the cloud — keep whichever loss is
     // lower (more progress) so a stale upload can never wipe a better
     // training run on a different device.
-    if (progress.neuralLoss < neuralNetwork.loss) {
+    if (remoteNetworkJson == null && progress.neuralLoss < neuralNetwork.loss) {
       neuralNetwork.loss = progress.neuralLoss.clamp(0.0, 1.0);
     }
     final remoteBest = progress.neuralLowestLoss.clamp(0.0, 1.0);
@@ -2080,6 +2485,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       nexusStabilized: _nexusStabilized,
       neuralNetworkJson: neuralNetwork.toJsonString(),
       testEnvironmentEnabled: _testEnvironmentEnabled,
+      lifetimeClicks: lifetimeClicks,
+      achievements: _unlockedAchievements.toList()..sort(),
+      artifactsJson: jsonEncode(artifactState.toJson()),
     );
     _lastSavedAt = DateTime.now();
     _perfSw.stop(); // TEMP-PERF-PROBE

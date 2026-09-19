@@ -14,6 +14,12 @@ class PlayerProgress {
   final int progressScore;
   final double neuralLoss;
   final double neuralLowestLoss;
+
+  /// Full neural network JSON. Null on rows written before topology sync.
+  final String? neuralNetworkJson;
+  final List<String> achievements;
+  final int lifetimeClicks;
+  final String? artifactsJson;
   final DateTime updatedAt;
 
   const PlayerProgress({
@@ -30,6 +36,10 @@ class PlayerProgress {
     required this.progressScore,
     this.neuralLoss = 1.0,
     this.neuralLowestLoss = 1.0,
+    this.neuralNetworkJson,
+    this.achievements = const [],
+    this.lifetimeClicks = 0,
+    this.artifactsJson,
     required this.updatedAt,
   });
 
@@ -71,6 +81,10 @@ class PlayerProgress {
     int? progressScore,
     double? neuralLoss,
     double? neuralLowestLoss,
+    String? neuralNetworkJson,
+    List<String>? achievements,
+    int? lifetimeClicks,
+    String? artifactsJson,
     DateTime? updatedAt,
   }) {
     return PlayerProgress(
@@ -87,6 +101,10 @@ class PlayerProgress {
       progressScore: progressScore ?? this.progressScore,
       neuralLoss: neuralLoss ?? this.neuralLoss,
       neuralLowestLoss: neuralLowestLoss ?? this.neuralLowestLoss,
+      neuralNetworkJson: neuralNetworkJson ?? this.neuralNetworkJson,
+      achievements: achievements ?? this.achievements,
+      lifetimeClicks: lifetimeClicks ?? this.lifetimeClicks,
+      artifactsJson: artifactsJson ?? this.artifactsJson,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -106,6 +124,10 @@ class PlayerProgress {
       'progress_score': progressScore,
       'neural_loss': neuralLoss,
       'neural_lowest_loss': neuralLowestLoss,
+      if (neuralNetworkJson != null) 'neural_network': neuralNetworkJson,
+      'achievements': achievements,
+      'lifetime_clicks': lifetimeClicks,
+      if (artifactsJson != null) 'artifacts': artifactsJson,
       'updated_at': updatedAt.toUtc().toIso8601String(),
     };
   }
@@ -152,6 +174,12 @@ class PlayerProgress {
           ),
       neuralLoss: (row['neural_loss'] as num?)?.toDouble() ?? 1.0,
       neuralLowestLoss: (row['neural_lowest_loss'] as num?)?.toDouble() ?? 1.0,
+      neuralNetworkJson: row['neural_network'] as String?,
+      achievements: (row['achievements'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(),
+      lifetimeClicks: (row['lifetime_clicks'] as num?)?.toInt() ?? 0,
+      artifactsJson: row['artifacts'] as String?,
       updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );

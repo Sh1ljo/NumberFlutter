@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'achievements_screen.dart';
+
 class MoreMenuScreen extends StatelessWidget {
   final Function(int) onMenuItemSelected;
 
@@ -26,6 +28,19 @@ class MoreMenuScreen extends StatelessWidget {
                 style: theme.textTheme.displayLarge?.copyWith(fontSize: 48),
               ),
               const SizedBox(height: 28),
+              _MenuItem(
+                title: 'Achievements',
+                description: 'Milestones — each one adds +1% production',
+                icon: Icons.military_tech_outlined,
+                onTap: () {
+                  final navigator = Navigator.of(context);
+                  navigator.pop();
+                  navigator.push(MaterialPageRoute<void>(
+                      builder: (_) => const AchievementsScreen()));
+                },
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
               _MenuItem(
                 title: 'Shop',
                 description: 'Unlock boosts and upgrades',

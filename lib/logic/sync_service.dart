@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/player_progress.dart';
 import 'backend_service.dart';
 
@@ -42,7 +44,7 @@ class SyncService {
     final remoteProgress = await _backendService
         .fetchProgress(userId: userId)
         .timeout(_cloudRequestTimeout);
-    final resolved = _pickWinner(
+    final resolved = pickWinner(
       local: localProgress,
       remote: remoteProgress,
       forceUpload: forceUpload,
@@ -54,7 +56,8 @@ class SyncService {
     return resolved;
   }
 
-  SyncResult _pickWinner({
+  @visibleForTesting
+  static SyncResult pickWinner({
     required PlayerProgress local,
     required PlayerProgress? remote,
     required bool forceUpload,
@@ -67,12 +70,24 @@ class SyncService {
         ? remote.neuralLowestLoss
         : local.neuralLowestLoss;
 
+    // Achievements and lifetime taps only ever grow, so both sides are
+    // merged rather than letting the timestamp winner erase the other's.
+    final mergedAchievements =
+        ({...local.achievements, ...remote.achievements}.toList()..sort());
+    final mergedClicks = local.lifetimeClicks > remote.lifetimeClicks
+        ? local.lifetimeClicks
+        : remote.lifetimeClicks;
+
     SyncResult buildResult(PlayerProgress base, SyncWinner winner) {
       // Always carry the lifetime-best lowestLoss across both sides — it's a
       // monotonic achievement, not a per-snapshot stat, so it shouldn't get
       // overwritten when the other side happens to win the timestamp race.
       return SyncResult(
-        resolved: base.copyWith(neuralLowestLoss: mergedLowestLoss),
+        resolved: base.copyWith(
+          neuralLowestLoss: mergedLowestLoss,
+          achievements: mergedAchievements,
+          lifetimeClicks: mergedClicks,
+        ),
         winner: winner,
       );
     }

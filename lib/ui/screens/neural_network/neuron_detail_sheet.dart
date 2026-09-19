@@ -59,11 +59,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
     int affordMask = 0;
     if (neuron != null) {
       final number = state.number;
-      if (number >= neuron.gradientUpgradeCost) affordMask |= 1;
-      final network = state.neuralNetwork;
-      if (number >= network.addLayerCost(network.layers.length)) {
-        affordMask |= 2;
-      }
+      if (number >= state.neuronGradientCost(neuron)) affordMask |= 1;
+      if (number >= state.neuralBranchCost) affordMask |= 2;
       for (int i = 0; i < activationFunctions.length; i++) {
         if (number >= neuron.activationChangeCost(activationFunctions[i])) {
           affordMask |= 4 << i;
@@ -142,6 +139,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
     required bool canAffordBranch,
     required BigInt branchCost,
     required int activeLayerIdx,
+    required int? nextDeepGate,
   }) {
     if (blockReason == NeuronBranchBlock.alreadyBranched) {
       return _statusPill(
@@ -167,8 +165,28 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
           const SizedBox(height: 8),
           Text(
             blockReason == NeuronBranchBlock.networkComplete
-                ? 'The pyramid is fully expanded — no more layers can be added.'
+                ? 'The network is fully expanded — no more layers can be added.'
                 : 'This neuron sits at a position that does not branch in the pyramid.',
+            style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+          ),
+        ],
+      );
+    }
+    if (blockReason == NeuronBranchBlock.depthLocked) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _statusPill(
+            theme: theme,
+            cs: cs,
+            text: 'DEEP LAYER LOCKED',
+            accent: false,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            nextDeepGate == null
+                ? 'The next deep layer is not available yet.'
+                : 'The next deep layer unlocks at Prestige $nextDeepGate.',
             style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
           ),
         ],
@@ -259,8 +277,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
       selector: (_, state) => _rebuildKey(state),
       builder: (context, _, __) {
         final state = context.read<GameState>();
-        final currentNeuron =
-            state.neuralNetwork.findNeuron(widget.neuron.id);
+        final currentNeuron = state.neuralNetwork.findNeuron(widget.neuron.id);
         if (currentNeuron == null) {
           // Popping during build asserts; do it once the frame is done.
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -269,42 +286,35 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
           return const SizedBox.shrink();
         }
 
-        final gradientCost = currentNeuron.gradientUpgradeCost;
+        final gradientCap = state.neuralNetwork.gradientCap;
+        final gradientMaxed =
+            state.neuralNetwork.isGradientMaxed(currentNeuron);
+        final gradientCost = state.neuronGradientCost(currentNeuron);
         final canAffordGradient =
-            !currentNeuron.isGradientMaxed && state.number >= gradientCost;
+            !gradientMaxed && state.number >= gradientCost;
 
-        final canBranch =
-            state.neuralNetwork.canNeuronBranch(currentNeuron.id);
-        final blockReason =
-            state.neuralNetwork.branchBlockReason(currentNeuron.id);
-        final branchCost =
-            state.neuralNetwork.addLayerCost(state.neuralNetwork.layers.length);
+        final canBranch = state.canBranchNeuron(currentNeuron.id);
+        final blockReason = state.neuronBranchBlockReason(currentNeuron.id);
+        final branchCost = state.neuralBranchCost;
         final canAffordBranch = canBranch && state.number >= branchCost;
-        final activeLayerIdx = state.neuralNetwork.activeExpansionLayerIndex;
+        final activeLayerIdx = state.neuralActiveExpansionLayer;
 
         final selectedFn = currentNeuron.activationFn;
         final fnDescription = activationFunctionDescriptions[selectedFn] ?? '';
 
-        final layer =
-            state.neuralNetwork.findNeuronLayer(currentNeuron.id);
+        final layer = state.neuralNetwork.findNeuronLayer(currentNeuron.id);
         final layerIndex = layer?.index ?? 0;
         final preferredFn = preferredActivationByLayer[layerIndex];
         final activationMatchesPreferred =
             preferredFn != null && currentNeuron.activationFn == preferredFn;
         final depthBonus = 1.0 + 0.25 * layerIndex;
-        final activationBonus = activationMatchesPreferred ? 1.10 : 1.0;
-        final neuronContribution =
-            (currentNeuron.gradientLevel + 1) * depthBonus * activationBonus;
+        final preferredBonus = state.neuralPreferredBonus;
+        final neuronContribution = NeuralNetwork.neuronContribution(
+            layerIndex, currentNeuron,
+            preferredBonus: preferredBonus);
         final networkStrength = state.neuralNetworkStrength;
-        double sumContributions = 0.0;
-        for (final l in state.neuralNetwork.layers) {
-          final db = 1.0 + 0.25 * l.index;
-          final pf = preferredActivationByLayer[l.index];
-          for (final n in l.neurons) {
-            final ab = (pf != null && n.activationFn == pf) ? 1.10 : 1.0;
-            sumContributions += (n.gradientLevel + 1) * db * ab;
-          }
-        }
+        final sumContributions =
+            state.neuralNetwork.contributionSum(preferredBonus: preferredBonus);
         final remaining = sumContributions - neuronContribution;
         final marginalStrength = remaining > 0
             ? networkStrength - math.log(1.0 + remaining)
@@ -324,8 +334,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
         return Container(
           decoration: BoxDecoration(
             color: cs.surfaceContainer,
-            border:
-                Border(top: BorderSide(color: cs.outlineVariant, width: 1)),
+            border: Border(top: BorderSide(color: cs.outlineVariant, width: 1)),
           ),
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).padding.bottom + 24,
@@ -348,8 +357,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         children: [
                           Icon(
                             Icons.touch_app,
-                            color: cs.primary
-                                .withValues(alpha: 0.55 + t * 0.45),
+                            color:
+                                cs.primary.withValues(alpha: 0.55 + t * 0.45),
                             size: 15,
                           ),
                           const SizedBox(width: 8),
@@ -385,8 +394,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         border: Border.all(color: cs.outlineVariant, width: 1),
                         borderRadius: BorderRadius.circular(2),
                       ),
-                      child: Icon(Icons.hub_outlined,
-                          color: cs.primary, size: 22),
+                      child:
+                          Icon(Icons.hub_outlined, color: cs.primary, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -403,9 +412,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                             ),
                           ),
                           Text(
-                            currentNeuron.id
-                                .replaceAll('_', ' ')
-                                .toUpperCase(),
+                            currentNeuron.id.replaceAll('_', ' ').toUpperCase(),
                             style: theme.textTheme.titleLarge
                                 ?.copyWith(fontSize: 16),
                           ),
@@ -426,7 +433,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         borderRadius: BorderRadius.circular(2),
                       ),
                       child: Text(
-                        'GR ${currentNeuron.gradientLevel}/${NeuralNeuron.maxGradientLevel}',
+                        'GR ${currentNeuron.gradientLevel}/$gradientCap',
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: currentNeuron.gradientLevel > 0
                               ? cs.primary
@@ -449,16 +456,15 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                 ),
               ),
               Container(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.3)),
+                  height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
               // ── Gradient section ─────────────────────────────────────────
               _buildSectionHighlight(
                 active: isGradientTutorial,
                 cs: cs,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -473,7 +479,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                       ),
                       const SizedBox(height: 10),
                       Row(
-                        children: List.generate(NeuralNeuron.maxGradientLevel, (i) {
+                        children: List.generate(gradientCap, (i) {
                           final filled = i < currentNeuron.gradientLevel;
                           return Padding(
                             padding: const EdgeInsets.only(right: 4),
@@ -484,12 +490,10 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                                 shape: BoxShape.circle,
                                 color: filled
                                     ? cs.primary
-                                    : cs.outlineVariant
-                                        .withValues(alpha: 0.3),
+                                    : cs.outlineVariant.withValues(alpha: 0.3),
                                 border: Border.all(
-                                  color: filled
-                                      ? cs.primary
-                                      : cs.outlineVariant,
+                                  color:
+                                      filled ? cs.primary : cs.outlineVariant,
                                   width: 1,
                                 ),
                               ),
@@ -498,7 +502,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         }),
                       ),
                       const SizedBox(height: 8),
-                      if (!currentNeuron.isGradientMaxed)
+                      if (!gradientMaxed)
                         Text(
                           'Cost: ${NumberFormatter.format(gradientCost)}',
                           style: theme.textTheme.bodySmall
@@ -513,7 +517,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                           ),
                         ),
                       const SizedBox(height: 12),
-                      if (!currentNeuron.isGradientMaxed)
+                      if (!gradientMaxed)
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -541,8 +545,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                                   cs.outline.withValues(alpha: 0.5),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(2)),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                             child: const Text(
                               'UPGRADE GRADIENT',
@@ -559,16 +562,15 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
               ),
 
               Container(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.3)),
+                  height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
               // ── Activation function section ───────────────────────────────
               _buildSectionHighlight(
                 active: isActivationTutorial,
                 cs: cs,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -610,8 +612,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                                                 currentNeuron.id, fn);
                                       },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 8),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
                                   decoration: BoxDecoration(
                                     color: selected
                                         ? cs.primary.withValues(alpha: 0.1)
@@ -677,8 +679,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
               ),
 
               Container(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.3)),
+                  height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
               // ── Strength contribution section ─────────────────────────────
               Padding(
@@ -716,8 +717,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                               const SizedBox(height: 2),
                               Text(
                                 neuronContribution.toStringAsFixed(2),
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                    fontSize: 18, color: cs.primary),
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 18, color: cs.primary),
                               ),
                             ],
                           ),
@@ -738,8 +739,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                               const SizedBox(height: 2),
                               Text(
                                 '+${marginalStrength.toStringAsFixed(4)}',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                    fontSize: 18, color: cs.primary),
+                                style: theme.textTheme.titleLarge
+                                    ?.copyWith(fontSize: 18, color: cs.primary),
                               ),
                             ],
                           ),
@@ -749,10 +750,10 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                     const SizedBox(height: 8),
                     Text(
                       activationMatchesPreferred
-                          ? '× ${depthBonus.toStringAsFixed(2)} depth × 1.10 activation '
+                          ? '× ${depthBonus.toStringAsFixed(2)} depth × ${preferredBonus.toStringAsFixed(2)} activation '
                               '(matches preferred $preferredFn for L$layerIndex)'
                           : '× ${depthBonus.toStringAsFixed(2)} depth × 1.00 activation '
-                              '(L$layerIndex prefers ${preferredFn ?? '—'} for a 10% bonus)',
+                              '(L$layerIndex prefers ${preferredFn ?? '—'} for a ${((preferredBonus - 1) * 100).round()}% bonus)',
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: cs.outline, height: 1.4),
                     ),
@@ -761,16 +762,15 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
               ),
 
               Container(
-                  height: 1,
-                  color: cs.outlineVariant.withValues(alpha: 0.3)),
+                  height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
               // ── Architecture section ──────────────────────────────────────
               _buildSectionHighlight(
                 active: isBranchTutorial,
                 cs: cs,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -793,6 +793,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                         canAffordBranch: canAffordBranch,
                         branchCost: branchCost,
                         activeLayerIdx: activeLayerIdx,
+                        nextDeepGate: state.nextDeepLayerGate,
                       ),
                     ],
                   ),

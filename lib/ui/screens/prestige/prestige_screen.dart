@@ -11,6 +11,7 @@ import 'widgets/prestige_gain_card.dart';
 import 'widgets/prestige_overlay.dart';
 import 'widgets/prestige_stat_block.dart';
 import '../nexus/nexus_screen.dart';
+import 'artifacts_view.dart';
 
 class PrestigeScreen extends StatefulWidget {
   final GlobalKey? initiateButtonKey;
@@ -81,7 +82,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleSubTabChanged);
     _controller = AnimationController(
       vsync: this,
@@ -314,9 +315,31 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                   indicatorSize: TabBarIndicatorSize.tab,
                   indicatorWeight: 2,
                   dividerColor: Colors.transparent,
-                  tabs: const [
-                    Tab(text: 'PRESTIGE'),
-                    Tab(text: 'NEXUS'),
+                  tabs: [
+                    const Tab(text: 'PRESTIGE'),
+                    const Tab(text: 'NEXUS'),
+                    Tab(
+                      child: Selector<GameState, int>(
+                        selector: (_, gs) => gs.pendingArtifactChoices,
+                        builder: (context, pending, _) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('ARTIFACTS'),
+                            if (pending > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 Container(
@@ -450,6 +473,9 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       NexusScreen(
                         optProtocolNodeKey: widget.nexusOptProtocolNodeKey,
                       ),
+
+                      // ── Tab 2: Artifacts ─────────────────────────────────
+                      const ArtifactsView(),
                     ],
                   ),
                 ),

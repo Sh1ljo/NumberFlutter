@@ -27,6 +27,18 @@ This document first lists the currently available features, then describes the a
 - Prestige confirmation dialog and prestige animation overlay.
 - Prestige shop button and shop UI removed from active screen flow.
 
+### 3b) Late game (V0.20)
+
+- **Achievements**: 46 across numbers, clicks, upgrades, prestige, Nexus, neural, mechanics,
+  artifacts and secrets. Each adds +1% production. Reached from the trophy button on the
+  Generators header and from More → Achievements. Unlocks pop a toast.
+- **Prestige artifacts**: pick 1 of 3 at prestige 1, 5, 10, 15, 20, 30, 40, 50 (Prestige →
+  ARTIFACTS tab). Empowering them with PP has no level cap.
+- **Neural deep layers**: 4 extra layers (31 neurons total), unlocked at prestige 18/22/26/30.
+- **Epochs**: reset neural training for permanent production, gradient-cap and soft-cap
+  bonuses.
+- **Offline cap**: idle income for up to 12h away (more with Chrono Lens).
+
 ### 4) Account, profile, and social
 
 - Optional sign-in (email/password, Google, Apple).

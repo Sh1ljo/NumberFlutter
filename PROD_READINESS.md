@@ -125,7 +125,9 @@ doubly so once IAP exists.
 
 ## 2. Data loss and correctness
 
-### 2.1 The neural network's topology is never synced to the cloud
+### 2.1 The neural network's topology is never synced to the cloud — *resolved in V0.20*
+The full network JSON now travels in `player_progress.neural_network`.
+
 `lib/models/player_progress.dart:15-16, 94-111` carries only `neuralLoss` and
 `neuralLowestLoss`. There is no field for layers or neurons, and
 `GameState._applyCloudProgress` merges only those two doubles.
@@ -196,7 +198,10 @@ There is no retry, no backoff and no offline queue; `syncWithCloud` just records
 `prestigeCurrencyScaled * 10000` is not. With `prestigeCurrency` growing as `3 × 1.35^n`, that
 term passes int64 around prestige ~70 and the `bigint` column write fails.
 
-### 2.8 Offline gains are uncapped
+### 2.8 Offline gains are uncapped — *resolved in V0.20*
+Idle income is capped at 12h away (plus Chrono Lens). The forward-clock exploit is bounded by
+the same cap.
+
 `GameState._calculateOfflineProgress` puts no ceiling on `secondsAway`. Thirty days away pays
 2.6M seconds at the full current rate, multiplied by up to 1.5× from Quick Resume. It is
 currently the strongest income source in the game, and it rewards not playing.
@@ -231,7 +236,8 @@ Store the value as `numeric`, or rank explicitly on (digit count, normalised val
 
 These are known and deliberate, listed so they don't get lost:
 
-- **PP has no sink once the Nexus tree is maxed.** V0.19 made node costs geometric, raising the
+- *(Resolved in V0.20: prestige artifacts are empowered with PP at `15 × 1.45^(L-1)` with no
+  cap.)* **PP has no sink once the Nexus tree is maxed.** V0.19 made node costs geometric, raising the
   full tree from 1,469 to ~2,640 PP, which buys a much longer tail — but a dedicated late-game
   PP sink is still missing. This is the single biggest remaining economy gap.
 - **`idle_foundation` doesn't deliver its promise.** Its `+1/s` permanent idle bonus does not

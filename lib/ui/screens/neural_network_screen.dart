@@ -32,8 +32,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
     if (!backend.isConfigured || !backend.isInitialized) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content:
-              Text('Profile editing needs a connection to the cloud.'),
+          content: Text('Profile editing needs a connection to the cloud.'),
         ),
       );
       return;
@@ -125,8 +124,8 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
 
             // ── Title ────────────────────────────────────────────────────
             Padding(
-              padding:
-                  const EdgeInsets.only(left: 24, right: 24, top: 16, bottom: 8),
+              padding: const EdgeInsets.only(
+                  left: 24, right: 24, top: 16, bottom: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -155,7 +154,8 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
               ),
             ),
 
-            Container(height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
+            Container(
+                height: 1, color: cs.outlineVariant.withValues(alpha: 0.3)),
 
             // ── Neural canvas (with loss HUD on top) ─────────────────────
             Expanded(
@@ -255,63 +255,148 @@ class _NeuralLossHudState extends State<_NeuralLossHud> {
           ),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'ACCURACY',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 2.0,
-                    color: cs.outlineVariant,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${accuracyPct.toStringAsFixed(2)}%',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontSize: 22,
-                    color: cs.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                softCapHit
-                    ? 'MULT × (capped)'
-                    : 'MULT ×',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1.5,
-                  color: cs.outlineVariant,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ACCURACY',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 2.0,
+                        color: cs.outlineVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${accuracyPct.toStringAsFixed(2)}%',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontSize: 22,
+                        color: cs.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                multiplier.toStringAsFixed(2),
-                style: theme.textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'decay ${decay.toStringAsFixed(5)}/s',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.outline,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    softCapHit ? 'MULT × (capped)' : 'MULT ×',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      letterSpacing: 1.5,
+                      color: cs.outlineVariant,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    multiplier.toStringAsFixed(2),
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'decay ${decay.toStringAsFixed(5)}/s',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.outline,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          _EpochStrip(state: widget.state),
         ],
       ),
+    );
+  }
+}
+
+/// Epoch count plus, once the network has converged, the button that sends
+/// it into its next Epoch.
+class _EpochStrip extends StatelessWidget {
+  const _EpochStrip({required this.state});
+
+  final GameState state;
+
+  Future<void> _confirm(BuildContext context) async {
+    final next = state.neuralNetwork.epochs + 1;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('BEGIN EPOCH $next?'),
+        content: const Text(
+          'Training restarts from zero and every gradient level resets. '
+          'Your topology and activations stay.\n\n'
+          'Permanently gain: +10% all production, +1 max gradient level, '
+          'and a higher multiplier cap. Each Epoch trains 15% slower.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('CANCEL'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('BEGIN'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) state.startEpoch();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final epochs = state.neuralNetwork.epochs;
+    final canStart = state.canStartEpoch;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            epochs == 0
+                ? 'EPOCH 0 · converge below 1% loss to begin an Epoch'
+                : 'EPOCH $epochs · ×${state.epochProductionMultiplier.toStringAsFixed(1)} production',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: cs.outline,
+              letterSpacing: 1.2,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (canStart)
+          OutlinedButton(
+            onPressed: () => _confirm(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: cs.primary,
+              side: BorderSide(color: cs.primary),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(2)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'BEGIN EPOCH',
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  fontSize: 10),
+            ),
+          ),
+      ],
     );
   }
 }

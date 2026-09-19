@@ -380,6 +380,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           child: const Text('ADD 500 PRESTIGE POINTS'),
                         ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final (label, action, done) in [
+                              (
+                                '+1e18 NUMBER',
+                                () => gameState.addNumberForTesting(
+                                    BigInt.from(10).pow(18)),
+                                'Added 1 quintillion',
+                              ),
+                              (
+                                '+5 PRESTIGES',
+                                () => gameState.addPrestigesForTesting(5),
+                                'Added 5 prestiges',
+                              ),
+                              (
+                                'FINISH NEURAL TRAINING',
+                                gameState.finishNeuralTrainingForTesting,
+                                'Neural loss set to the floor',
+                              ),
+                            ])
+                              OutlinedButton(
+                                onPressed: () {
+                                  action();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(done)),
+                                  );
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: theme.colorScheme.primary,
+                                  side: BorderSide(
+                                      color: theme.colorScheme.primary,
+                                      width: 1.5),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(2)),
+                                ),
+                                child: Text(label),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

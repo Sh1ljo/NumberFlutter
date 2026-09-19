@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import '../../data/achievement_data.dart';
 import '../../logic/game_state.dart';
 import '../../logic/login_prompt_policy.dart';
 import '../../logic/tutorial_step.dart';
@@ -13,7 +14,9 @@ import '../widgets/offline_gains_dialog.dart';
 import '../widgets/profile_editor_dialog.dart';
 import 'main_game_screen.dart';
 import 'upgrades_screen.dart';
+import 'prestige/artifacts_view.dart';
 import 'prestige/prestige_screen.dart';
+import 'achievements_screen.dart';
 import 'leaderboard_screen.dart';
 import 'neural_network_screen.dart';
 import 'settings_screen.dart';
@@ -157,6 +160,22 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
+  /// True when nothing more important owns the screen: no tutorial (main,
+  /// Nexus or neural), no prestige animation, and no sheet, dialog or pushed
+  /// screen on top of the main layout. Every popup waits for this rather
+  /// than being dropped, so it shows as soon as the player is free.
+  bool get _screenIsFree {
+    final gameState = _gameState;
+    if (gameState == null || !mounted) return false;
+    if (gameState.isTutorialActive || gameState.isPrestigeAnimating) {
+      return false;
+    }
+    return ModalRoute.of(context)?.isCurrent != false;
+  }
+
+  bool get _topBannerVisible =>
+      _prestigeNoticeVisible || _reconnectNoticeVisible;
+
   void _onTutorialReset() {
     if (mounted) setState(() => _currentIndex = 0);
   }
@@ -204,13 +223,19 @@ class _MainLayoutState extends State<MainLayout> {
     // Hold off on the "new upgrade" popup while the offline-earnings dialog
     // is still up (or about to appear) so it doesn't stack on top of it —
     // it fires the moment the player acknowledges those earnings instead.
+    // A tutorial or the prestige animation starting takes the screen back
+    // from any notice already showing.
+    if (gameState.isTutorialActive || gameState.isPrestigeAnimating) {
+      if (_unlockNoticeVisible) _removeUnlockNotice();
+      if (_prestigeNoticeVisible) _removePrestigeNotice();
+    }
     if (!hasOfflineProgress) {
-      _maybeShowUnlockNotice();
+      // The artifact pick goes first; notices wait until it's closed.
+      _maybeShowArtifactOffer();
+      _maybeShowNotice();
     }
 
-    if (gameState.isPrestigeAnimating) {
-      if (_prestigeNoticeVisible) _removePrestigeNotice();
-    } else {
+    if (!gameState.isPrestigeAnimating) {
       _maybeShowPrestigeReadyNotice(
         canPrestige: gameState.number >= gameState.prestigeRequirement,
         prestigeCount: gameState.prestigeCount,
@@ -251,7 +276,7 @@ class _MainLayoutState extends State<MainLayout> {
     // has not reached the milestone yet simply isn't settled — they get
     // re-checked once they do.
     final gameState = _gameState ?? context.read<GameState>();
-    if (!gameState.tutorialCompleted) return;
+    if (!gameState.tutorialCompleted || gameState.isTutorialActive) return;
     if (gameState.highestNumber < LoginPromptPolicy.progressWorthSaving) return;
 
     // Another modal (offline gains, a tutorial card) owns the screen: wait
@@ -387,7 +412,8 @@ class _MainLayoutState extends State<MainLayout> {
   void _maybeShowOfflineNotice(String? error) {
     if (error == null ||
         error == _lastCloudErrorNotified ||
-        _offlineNoticeVisible) {
+        _offlineNoticeVisible ||
+        !_screenIsFree) {
       return;
     }
     _lastCloudErrorNotified = error;
@@ -428,8 +454,10 @@ class _MainLayoutState extends State<MainLayout> {
 
   void _maybeShowReconnectNotice() {
     final gameState = _gameState;
-    if (gameState == null || _reconnectNoticeVisible) return;
+    if (gameState == null || _topBannerVisible) return;
     if (!gameState.consumeJustReconnected()) return;
+    // Purely informational: not worth holding for later.
+    if (!_screenIsFree) return;
 
     _reconnectNoticeVisible = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -455,32 +483,79 @@ class _MainLayoutState extends State<MainLayout> {
     _reconnectNoticeVisible = false;
   }
 
-  void _maybeShowUnlockNotice() {
-    final gameState = _gameState;
-    if (gameState == null || _unlockNoticeVisible) return;
-    final pending = gameState.pendingUnlockedUpgradeIds;
-    if (pending.isEmpty) return;
+  /// When the last notice closed. Upgrade and achievement notices share one
+  /// slot and at least [_noticeGap] of quiet between them; anything that
+  /// unlocks meanwhile waits and is folded into the next notice, so a burst
+  /// of progress reads as one popup instead of a stream of them.
+  DateTime? _lastNoticeClosedAt;
+  static const Duration _noticeGap = Duration(seconds: 30);
 
-    // The tutorial already walks the player through every upgrade it wants
-    // seen, on its own schedule — an unrelated "new upgrade" popup firing
-    // mid-tutorial is confusing, not helpful. Drain the queue silently so it
-    // doesn't all dump on the player the instant the tutorial ends.
-    if (!gameState.tutorialCompleted) {
-      for (final id in List<String>.from(pending)) {
-        gameState.dismissUnlockNotice(id);
-      }
+  void _maybeShowNotice() {
+    final gameState = _gameState;
+    if (gameState == null || _unlockNoticeVisible || _artifactOfferOpen) {
       return;
     }
+    final upgradeIds = List<String>.from(gameState.pendingUnlockedUpgradeIds);
+    final achievementIds = List<String>.from(gameState.pendingAchievementIds);
+    if (upgradeIds.isEmpty && achievementIds.isEmpty) return;
 
-    // Drain everything queued so far in one go, not just the head of the
-    // list. Early game, a single balance jump (or the several seconds this
-    // notice stays on screen) can cross several upgrades' affordability at
-    // once — showing one popup per upgrade back-to-back reads as spam, so a
-    // burst collapses into a single "N new upgrades available" notice
-    // instead.
-    final upgradeIds = List<String>.from(pending);
-    for (final id in upgradeIds) {
-      gameState.dismissUnlockNotice(id);
+    void drain() {
+      for (final id in upgradeIds) {
+        gameState.dismissUnlockNotice(id);
+      }
+      for (final id in achievementIds) {
+        gameState.dismissAchievementNotice(id);
+      }
+    }
+
+    // The main tutorial ends in a reset, so anything it unlocks is dropped.
+    if (!gameState.tutorialCompleted) {
+      drain();
+      return;
+    }
+    // Nexus / neural tutorials, the prestige animation and open sheets
+    // (neuron sheet, artifact pick, dialogs) all take priority: hold the
+    // queue and fold it into one notice once the player is free.
+    if (!_screenIsFree) return;
+
+    final lastClosed = _lastNoticeClosedAt;
+    if (lastClosed != null &&
+        DateTime.now().difference(lastClosed) < _noticeGap) {
+      return;
+    }
+    drain();
+
+    final String label;
+    final String message;
+    final VoidCallback onTap;
+    if (achievementIds.isEmpty && upgradeIds.length == 1) {
+      final upgradeId = upgradeIds.first;
+      final upgrade =
+          gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
+      if (upgrade == null) return;
+      label = 'NEW UPGRADE';
+      message = upgrade.name;
+      onTap = () => _revealUpgrade(upgradeId, upgrade.effectType);
+    } else if (achievementIds.isEmpty) {
+      label = 'NEW UPGRADES';
+      message = '${upgradeIds.length} new upgrades available';
+      onTap = _goToUpgradesTab;
+    } else if (upgradeIds.isEmpty && achievementIds.length == 1) {
+      label = 'ACHIEVEMENT · +1%';
+      message = Achievements.byId(achievementIds.first)?.title ??
+          'Achievement unlocked';
+      onTap = () => AchievementsScreen.open(context);
+    } else if (upgradeIds.isEmpty) {
+      label = 'ACHIEVEMENTS · +${achievementIds.length}%';
+      message = '${achievementIds.length} achievements unlocked';
+      onTap = () => AchievementsScreen.open(context);
+    } else {
+      label = 'NEW UNLOCKS';
+      message = '${upgradeIds.length} '
+          '${upgradeIds.length == 1 ? 'upgrade' : 'upgrades'} · '
+          '${achievementIds.length} '
+          '${achievementIds.length == 1 ? 'achievement' : 'achievements'}';
+      onTap = _goToUpgradesTab;
     }
 
     _unlockNoticeVisible = true;
@@ -491,44 +566,61 @@ class _MainLayoutState extends State<MainLayout> {
       }
       final overlay = Overlay.of(context, rootOverlay: true);
       _unlockNoticeEntry?.remove();
-
-      if (upgradeIds.length == 1) {
-        final upgradeId = upgradeIds.first;
-        final upgrade =
-            gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
-        if (upgrade == null) {
-          _unlockNoticeVisible = false;
-          return;
-        }
-        _unlockNoticeEntry = OverlayEntry(
-          builder: (ctx) => _UpgradeUnlockedNotice(
-            label: 'NEW UPGRADE',
-            message: upgrade.name,
-            onClosed: _removeUnlockNotice,
-            onTap: () {
-              _removeUnlockNotice();
-              _revealUpgrade(upgradeId, upgrade.effectType);
-            },
-          ),
-        );
-      } else {
-        _unlockNoticeEntry = OverlayEntry(
-          builder: (ctx) => _UpgradeUnlockedNotice(
-            label: 'NEW UPGRADES',
-            message: '${upgradeIds.length} new upgrades available',
-            onClosed: _removeUnlockNotice,
-            onTap: () {
-              _removeUnlockNotice();
-              _goToUpgradesTab();
-            },
-          ),
-        );
-      }
+      _unlockNoticeEntry = OverlayEntry(
+        builder: (ctx) => _UpgradeUnlockedNotice(
+          label: label,
+          message: message,
+          onClosed: _removeUnlockNotice,
+          onTap: () {
+            _removeUnlockNotice();
+            onTap();
+          },
+        ),
+      );
       overlay.insert(_unlockNoticeEntry!);
     });
   }
 
+  /// (claimed milestones, prestige count) the artifact sheet was last shown
+  /// for, so "decide later" isn't re-asked until the next prestige.
+  (int, int)? _artifactOfferPromptedFor;
+  bool _artifactOfferOpen = false;
+
+  void _maybeShowArtifactOffer() {
+    final gameState = _gameState;
+    if (gameState == null || _artifactOfferOpen) return;
+    if (!gameState.tutorialCompleted || !_screenIsFree) return;
+    if (gameState.pendingArtifactChoices <= 0) return;
+    final key =
+        (gameState.artifactState.claimedMilestones, gameState.prestigeCount);
+    if (_artifactOfferPromptedFor == key) return;
+    _artifactOfferPromptedFor = key;
+    _artifactOfferOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || !_screenIsFree) {
+        // Something claimed the screen in the meantime: ask again later.
+        _artifactOfferOpen = false;
+        _artifactOfferPromptedFor = null;
+        return;
+      }
+      _removeUnlockNotice();
+      await ArtifactChoiceSheet.show(context);
+      _artifactOfferOpen = false;
+      if (!mounted) return;
+      // Claiming one can leave another milestone waiting (a long-time
+      // player's first launch after this update).
+      final gs = _gameState;
+      if (gs != null) {
+        _artifactOfferPromptedFor =
+            (gs.artifactState.claimedMilestones == key.$1)
+                ? key
+                : null;
+      }
+    });
+  }
+
   void _removeUnlockNotice() {
+    if (_unlockNoticeVisible) _lastNoticeClosedAt = DateTime.now();
     _unlockNoticeEntry?.remove();
     _unlockNoticeEntry = null;
     _unlockNoticeVisible = false;
@@ -574,8 +666,9 @@ class _MainLayoutState extends State<MainLayout> {
     required int prestigeCount,
   }) {
     if (!canPrestige ||
-        _prestigeNoticeVisible ||
-        _lastPrestigeReadyNotifiedCount == prestigeCount) {
+        _topBannerVisible ||
+        _lastPrestigeReadyNotifiedCount == prestigeCount ||
+        !_screenIsFree) {
       return;
     }
 
@@ -978,7 +1071,7 @@ class _UpgradeUnlockedNoticeState extends State<_UpgradeUnlockedNotice>
       CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
     _controller.forward();
-    _autoCloseTimer = Timer(const Duration(seconds: 6), _closeAnimated);
+    _autoCloseTimer = Timer(const Duration(seconds: 4), _closeAnimated);
   }
 
   Future<void> _closeAnimated() async {

@@ -295,9 +295,73 @@ around prestige ~70. See `PROD_READINESS.md`.
 ## 8. Offline gains
 
 ```
-offlineGains = floor(totalIdleRate × secondsAway × offlineGainMultiplier)
-offlineGainMultiplier = 1 + 0.10 × quickResumeLevel        // max 1.5×
+credited      = min(secondsAway, offlineCapHours × 3600)
+offlineGains  = floor(totalIdleRate × credited × offlineGainMultiplier)
+offlineGainMultiplier = (1 + 0.10 × quickResumeLevel) × chronoLensMultiplier
+offlineCapHours       = 12 + chronoLensCapBonus               // V0.20
 ```
 
-**There is no cap on `secondsAway`.** 30 days away pays 2.6M seconds at full rate. Currently
-the strongest income source in the game. See `PROD_READINESS.md`.
+The cap applies to idle income only. Neural training still runs for the whole absence.
+Being away 8h or more unlocks the hidden *The Long Sleep* achievement.
+
+---
+
+## 9. Achievements (V0.20)
+
+Defined in `lib/data/achievement_data.dart` (46 entries). Each unlocked achievement adds a
+flat **+1%** to all production:
+
+```
+achievementBonus = 1 + 0.01 × unlockedCount          // ≈ 1.46× with everything
+```
+
+State-based achievements are polled once a second from the ticker and immediately after
+purchases, research, neural actions and prestige. Event achievements (first strike, first
+Overclock, first Temporal Collapse, full momentum, Neural Spark, first Epoch, long absence)
+are unlocked where they happen. Unlocks and `lifetimeClicks` are merged across devices, never
+overwritten.
+
+---
+
+## 10. Global production multiplier (V0.20)
+
+Everything outside the prestige multiplier that scales *all* production is folded into one
+factor, applied to both `totalIdleRate` and the click base:
+
+```
+globalProductionMultiplier = achievementBonus × resonancePrism × (1 + 0.1 × epochs)
+```
+
+Temporal Collapse's ×2 is now its own transient factor as well. It used to be written into
+`prestigeMultiplier`, which made it permanent if the player prestiged or saved mid-window.
+
+---
+
+## 11. Prestige artifacts — the PP sink (V0.20)
+
+Prestige milestones **1, 5, 10, 15, 20, 30, 40, 50** each grant one artifact, picked from three
+drawn out of the unowned pool (seeded and persisted, so it can't be rerolled). There are 12
+artifacts, so a full run ends with 8 of them. Artifacts start at Lv 1 and are **empowered with
+PP forever**:
+
+```
+empowerCost(L → L+1) = 15 × 1.45^(L-1) PP          // no max level
+```
+
+| Artifact | Lv 1 | Per level | Cap |
+|---|---|---|---|
+| Chrono Lens | offline cap +4h, offline ×1.2 | +1h, +0.05 | — |
+| Echo Chamber | every 50th tap pays 100% of the last 10 taps | +10% | — |
+| Tithe Engine | +3% PP per artifact owned | +0.5% | — |
+| Genesis Kit | first 3 idle tiers start at Lv 10 after prestige | +2 | Lv 100 |
+| Perpetual Motion | momentum floor 40% of cap | +3% | 90% |
+| Loaded Dice | strike chance 8%, 25% chain chance (≤3 chains) | +0.25% | 15% |
+| Overclock Core | auto-Overclock every 15 min | −30s | 5 min |
+| Synapse Crown | neural costs ×0.75, preferred activation ×1.25 | cost ×0.97 | ×0.4 |
+| Compound Vault | every 60s gain 0.5% of number, ≤ 5 min of idle | +0.1%, +1 min | 3% |
+| Tempo Anchor | Collapse cooldown −25%, duration ×1.5 | −3%, +0.05 | −70%, floor 40s |
+| Resonance Prism | +3% production per maxed Nexus node | +0.5% | — |
+| Milestone Compass | milestone base ×2 → ×2.2 | +0.02 | ×2.6 |
+
+The curves are in `lib/data/artifact_data.dart`. Level 0 always returns the neutral value, and
+`test/artifact_test.dart` pins the caps at Lv 200.

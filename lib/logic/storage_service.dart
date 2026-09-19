@@ -21,6 +21,9 @@ class StorageService {
   static const String _keyNexusStabilized = 'nexusStabilized';
   static const String _keyNeuralNetwork = 'neural_network';
   static const String _keyTestEnvironmentEnabled = 'testEnvironmentEnabled';
+  static const String _keyLifetimeClicks = 'lifetime_clicks';
+  static const String _keyAchievements = 'achievements_unlocked';
+  static const String _keyArtifacts = 'artifacts';
 
   SharedPreferences? _prefs;
 
@@ -72,6 +75,9 @@ class StorageService {
     required bool nexusStabilized,
     String? neuralNetworkJson,
     bool testEnvironmentEnabled = false,
+    int lifetimeClicks = 0,
+    List<String> achievements = const [],
+    String? artifactsJson,
   }) async {
     final prefs = await _instance();
     await _setString(prefs, _keyNumber, number.toString());
@@ -97,6 +103,11 @@ class StorageService {
         prefs, _keyTestEnvironmentEnabled, testEnvironmentEnabled);
     if (neuralNetworkJson != null) {
       await _setString(prefs, _keyNeuralNetwork, neuralNetworkJson);
+    }
+    await _setInt(prefs, _keyLifetimeClicks, lifetimeClicks);
+    await _setString(prefs, _keyAchievements, jsonEncode(achievements));
+    if (artifactsJson != null) {
+      await _setString(prefs, _keyArtifacts, artifactsJson);
     }
     await _setInt(
         prefs, _keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
@@ -136,6 +147,13 @@ class StorageService {
       (key, value) => MapEntry(key, (value as num).toInt()),
     );
 
+    final achievementsRaw = prefs.getString(_keyAchievements);
+    final achievements = achievementsRaw == null
+        ? <String>[]
+        : (jsonDecode(achievementsRaw) as List<dynamic>)
+            .whereType<String>()
+            .toList();
+
     final prestigeCurrencyDouble = double.tryParse(prestigeCurrencyStr);
     final prestigeCurrencyLegacy = BigInt.tryParse(prestigeCurrencyStr);
 
@@ -162,6 +180,9 @@ class StorageService {
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
       'testEnvironmentEnabled': prefs.getBool(_keyTestEnvironmentEnabled) ?? false,
       'neuralNetwork': prefs.getString(_keyNeuralNetwork),
+      'lifetimeClicks': prefs.getInt(_keyLifetimeClicks) ?? 0,
+      'achievements': achievements,
+      'artifacts': prefs.getString(_keyArtifacts),
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,
@@ -189,6 +210,9 @@ class StorageService {
     _keyNexusStabilized,
     _keyNeuralNetwork,
     _keyTestEnvironmentEnabled,
+    _keyLifetimeClicks,
+    _keyAchievements,
+    _keyArtifacts,
   ];
 
   /// Copies the stored save, as-is, into one JSON blob under
@@ -228,5 +252,8 @@ class StorageService {
     await prefs.remove(_keyUpgradeTutorialSeen);
     await prefs.remove(_keyNexusStabilized);
     await prefs.remove(_keyNeuralNetwork);
+    await prefs.remove(_keyLifetimeClicks);
+    await prefs.remove(_keyAchievements);
+    await prefs.remove(_keyArtifacts);
   }
 }
