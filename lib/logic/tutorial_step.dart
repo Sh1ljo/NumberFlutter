@@ -306,7 +306,7 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     mode: TutorialMode.tapToContinue,
     title: 'EXPLORE SPECIAL UPGRADES',
     body:
-        "You've been given a budget to experiment with! Let's explore some powerful upgrades and see them in action.",
+        "You've been lent exactly enough to buy Probability Strike and Momentum. Let's buy both and see them in action — the loan is returned when we're done.",
   ),
   TutorialStep.probabilityStrikeIntro: TutorialStepSpec(
     scope: TutorialScope.upgrades,

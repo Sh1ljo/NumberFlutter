@@ -10,6 +10,7 @@ import '../data/achievement_data.dart';
 import '../data/artifact_data.dart';
 import '../models/artifact.dart';
 import '../models/neural_network.dart';
+import '../models/upgrade_recommendation.dart';
 import 'connectivity_service.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
@@ -366,7 +367,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: clickPowerId,
       name: 'Click Power',
-      description: 'Adds +1 click power each level.',
+      description: 'Adds +1 base click power per level.',
       baseCost: BigInt.from(15),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -375,7 +376,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'click_reinforced_tap',
       name: 'Reinforced Tap',
-      description: 'Adds +5 click power each level.',
+      description: 'Adds +5 base click power per level.',
       baseCost: BigInt.from(400),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -394,7 +395,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'click_kinetic_amplifier',
       name: 'Kinetic Amplifier',
-      description: 'Adds +25 click power each level.',
+      description: 'Adds +25 base click power per level.',
       baseCost: BigInt.from(6000),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -422,7 +423,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'click_resonant_touch',
       name: 'Resonant Touch',
-      description: 'Adds +150 click power each level.',
+      description: 'Adds +150 base click power per level.',
       baseCost: BigInt.from(75000),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -441,7 +442,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'click_quantum_fingertip',
       name: 'Quantum Fingertip',
-      description: 'Adds +1,000 click power each level.',
+      description: 'Adds +1,000 base click power per level.',
       baseCost: BigInt.from(1000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -450,7 +451,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'click_singularity_press',
       name: 'Singularity Press',
-      description: 'Adds +7,500 click power each level.',
+      description: 'Adds +7,500 base click power per level.',
       baseCost: BigInt.from(15000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
@@ -459,7 +460,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: autoClickerId,
       name: 'Auto-Clicker',
-      description: 'Clicks for you automatically.',
+      description: 'Adds +1 base number per second per level.',
       baseCost: BigInt.from(150),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -468,7 +469,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: quantumMultiplierId,
       name: 'Quantum Multiplier',
-      description: 'Greatly increases idle generation.',
+      description: 'Adds +10 base numbers per second per level.',
       baseCost: BigInt.from(1500),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -477,7 +478,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'idle_fractal_engine',
       name: 'Fractal Engine',
-      description: 'Adds +100 numbers per second each level.',
+      description: 'Adds +100 base numbers per second per level.',
       baseCost: BigInt.from(15000),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -486,7 +487,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'idle_singularity_core',
       name: 'Singularity Core',
-      description: 'Adds +1,000 numbers per second each level.',
+      description: 'Adds +1,000 base numbers per second per level.',
       baseCost: BigInt.from(150000),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -495,7 +496,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'idle_tesseract_array',
       name: 'Tesseract Array',
-      description: 'Adds +10,000 numbers per second each level.',
+      description: 'Adds +10,000 base numbers per second per level.',
       baseCost: BigInt.from(1500000),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -504,7 +505,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'idle_entropy_harvester',
       name: 'Entropy Harvester',
-      description: 'Adds +100,000 numbers per second each level.',
+      description: 'Adds +100,000 base numbers per second per level.',
       baseCost: BigInt.from(15000000),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -513,7 +514,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     Upgrade(
       id: 'idle_void_resonance',
       name: 'Void Resonance',
-      description: 'Adds +1,000,000 numbers per second each level.',
+      description: 'Adds +1,000,000 base numbers per second per level.',
       baseCost: BigInt.from(150000000),
       costMultiplier: 1.16,
       effectType: idleCategory,
@@ -671,7 +672,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (nodeId == 'neural_genesis' &&
         !_neuralTutorialSeen &&
         _tutorialStep == TutorialStep.done) {
-      number += BigInt.from(100_000_000);
+      // Exactly what the three guided actions cost. This used to be a flat
+      // 100M, most of which the tutorial never asked the player to spend.
+      number += neuralTutorialGrant;
       _tutorialStep = TutorialStep.neuralUnlocked;
     }
     if (nodeId == 'opt_protocol' &&
@@ -724,6 +727,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   BigInt neuronGradientCost(NeuralNeuron neuron) =>
       _applyNeuralDiscount(neuralNetwork.gradientUpgradeCost(neuron));
+
+  /// Budget for the neural tutorial: one gradient upgrade, one paid
+  /// activation change and one branch on the first neuron.
+  BigInt get neuralTutorialGrant {
+    final first = neuralNetwork.layers.isEmpty ||
+            neuralNetwork.layers.first.neurons.isEmpty
+        ? null
+        : neuralNetwork.layers.first.neurons.first;
+    if (first == null) return BigInt.zero;
+    final paidActivation = NeuralNeuron(id: first.id).activationChangeCost('relu');
+    return neuronGradientCost(first) + paidActivation + neuralBranchCost;
+  }
 
   double get _neuralPreferredBonus =>
       Artifacts.synapsePreferredBonus(_artifactLevel(Artifacts.synapseCrown));
@@ -1153,6 +1168,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
       _upgradeTutorialSeen = (data['upgradeTutorialSeen'] as bool?) ?? false;
       _artifactTutorialSeen = (data['artifactTutorialSeen'] as bool?) ?? false;
+      _resumeInterruptedUpgradeTutorial();
 
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
@@ -1706,6 +1722,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _clickStreak++;
     lifetimeClicks++;
     _lastManualClickTime = now;
+    _recordClickForRate(now.millisecondsSinceEpoch);
 
     if (_isUpgradeActive(momentumId)) {
       final comboBonus = (_clickStreak - 1) * _momentumPerClickBonus;
@@ -1944,7 +1961,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   ({BigInt cost, int amount}) getPurchaseInfo(Upgrade upgrade) {
     int toBuy;
-    if (buyAmount == -1) {
+    if (isUpgradeDeepDiveActive) {
+      // The deep-dive budget covers exactly one level of each guided
+      // upgrade; a 10X or NEXT selection would price it out of reach.
+      toBuy = 1;
+    } else if (buyAmount == -1) {
       toBuy = 999999;
     } else if (buyAmount == -2) {
       final nextMilestone = upgradeMilestoneThresholds
@@ -1966,6 +1987,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       toBuy = math.min(toBuy, remainingLevels);
     }
 
+    final isMaxMode = buyAmount == -1 && !isUpgradeDeepDiveActive;
     int bought = 0;
     BigInt totalCost = BigInt.zero;
     BigInt remainingNumber = number;
@@ -1982,7 +2004,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         bought++;
         currentMultiplier *= upgrade.costMultiplier;
       } else {
-        if (buyAmount == -1) {
+        if (isMaxMode) {
           break; // Max reached
         } else {
           // Calculate remaining cost anyway
@@ -2001,7 +2023,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    final isMaxMode = buyAmount == -1;
     int finalAmount = isMaxMode ? bought : toBuy;
     if (isMaxMode && finalAmount == 0) {
       final singleCost = BigInt.from(
@@ -2041,24 +2062,486 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return 0;
   }
 
+  /// Exact price of [count] levels starting at [fromLevel], computed the
+  /// same way as [getPurchaseInfo] (a repeated product, then the Nexus
+  /// discount per level) so quoted and charged prices always agree.
+  BigInt _costOfLevels(Upgrade upgrade, int fromLevel, int count) {
+    double multiplier = 1.0;
+    for (int i = 0; i < fromLevel; i++) {
+      multiplier *= upgrade.costMultiplier;
+    }
+    final costFactor = upgradeCostReductionFactor;
+    final base = upgrade.baseCost.toDouble();
+    BigInt total = BigInt.zero;
+    for (int i = 0; i < count; i++) {
+      total += BigInt.from(base * multiplier * costFactor);
+      multiplier *= upgrade.costMultiplier;
+    }
+    return total;
+  }
+
+  bool _canBuy(Upgrade upgrade) =>
+      !upgrade.isMaxed &&
+      prestigeCount >= minPrestigeForUpgrade(upgrade.id) &&
+      !tutorialBlocksPurchase(upgrade.id);
+
   void buyUpgrade(String id) {
     final upgrade = upgrades.firstWhere((u) => u.id == id);
-    if (upgrade.isMaxed) return;
-    if (prestigeCount < minPrestigeForUpgrade(id)) return;
+    if (!_canBuy(upgrade)) return;
 
     final info = getPurchaseInfo(upgrade);
 
     if (info.amount == 0) return;
+    _completePurchase(upgrade, info.amount, info.cost);
+  }
 
-    if (number >= info.cost) {
-      number -= info.cost;
-      upgrade.level += info.amount;
-      _recalculateDerivedStatsFromUpgrades();
-      _advanceTutorialOnPurchase(id);
-      _checkAchievements();
-      notifyListeners();
-      _saveState();
+  /// Buys exactly [count] levels of [id], ignoring the buy-amount toggle.
+  /// Used by the recommendation card, which picks its own amount.
+  bool buyUpgradeLevels(String id, int count) {
+    final upgrade = _upgradeById(id);
+    if (upgrade == null || count <= 0 || !_canBuy(upgrade)) return false;
+    if (upgrade.maxLevel != -1) {
+      count = math.min(count, upgrade.maxLevel - upgrade.level);
+      if (count <= 0) return false;
     }
+    return _completePurchase(
+        upgrade, count, _costOfLevels(upgrade, upgrade.level, count));
+  }
+
+  bool _completePurchase(Upgrade upgrade, int amount, BigInt cost) {
+    if (number < cost) return false;
+    number -= cost;
+    upgrade.level += amount;
+    _recalculateDerivedStatsFromUpgrades();
+    _recommendationComputedAtMs = 0;
+    _advanceTutorialOnPurchase(upgrade.id);
+    _checkAchievements();
+    notifyListeners();
+    _saveState();
+    return true;
+  }
+
+  // ── Upgrade gain previews & the upgrade advisor ────────────────────────
+  //
+  // Both run the real production formulas against temporarily raised
+  // upgrade levels (see [_withExtraLevels]) instead of re-deriving them, so a
+  // new multiplier anywhere in the game is picked up automatically.
+
+  /// Manual tap timestamps (ms since epoch) from the last minute.
+  final List<int> _recentClickMs = [];
+  static const int _clickRateWindowMs = 60000;
+
+  /// Test hook: pins [recentClickRate] instead of measuring taps.
+  @visibleForTesting
+  double? debugClickRateOverride;
+
+  /// Test hook: re-derive click power / idle rate after editing levels.
+  @visibleForTesting
+  void debugRecalculateDerivedStats() {
+    _recalculateDerivedStatsFromUpgrades();
+    _recommendationComputedAtMs = 0;
+  }
+
+  void _recordClickForRate(int nowMs) {
+    _recentClickMs.add(nowMs);
+    final cutoff = nowMs - _clickRateWindowMs;
+    var drop = 0;
+    while (drop < _recentClickMs.length && _recentClickMs[drop] < cutoff) {
+      drop++;
+    }
+    if (drop > 0) _recentClickMs.removeRange(0, drop);
+  }
+
+  /// Taps per second over the last minute. Divides by the time actually
+  /// observed (at least 10s), so the first seconds of a tapping burst don't
+  /// read as a slow pace.
+  double get recentClickRate {
+    final override = debugClickRateOverride;
+    if (override != null) return override;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final cutoff = nowMs - _clickRateWindowMs;
+    final first = _recentClickMs.indexWhere((t) => t >= cutoff);
+    if (first < 0) return 0.0;
+    final count = _recentClickMs.length - first;
+    final spanMs =
+        (nowMs - _recentClickMs[first]).clamp(10000, _clickRateWindowMs);
+    return count / (spanMs / 1000.0);
+  }
+
+  /// Runs [body] with [extra] levels added on top of the real ones, then
+  /// puts everything back. Nests safely. Purely synchronous and never
+  /// notifies, so no listener can observe the borrowed levels.
+  T _withExtraLevels<T>(Map<String, int> extra, T Function() body) {
+    final saved = <Upgrade, int>{};
+    for (final entry in extra.entries) {
+      if (entry.value == 0) continue;
+      final upgrade = _upgradeById(entry.key);
+      if (upgrade == null) continue;
+      saved[upgrade] = upgrade.level;
+      upgrade.level += entry.value;
+    }
+    if (saved.isEmpty) return body();
+    // Both are derived purely from levels, so putting them back is exact
+    // and saves a second full recalculation per simulated purchase.
+    final savedClickPower = clickPower;
+    final savedAutoClickRate = autoClickRate;
+    _recalculateDerivedStatsFromUpgrades();
+    try {
+      return body();
+    } finally {
+      saved.forEach((upgrade, level) => upgrade.level = level);
+      clickPower = savedClickPower;
+      autoClickRate = savedAutoClickRate;
+    }
+  }
+
+  /// Idle rate and per-tap value with every permanent multiplier, but none
+  /// of the timed boosts (Overclock, Temporal Collapse, Neural Spark) or
+  /// the momentum combo — the numbers the player keeps.
+  ({double idle, double perClick}) _steadyProduction() {
+    final overclock = _overclockActive;
+    final collapse = _temporalCollapseActive;
+    _overclockActive = false;
+    _temporalCollapseActive = false;
+    try {
+      final idle = totalIdleRate;
+      final perClick = clickPower.toDouble() *
+              prestigeMultiplier *
+              neuralLossMultiplier *
+              globalProductionMultiplier +
+          idle * _kineticSynergyShare;
+      return (idle: idle, perClick: perClick);
+    } finally {
+      _overclockActive = overclock;
+      _temporalCollapseActive = collapse;
+    }
+  }
+
+  static String _x(double v, [int digits = 2]) => '×${v.toStringAsFixed(digits)}';
+  static String _pctOf(double v) {
+    final p = v * 100;
+    return p == p.roundToDouble()
+        ? '${p.toStringAsFixed(0)}%'
+        : '${p.toStringAsFixed(1)}%';
+  }
+
+  /// What buying [levels] more levels of [upgrade] actually adds, after all
+  /// multipliers. The upgrade rows show this instead of the raw base effect
+  /// ("+1 click power"), which stopped meaning anything once prestige,
+  /// milestones, neural and artifact multipliers stacked up.
+  UpgradeGainPreview upgradeGainPreview(Upgrade upgrade, int levels) {
+    var count = levels < 1 ? 1 : levels;
+    if (upgrade.maxLevel != -1) {
+      count = math.min(count, upgrade.maxLevel - upgrade.level);
+    }
+    if (count <= 0) return const UpgradeGainPreview();
+
+    final before = _steadyProduction();
+    final bStrike = _probabilityStrikeMultiplier;
+    final bCap = _momentumCap;
+    final bSurge = _overclockIdleMultiplier;
+    final bSurgeSecs = _overclockDurationSeconds;
+    final bStreak = _overclockStreakRequirement;
+    final bShare = _kineticSynergyShare;
+    final bCollapseLvl = _temporalCollapseLevel;
+    final bCollapseSecs = temporalCollapseDurationSeconds;
+    final bCooldown = temporalCollapseCooldownSeconds;
+    final bCascade = math.pow(2.0, _cascadeResonatorLevel).toDouble();
+    final owned = upgrade.level > 0;
+
+    return _withExtraLevels({upgrade.id: count}, () {
+      final after = _steadyProduction();
+      switch (upgrade.id) {
+        case probabilityStrikeId:
+          final chance = _probabilityStrikeChance;
+          final aStrike = _probabilityStrikeMultiplier;
+          return UpgradeGainPreview(
+            // Average over many taps: chance × the extra strike payout.
+            perClick: after.perClick * chance * (aStrike - bStrike),
+            qualifier: 'avg',
+            detail: owned
+                ? 'Strikes ${_x(bStrike, 0)} → ${_x(aStrike, 0)} · ${_pctOf(chance)} chance'
+                : '${_pctOf(chance)} of taps strike for ${_x(aStrike, 0)}',
+          );
+        case momentumId:
+          final aCap = _momentumCap;
+          return UpgradeGainPreview(
+            perClick: after.perClick * (aCap - bCap),
+            qualifier: 'at max combo',
+            detail: 'Max combo ${_x(bCap)} → ${_x(aCap)}',
+          );
+        case overclockId:
+          final aSurge = _overclockIdleMultiplier;
+          final aSecs = _overclockDurationSeconds;
+          final aStreak = _overclockStreakRequirement;
+          return UpgradeGainPreview(
+            perSecond: after.idle * (owned ? aSurge - bSurge : aSurge - 1),
+            qualifier: 'while surging',
+            detail: owned
+                ? 'Surge ${_x(bSurge, 1)} → ${_x(aSurge, 1)} · ${bSurgeSecs}s → ${aSecs}s · streak $bStreak → $aStreak'
+                : '$aStreak-tap streak surges idle ${_x(aSurge, 1)} for ${aSecs}s',
+          );
+        case temporalCollapseId:
+          final aLvl = _temporalCollapseLevel;
+          return UpgradeGainPreview(
+            perSecond: 0,
+            detail: bCollapseLvl > 0
+                ? 'Burst ${bCollapseLvl * 60}s → ${aLvl * 60}s of idle · ×2 for ${bCollapseSecs}s → ${temporalCollapseDurationSeconds}s · cooldown ${bCooldown}s → ${temporalCollapseCooldownSeconds}s'
+                : 'Burst ${aLvl * 60}s of idle, then ×2 for ${temporalCollapseDurationSeconds}s · cooldown ${temporalCollapseCooldownSeconds}s',
+          );
+        case kineticSynergyId:
+          return UpgradeGainPreview(
+            perClick: after.perClick - before.perClick,
+            detail: 'Taps add ${_pctOf(bShare)} → ${_pctOf(_kineticSynergyShare)} of idle/s',
+          );
+        case cascadeResonatorId:
+          final aCascade = math.pow(2.0, _cascadeResonatorLevel).toDouble();
+          return UpgradeGainPreview(
+            perSecond: after.idle - before.idle,
+            detail: 'Idle ${_x(bCascade, 0)} → ${_x(aCascade, 0)}',
+          );
+      }
+      if (upgrade.effectType == idleCategory) {
+        return UpgradeGainPreview(perSecond: after.idle - before.idle);
+      }
+      return UpgradeGainPreview(perClick: after.perClick - before.perClick);
+    });
+  }
+
+  // ── Advisor ──
+
+  /// Pace the advisor assumes. A player with no idle income yet has to tap,
+  /// so they are assumed to tap at a relaxed pace rather than having every
+  /// upgrade valued at zero before their first measured taps.
+  double get _advisorClickRate {
+    final measured = recentClickRate;
+    if (measured < 0.5 && autoClickRate <= 0) return 4.0;
+    return measured;
+  }
+
+  /// Average momentum multiplier over a ~2 minute tapping burst: the combo
+  /// climbs every tap until the cap. Tap chains break after a 1s gap, so a
+  /// pace under 1 tap/s never builds combo at all.
+  double _expectedMomentumFactor(double rate) {
+    if (!_isUpgradeActive(momentumId)) return 1.0;
+    final cap = _momentumCap;
+    final floorShare =
+        Artifacts.momentumFloor(_artifactLevel(Artifacts.perpetualMotion));
+    final floor = 1.0 + (cap - 1.0) * floorShare;
+    final engagement = ((rate - 1.0) / 0.5).clamp(0.0, 1.0);
+    if (engagement <= 0) return floor;
+    final per = _momentumPerClickBonus;
+    const burstTaps = 120;
+    var sum = 0.0;
+    for (var n = 1; n <= burstTaps; n++) {
+      final m = math.min(1.0 + (n - 1) * per, cap);
+      sum += m > floor ? m : floor;
+    }
+    return floor + (sum / burstTaps - floor) * engagement;
+  }
+
+  /// Expected payout of a tap relative to an unstruck tap, chains included.
+  double get _expectedStrikeFactor {
+    if (!_isUpgradeActive(probabilityStrikeId)) return 1.0;
+    final chance = _probabilityStrikeChance;
+    final c =
+        Artifacts.strikeChainChance(_artifactLevel(Artifacts.loadedDice));
+    final chains = c + c * c + c * c * c;
+    return 1.0 + chance * (_probabilityStrikeMultiplier * (1.0 + chains) - 1.0);
+  }
+
+  double get _expectedEchoFactor =>
+      1.0 +
+      Artifacts.echoShare(_artifactLevel(Artifacts.echoChamber)) *
+          Artifacts.echoWindow /
+          Artifacts.echoInterval;
+
+  /// Share of the time an Overclock surge is running. One surge per
+  /// unbroken tap chain, modelled as ~1 minute bursts with short breaks,
+  /// plus Overclock Core's automatic surges.
+  double _expectedOverclockUptime(double rate) {
+    final duration = _overclockDurationSeconds.toDouble();
+    var uptime = 0.0;
+    if (_isUpgradeActive(overclockId) && rate >= 1.0) {
+      const burstSeconds = 60.0;
+      const cycleSeconds = burstSeconds + 15.0;
+      final secondsToTrigger = _overclockStreakRequirement / rate;
+      if (secondsToTrigger < burstSeconds) {
+        uptime += math.min(duration, cycleSeconds - secondsToTrigger) /
+            cycleSeconds;
+      }
+    }
+    final core =
+        Artifacts.overclockCoreInterval(_artifactLevel(Artifacts.overclockCore));
+    if (core != null) uptime += duration / core;
+    return uptime.clamp(0.0, 1.0);
+  }
+
+  /// Numbers per second the player can expect to earn at [rate] taps/s,
+  /// averaging in every tap and timed effect they own. The advisor ranks
+  /// purchases by how much they raise this.
+  double _expectedValuePerSecond(double rate) {
+    final p = _steadyProduction();
+    final tap = p.perClick *
+        _expectedMomentumFactor(rate) *
+        _expectedStrikeFactor *
+        _expectedEchoFactor;
+    final uptime = _expectedOverclockUptime(rate);
+    final idle = p.idle * (1.0 + uptime * (_overclockIdleMultiplier - 1.0));
+    var total = idle + rate * tap;
+    final collapseLevel = _temporalCollapseLevel;
+    if (collapseLevel > 0) {
+      // Assumes the ability is fired whenever it comes off cooldown.
+      final active = temporalCollapseDurationSeconds.toDouble();
+      final cycle = active + temporalCollapseCooldownSeconds;
+      total = total * (1.0 + active / cycle) + p.idle * 60 * collapseLevel / cycle;
+    }
+    return total;
+  }
+
+  UpgradeRecommendation? _cachedRecommendation;
+  int _recommendationSignature = 0;
+  int _recommendationComputedAtMs = 0;
+  static const int _recommendationRefreshMs = 1000;
+
+  /// The advisor hides while onboarding is steering purchases.
+  bool get _tutorialSteersPurchases {
+    final scope = specFor(_tutorialStep).scope;
+    return scope == TutorialScope.main || scope == TutorialScope.upgrades;
+  }
+
+  /// The single best purchase right now, and how many levels of it.
+  ///
+  /// Every candidate (1 level, or enough levels to reach the next ×2
+  /// milestone) is scored by `time to afford + time to pay back`:
+  ///
+  ///     max(0, cost − number) / income  +  cost / Δincome
+  ///
+  /// where income is [_expectedValuePerSecond] at the player's measured tap
+  /// pace. That is the time until the purchase has been paid for *and*
+  /// earned itself back, so it naturally prefers cheap quick wins early,
+  /// values a milestone jump when one is close, weighs click upgrades by
+  /// how much this player actually taps, and never points at something
+  /// hours away when a good buy is available now.
+  ///
+  /// The pick is then extended by planning the whole current balance
+  /// greedily — buy the winner (in simulation), rescore everything, repeat
+  /// while affordable — and recommending every level of the first pick
+  /// that plan contains. The result is "buy 7×", not "buy one, then look
+  /// again".
+  ///
+  /// Cached for a second, and refreshed immediately after any purchase.
+  UpgradeRecommendation? get recommendedUpgrade {
+    if (_tutorialSteersPurchases) return null;
+    final nowMs = clock().millisecondsSinceEpoch;
+    final signature = Object.hash(
+      Object.hashAll(upgrades.map((u) => u.level)),
+      prestigeCount,
+      _recentClickMs.isEmpty,
+    );
+    if (signature == _recommendationSignature &&
+        nowMs - _recommendationComputedAtMs < _recommendationRefreshMs) {
+      return _cachedRecommendation;
+    }
+    _recommendationSignature = signature;
+    _recommendationComputedAtMs = nowMs;
+    return _cachedRecommendation = _computeRecommendation();
+  }
+
+  UpgradeRecommendation? _computeRecommendation() {
+    final rate = _advisorClickRate;
+    final baseValue = _expectedValuePerSecond(rate);
+    if (!(baseValue > 0)) return null;
+
+    // Plan how the current balance is best spent, one greedy pick at a time.
+    // The idle tiers share one cost-per-effect, so the best pick often
+    // alternates between neighbours level by level; the recommendation is
+    // the first pick plus every other level of it the plan also buys.
+    final plan = <String, int>{};
+    Upgrade? pick;
+    var budget = number;
+    var value = baseValue;
+
+    for (var step = 0; step < 30; step++) {
+      final best =
+          _withExtraLevels(plan, () => _bestCandidate(budget, value, rate));
+      if (best == null) break;
+      if (pick != null && best.cost > budget) break;
+      pick ??= best.upgrade;
+      plan[best.upgrade.id] = (plan[best.upgrade.id] ?? 0) + best.count;
+      budget -= best.cost;
+      value = best.valueAfter;
+      if (budget < BigInt.zero) break;
+    }
+    if (pick == null) return null;
+
+    final amount = plan[pick.id]!;
+    final totalCost = _costOfLevels(pick, pick.level, amount);
+    final gain = _withExtraLevels(
+            {pick.id: amount}, () => _expectedValuePerSecond(rate)) -
+        baseValue;
+    final shortfall = (totalCost - number).toDouble();
+    return UpgradeRecommendation(
+      upgradeId: pick.id,
+      category: pick.effectType,
+      amount: amount,
+      cost: totalCost,
+      gainPerSecond: gain,
+      paybackSeconds: gain > 0 ? totalCost.toDouble() / gain : double.infinity,
+      secondsToAfford: shortfall > 0 ? shortfall / baseValue : 0,
+      assumedClickRate: rate,
+    );
+  }
+
+  /// Best single candidate at the current (possibly simulated) levels.
+  /// Returns the upgrade, how many levels, their cost and the income after.
+  ({Upgrade upgrade, int count, BigInt cost, double valueAfter})?
+      _bestCandidate(
+    BigInt budget,
+    double value,
+    double rate,
+  ) {
+    final budgetD = budget.toDouble();
+    ({Upgrade upgrade, int count, BigInt cost, double valueAfter})? best;
+    var bestScore = double.infinity;
+
+    for (final upgrade in upgrades) {
+      if (prestigeCount < minPrestigeForUpgrade(upgrade.id)) continue;
+      if (upgrade.isMaxed) continue;
+      final level = upgrade.level;
+      final counts = <int>{1};
+      final nextMilestone = upgradeMilestoneThresholds
+          .where((t) => t > level)
+          .firstOrNull;
+      if (nextMilestone != null) {
+        final gap = nextMilestone - level;
+        if (gap > 1 && gap <= 100) counts.add(gap);
+      }
+      for (var count in counts) {
+        if (upgrade.maxLevel != -1) {
+          count = math.min(count, upgrade.maxLevel - level);
+        }
+        if (count <= 0) continue;
+        final cost = _costOfLevels(upgrade, level, count);
+        final after = _withExtraLevels(
+            {upgrade.id: count}, () => _expectedValuePerSecond(rate));
+        final gain = after - value;
+        if (!(gain > 0)) continue;
+        final costD = cost.toDouble();
+        final toAfford = costD > budgetD ? (costD - budgetD) / value : 0.0;
+        final score = toAfford + costD / gain;
+        if (score < bestScore) {
+          bestScore = score;
+          best = (
+            upgrade: upgrade,
+            count: count,
+            cost: cost,
+            valueAfter: after,
+          );
+        }
+      }
+    }
+    return best;
   }
 
   Future<void> prestige() async {
@@ -2212,6 +2695,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _overclockCoreElapsed = 0.0;
     _compoundVaultElapsed = 0.0;
     neuralNetwork = NeuralNetwork.initial();
+    _upgradeTutorialNumberSnapshot = null;
+    _upgradeTutorialLevelSnapshot = null;
     if (!preserveTutorial) {
       _tutorialCompleted = false;
       _tutorialStep = TutorialStep.welcome;
@@ -2225,6 +2710,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _updateHighestNumber() {
+    // The deep-dive balance is borrowed: it must not set a personal best,
+    // unlock a number achievement or announce upgrades as affordable.
+    if (isUpgradeDeepDiveActive) return;
     if (number > highestNumber) {
       highestNumber = number;
     }
@@ -2232,9 +2720,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   PlayerProgress _buildLocalProgress(String userId) {
-    final upgradedLevels = <String, int>{
-      for (final upgrade in upgrades) upgrade.id: upgrade.level,
-    };
+    // During the upgrade deep-dive these are the pre-tutorial values, so the
+    // borrowed budget can't reach the cloud or the leaderboard.
+    final upgradedLevels = _persistableUpgradeLevels;
+    final number = _persistableNumber;
     final nexusLevelMap = <String, int>{
       for (final node in researchNodes) node.id: node.level,
     };
@@ -2270,6 +2759,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _applyCloudProgress(PlayerProgress progress) {
+    // The cloud copy is real progress and supersedes the deep-dive snapshot;
+    // the deep-dive restarts on top of it below.
+    final restartDeepDive = isUpgradeDeepDiveActive;
+    _upgradeTutorialNumberSnapshot = null;
+    _upgradeTutorialLevelSnapshot = null;
     number = progress.number;
     clickPower = progress.clickPower > BigInt.zero
         ? progress.clickPower
@@ -2346,6 +2840,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCooldownTimerRef?.cancel();
     _neuralSparkBoostMultiplier = 1.0;
     _neuralSparkBoostTimer?.cancel();
+
+    if (restartDeepDive && _isUpgradeTutorialStep(_tutorialStep)) {
+      _startUpgradeTutorial();
+    }
   }
 
   /// Starts watching device connectivity so the game can retry the cloud
@@ -2536,15 +3034,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final _perfSw = Stopwatch()..start(); // TEMP-PERF-PROBE
     _updateHighestNumber();
     await _storageService.saveGame(
-      number: number,
+      number: _persistableNumber,
       clickPower: clickPower,
       autoClickRate: autoClickRate,
       prestigeCurrency: prestigeCurrency,
       prestigeMultiplier: prestigeMultiplier,
       prestigeCount: prestigeCount,
-      upgradeLevels: {
-        for (final upgrade in upgrades) upgrade.id: upgrade.level,
-      },
+      upgradeLevels: _persistableUpgradeLevels,
       highestNumber: highestNumber,
       nexusLevels: {
         for (final node in researchNodes) node.id: node.level,
@@ -2660,6 +3156,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_tutorialCompleted) return;
+    // Ending the tutorial from another device mid-deep-dive must still hand
+    // back the borrowed budget.
+    _restoreUpgradeTutorialSnapshot();
     _tutorialCompleted = true;
     _tutorialStep = TutorialStep.done;
     notifyListeners();
@@ -2818,8 +3317,53 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         step == TutorialStep.upgradesDone;
   }
 
-  /// Budget handed to the player so the upgrade deep-dive is affordable.
-  static final BigInt upgradeTutorialGrant = BigInt.from(100000000);
+  /// The flat grant older builds added to `number` for the deep-dive. Only
+  /// used to repair saves written by those builds.
+  static final BigInt _legacyUpgradeTutorialGrant = BigInt.from(100000000);
+
+  /// True while the upgrade deep-dive is running on borrowed numbers.
+  bool get isUpgradeDeepDiveActive => _upgradeTutorialNumberSnapshot != null;
+
+  /// Exactly what the deep-dive asks the player to buy: one level each of
+  /// Probability Strike and Momentum, at their current price.
+  ///
+  /// It used to be a flat 100M — the whole first prestige requirement.
+  /// Anything left over was free money, and because the snapshot lived only
+  /// in memory, killing the app mid-deep-dive kept all of it.
+  BigInt get upgradeTutorialGrant {
+    BigInt nextCost(String id) {
+      final u = _upgradeById(id);
+      if (u == null || u.isMaxed) return BigInt.zero;
+      return _costOfLevels(u, u.level, 1);
+    }
+
+    return nextCost(probabilityStrikeId) + nextCost(momentumId);
+  }
+
+  /// The one purchase the current deep-dive step asks for, if any.
+  String? get _upgradeTutorialPurchaseTarget {
+    if (_tutorialStep == TutorialStep.buyProbabilityStrike) {
+      return probabilityStrikeId;
+    }
+    if (_tutorialStep == TutorialStep.buyMomentum) return momentumId;
+    return null;
+  }
+
+  /// Whether the tutorial currently forbids buying [id]. During the
+  /// deep-dive the budget is exact, so any other purchase would strand the
+  /// player one upgrade short.
+  bool tutorialBlocksPurchase(String id) {
+    if (!isUpgradeDeepDiveActive) return false;
+    return _upgradeTutorialPurchaseTarget != id;
+  }
+
+  /// Upgrade levels as they should be persisted: during the deep-dive that
+  /// is the pre-tutorial snapshot, never the borrowed levels.
+  Map<String, int> get _persistableUpgradeLevels =>
+      _upgradeTutorialLevelSnapshot ??
+      {for (final upgrade in upgrades) upgrade.id: upgrade.level};
+
+  BigInt get _persistableNumber => _upgradeTutorialNumberSnapshot ?? number;
 
   void _startUpgradeTutorial() {
     // Only show the upgrade tutorial once during the main tutorial.
@@ -2829,21 +3373,22 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Snapshot what the player actually had, so finishing (or skipping) the
-    // sub-tutorial restores it rather than zeroing everything. The old
-    // teardown set number = 0 and every upgrade level = 0 unconditionally,
-    // which destroyed real progress — and it was the SKIP path too.
+    // sub-tutorial restores it rather than zeroing everything. Saves and
+    // cloud uploads write this snapshot for as long as the deep-dive runs,
+    // so the borrowed budget never reaches storage.
     _upgradeTutorialNumberSnapshot = number;
     _upgradeTutorialLevelSnapshot = {
       for (final u in upgrades) u.id: u.level,
     };
 
-    number = number + upgradeTutorialGrant;
+    // The balance is replaced, not topped up: exactly enough for the two
+    // guided purchases and nothing else.
+    number = upgradeTutorialGrant;
     _tutorialStep = TutorialStep.upgradeIntro;
   }
 
-  void _completeUpgradeTutorial() {
-    // Restore the pre-tutorial snapshot: the grant and anything bought with
-    // it goes away, but progress the player earned themselves survives.
+  /// Puts back the pre-deep-dive number and levels, without moving the step.
+  void _restoreUpgradeTutorialSnapshot() {
     final numberSnapshot = _upgradeTutorialNumberSnapshot;
     final levelSnapshot = _upgradeTutorialLevelSnapshot;
     if (numberSnapshot != null) {
@@ -2851,22 +3396,43 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (levelSnapshot != null) {
       for (final u in upgrades) {
-        final restored = levelSnapshot[u.id];
-        if (restored != null) {
-          u.level = u.maxLevel == -1
-              ? restored
-              : restored.clamp(0, u.maxLevel);
-        }
+        final restored = levelSnapshot[u.id] ?? 0;
+        u.level = u.maxLevel == -1 ? restored : restored.clamp(0, u.maxLevel);
       }
     }
     _upgradeTutorialNumberSnapshot = null;
     _upgradeTutorialLevelSnapshot = null;
+    _recalculateDerivedStatsFromUpgrades();
+  }
+
+  void _completeUpgradeTutorial() {
+    // Restore the pre-tutorial snapshot: the grant and anything bought with
+    // it goes away, but progress the player earned themselves survives.
+    _restoreUpgradeTutorialSnapshot();
     // Set only now that the sub-tutorial has actually finished. Setting it at
     // the start meant an app kill mid-deep-dive short-circuited straight to
     // learnPrestige on relaunch, and the grant was never clawed back.
     _upgradeTutorialSeen = true;
-    _recalculateDerivedStatsFromUpgrades();
     _tutorialStep = TutorialStep.learnPrestige;
+  }
+
+  /// Called on load. The save holds the real, pre-deep-dive progress (see
+  /// [_persistableNumber]), so a deep-dive interrupted by an app kill simply
+  /// starts over from its first card with a fresh budget.
+  void _resumeInterruptedUpgradeTutorial() {
+    if (!_isUpgradeTutorialStep(_tutorialStep)) return;
+    // Saves from older builds baked the 100M grant into `number`. The
+    // deep-dive only ever runs in the first minutes of a brand-new game, so
+    // a real balance anywhere near that is impossible — take it back.
+    if (prestigeCount == 0 && number >= _legacyUpgradeTutorialGrant) {
+      number -= _legacyUpgradeTutorialGrant;
+      highestNumber = number;
+      _upgradeById(probabilityStrikeId)?.level = 0;
+      _upgradeById(momentumId)?.level = 0;
+      _recalculateDerivedStatsFromUpgrades();
+    }
+    _upgradeTutorialSeen = false;
+    _startUpgradeTutorial();
   }
 
   void _completeNexusTutorial() {

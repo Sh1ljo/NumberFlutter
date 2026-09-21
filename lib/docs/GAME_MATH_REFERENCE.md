@@ -262,7 +262,7 @@ unlocking and PP had **no sink at all** afterwards.
 | `kinetic_surge` | 2 | surge ≥3 | 9 | 3 | +0.1 momentum cap per level |
 | `resonance_core` | 3 | idle_foundation ≥5 | 15 | 5 | `×1.05^L` idle |
 | `echo_protocol` | 3 | enhanced_extraction ≥3 | 12 | 5 | +10% PP earned per level |
-| `neural_genesis` | 4 | resonance 5 **and** echo 5 | 200 flat | 1 | unlocks the Neural Network; also grants +100M `number` if the neural tutorial hasn't run |
+| `neural_genesis` | 4 | resonance 5 **and** echo 5 | 200 flat | 1 | unlocks the Neural Network; also grants exactly the neural tutorial's costs (first gradient + one paid activation + first branch, ≈9M) if that tutorial hasn't run |
 
 **Totals.** Maxing everything now costs **~2,640 PP** (was 1,469). The minimum path to
 `neural_genesis` is **~800 PP** (was 776) — deliberately close to unchanged, so the neural

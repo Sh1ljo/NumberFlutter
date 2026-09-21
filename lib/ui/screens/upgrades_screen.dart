@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
 import '../../models/upgrade.dart';
+import '../../models/upgrade_recommendation.dart';
 import '../../utils/number_formatter.dart';
 import '../widgets/profile_editor_dialog.dart';
 import 'leaderboard_screen.dart';
@@ -222,6 +223,8 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
             ),
             const SizedBox(height: 4),
 
+            const _RecommendationCard(),
+
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
                   .where((upgrade) => upgrade.effectType == selectedCategory)
@@ -287,6 +290,8 @@ typedef _UpgradeRowData = ({
   bool isMaxed,
   ({BigInt cost, int amount}) info,
   bool canAfford,
+  bool blockedByTutorial,
+  bool recommended,
   int milestoneMultiplier,
 });
 
@@ -301,19 +306,99 @@ class _UpgradeRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final data = context.select<GameState, _UpgradeRowData>((gs) {
       final info = gs.getPurchaseInfo(upgrade);
+      final blocked = gs.tutorialBlocksPurchase(upgrade.id);
       return (
         level: upgrade.level,
         isMaxed: upgrade.isMaxed,
         info: info,
-        canAfford: info.amount > 0 && gs.number >= info.cost,
+        canAfford: !blocked && info.amount > 0 && gs.number >= info.cost,
+        blockedByTutorial: blocked,
+        recommended: gs.recommendedUpgrade?.upgradeId == upgrade.id,
         milestoneMultiplier: gs.upgradeMilestoneMultiplier(upgrade),
       );
     });
     return _UpgradeItem(
       upgrade: upgrade,
       canAfford: data.canAfford,
+      blockedByTutorial: data.blockedByTutorial,
+      recommended: data.recommended,
       info: data.info,
       milestoneMultiplier: data.milestoneMultiplier,
+    );
+  }
+}
+
+/// Formats an [UpgradeGainPreview] as the row's gain line, e.g.
+/// "+1.25K per tap" or "+340 per sec (avg)".
+({String? gain, String? detail}) _describeGain(
+    UpgradeGainPreview preview, int levels) {
+  final parts = <String>[
+    if (preview.perClick > 0)
+      '+${NumberFormatter.formatGain(preview.perClick)} per tap',
+    if (preview.perSecond > 0)
+      '+${NumberFormatter.formatGain(preview.perSecond)} per sec',
+  ];
+  String? gain;
+  if (parts.isNotEmpty) {
+    gain = parts.join(' · ');
+    if (preview.qualifier != null) gain += ' (${preview.qualifier})';
+    if (levels > 1) gain += '  for $levels levels';
+  }
+  return (gain: gain, detail: preview.detail);
+}
+
+/// The row's "what you actually get" line: the real gain after every
+/// multiplier, for however many levels the PURCHASE button would buy.
+class _UpgradeGainLine extends StatelessWidget {
+  final Upgrade upgrade;
+  final int levels;
+
+  const _UpgradeGainLine({required this.upgrade, required this.levels});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Selecting the formatted strings, not the raw doubles, so the line
+    // only rebuilds when what it shows actually changes.
+    final text = context.select<GameState, ({String? gain, String? detail})>(
+      (gs) => _describeGain(gs.upgradeGainPreview(upgrade, levels), levels),
+    );
+    if (text.gain == null && text.detail == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (text.gain != null)
+            Row(
+              children: [
+                Icon(Icons.trending_up,
+                    size: 14, color: theme.colorScheme.secondary),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    text.gain!,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (text.detail != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                text.detail!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -321,12 +406,16 @@ class _UpgradeRow extends StatelessWidget {
 class _UpgradeItem extends StatelessWidget {
   final Upgrade upgrade;
   final bool canAfford;
+  final bool blockedByTutorial;
+  final bool recommended;
   final ({BigInt cost, int amount}) info;
   final int milestoneMultiplier;
 
   const _UpgradeItem({
     required this.upgrade,
     required this.canAfford,
+    required this.blockedByTutorial,
+    required this.recommended,
     required this.info,
     required this.milestoneMultiplier,
   });
@@ -352,9 +441,17 @@ class _UpgradeItem extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  upgrade.name,
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      upgrade.name,
+                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
+                    ),
+                    if (recommended) const _BestBadge(),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
@@ -410,7 +507,7 @@ class _UpgradeItem extends StatelessWidget {
                     minimumSize: const Size(0, 34),
                   ),
                   child: Text(
-                    'INSUFFICIENT',
+                    blockedByTutorial ? 'LOCKED' : 'INSUFFICIENT',
                     style: theme.textTheme.labelSmall?.copyWith(
                         color:
                             theme.colorScheme.primary.withValues(alpha: 0.5)),
@@ -425,6 +522,11 @@ class _UpgradeItem extends StatelessWidget {
               color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
             ),
           ),
+          if (!isMaxed)
+            _UpgradeGainLine(
+              upgrade: upgrade,
+              levels: info.amount > 0 ? info.amount : 1,
+            ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -486,6 +588,210 @@ class _UpgradeItem extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _BestBadge extends StatelessWidget {
+  const _BestBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.15),
+        border: Border.all(color: theme.colorScheme.primary),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.auto_awesome, size: 11, color: theme.colorScheme.primary),
+          const SizedBox(width: 3),
+          Text(
+            'BEST BUY',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontSize: 9,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The advisor's pick, pinned above the list: which upgrade, how many
+/// levels, what it adds and how fast it pays for itself. Tapping the card
+/// jumps to the right category; BUY purchases exactly the recommended
+/// amount, whatever the 1X/10X/MAX toggle says.
+class _RecommendationCard extends StatelessWidget {
+  const _RecommendationCard();
+
+  static String? _milestoneNote(GameState gs, Upgrade upgrade, int amount) {
+    final from = upgrade.level;
+    final to = from + amount;
+    final crossed = GameState.upgradeMilestoneThresholds
+        .where((t) => t > from && t <= to)
+        .toList();
+    if (crossed.isEmpty) return null;
+    final multiplier = gs.upgradeMilestoneMultiplierForLevel(to) ~/
+        gs.upgradeMilestoneMultiplierForLevel(from);
+    return 'hits Lv ${crossed.last} milestone (×$multiplier)';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rec = context
+        .select<GameState, UpgradeRecommendation?>((gs) => gs.recommendedUpgrade);
+    if (rec == null) return const SizedBox(height: 4);
+
+    final theme = Theme.of(context);
+    final gs = context.read<GameState>();
+    final upgrade = gs.upgrades.firstWhere((u) => u.id == rec.upgradeId);
+    final milestone = _milestoneNote(gs, upgrade, rec.amount);
+    final categoryLabel =
+        rec.category == GameState.idleCategory ? 'IDLE' : 'CLICK';
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.65);
+
+    final facts = <String>[
+      '+${NumberFormatter.formatGain(rec.gainPerSecond)}/s income',
+      'pays back in ${NumberFormatter.formatDuration(rec.paybackSeconds)}',
+      if (milestone != null) milestone,
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+      child: Material(
+        color: theme.colorScheme.primary.withValues(alpha: 0.08),
+        shape: RoundedRectangleBorder(
+          side: BorderSide(
+              color: theme.colorScheme.primary.withValues(alpha: 0.7)),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: InkWell(
+          onTap: () => gs.setSelectedUpgradeCategory(rec.category),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.auto_awesome,
+                        size: 14, color: theme.colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'RECOMMENDED',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(categoryLabel,
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: muted)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: upgrade.name),
+                          TextSpan(
+                            text: '  ×${rec.amount}',
+                            style: TextStyle(color: theme.colorScheme.primary),
+                          ),
+                        ]),
+                        style:
+                            theme.textTheme.titleMedium?.copyWith(fontSize: 17),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Selector<GameState, bool>(
+                      selector: (_, gs) => gs.number >= rec.cost,
+                      builder: (context, affordable, _) => affordable
+                          ? ElevatedButton(
+                              onPressed: () => gs.buyUpgradeLevels(
+                                  rec.upgradeId, rec.amount),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: theme.colorScheme.primary,
+                                foregroundColor: theme.colorScheme.onPrimary,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(2)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 8),
+                                minimumSize: const Size(0, 34),
+                              ),
+                              child: Text(
+                                'BUY ${NumberFormatter.format(rec.cost)}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onPrimary),
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(NumberFormatter.format(rec.cost),
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontSize: 15)),
+                                Text(
+                                  'in ~${NumberFormatter.formatDuration(rec.secondsToAfford)}',
+                                  style: theme.textTheme.labelSmall
+                                      ?.copyWith(color: muted),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  facts.join(' · '),
+                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                ),
+                if (rec.assumedClickRate >= 0.5)
+                  Text(
+                    'Based on your pace of ~${rec.assumedClickRate.toStringAsFixed(1)} taps/s',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                      fontSize: 11,
+                    ),
+                  ),
+                Selector<GameState, double>(
+                  selector: (_, gs) => gs.number >= rec.cost
+                      ? 1.0
+                      : _calculateAffordabilityProgress(gs.number, rec.cost),
+                  builder: (context, progress, _) => progress >= 1.0
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              minHeight: 2,
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.12),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  theme.colorScheme.primary),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -130,6 +130,35 @@ class NumberFormatter {
     return exponent;
   }
 
+  /// Compact display for a production amount that may be fractional
+  /// (e.g. 0.4, 12, 1.25K). Used for per-tap and per-second gains.
+  static String formatGain(double value) {
+    if (!value.isFinite || value <= 0) return '0';
+    if (value < 10 && value != value.roundToDouble()) {
+      String s = value.toStringAsFixed(value < 1 ? 2 : 1);
+      while (s.endsWith('0')) {
+        s = s.substring(0, s.length - 1);
+      }
+      if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+      return s;
+    }
+    return format(BigInt.from(value.round()));
+  }
+
+  /// Short human duration: "now", "42s", "3m 05s", "2h 14m", "3d 4h".
+  static String formatDuration(double seconds) {
+    if (!seconds.isFinite) return '∞';
+    if (seconds < 1) return 'now';
+    final s = seconds.round();
+    if (s < 60) return '${s}s';
+    if (s < 3600) {
+      return '${s ~/ 60}m ${(s % 60).toString().padLeft(2, '0')}s';
+    }
+    if (s < 86400) return '${s ~/ 3600}h ${((s % 3600) ~/ 60)}m';
+    if (s < 86400 * 365) return '${s ~/ 86400}d ${((s % 86400) ~/ 3600)}h';
+    return '>1y';
+  }
+
   /// Compact display for prestige multiplier (e.g. 1.028, 2.415).
   static String formatPrestigeMultiplier(double value) {
     if (!value.isFinite || value <= 0) return '1';
