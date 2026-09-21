@@ -73,6 +73,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _nexusStabilized = false;
   bool get nexusStabilized => _nexusStabilized;
 
+  /// True once the player has crossed the Nexus unlock threshold but hasn't
+  /// stabilized it yet. Mirrors the gate in UnstabilizedView so UI and logic
+  /// can't drift apart.
+  bool get nexusReadyToStabilize => !_nexusStabilized && prestigeCount >= 3;
+
   int buyAmount = 1; // 1, 10, 100, -2 (NEXT), -1 (MAX)
   String selectedUpgradeCategory = clickCategory;
 
@@ -277,6 +282,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool _nexusTutorialSeen = false;
   bool _neuralTutorialSeen = false;
   bool _upgradeTutorialSeen = false;
+  bool _artifactTutorialSeen = false;
+  /// Milestones reached just before the most recent prestige, captured at
+  /// prestige() time and consumed once the reveal animation finishes. Null
+  /// when no prestige is pending a post-animation tutorial check.
+  int? _artifactMilestonesBeforePrestige;
   VoidCallback? _onTutorialResetCallback;
 
   /// Pre-deep-dive progress, restored by [_completeUpgradeTutorial].
@@ -289,6 +299,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool get nexusTutorialSeen => _nexusTutorialSeen;
   bool get neuralTutorialSeen => _neuralTutorialSeen;
   bool get upgradeTutorialSeen => _upgradeTutorialSeen;
+  bool get artifactTutorialSeen => _artifactTutorialSeen;
 
   /// Test-only: jump straight to a step so the overlay's rendering for it can
   /// be exercised. Does not touch persistence.
@@ -314,6 +325,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void setPrestigeAnimating(bool value) {
     isPrestigeAnimating = value;
+    if (!value) _maybeStartArtifactsTutorial();
     notifyListeners();
   }
 
@@ -1032,6 +1044,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       prestigeCount++;
     }
     _queueNewlyUnlockedUpgrades(old, prestigeCount);
+    _queueNexusReadyNotice(old, prestigeCount);
     _recalculateDerivedStatsFromUpgrades();
     _checkAchievements();
     notifyListeners();
@@ -1139,6 +1152,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _nexusTutorialSeen = (data['nexusTutorialSeen'] as bool?) ?? false;
       _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
       _upgradeTutorialSeen = (data['upgradeTutorialSeen'] as bool?) ?? false;
+      _artifactTutorialSeen = (data['artifactTutorialSeen'] as bool?) ?? false;
 
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
@@ -1368,6 +1382,28 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   int get _cascadeResonatorLevel =>
       _upgradeById(cascadeResonatorId)?.level ?? 0;
+
+  /// Combined multiplicative bonus applied on top of raw production: prestige,
+  /// achievements, Resonance Prism, Epochs, neural efficiency, Resonance Core,
+  /// plus Temporal Collapse / Overclock / Cascade Resonator while active. This
+  /// is every factor in [totalIdleRate] except the base auto-click rate
+  /// itself, so it answers "how much is everything multiplying my output by"
+  /// independent of whether any idle upgrades are owned yet.
+  double get totalMultiplier {
+    double multiplier = prestigeMultiplier *
+        _temporalCollapseFactor *
+        resonanceMultiplier *
+        neuralLossMultiplier *
+        globalProductionMultiplier;
+    if (_overclockActive) {
+      multiplier *= _overclockIdleMultiplier;
+    }
+    final cascadeLvl = _cascadeResonatorLevel;
+    if (cascadeLvl > 0) {
+      multiplier *= math.pow(2.0, cascadeLvl);
+    }
+    return multiplier;
+  }
 
   double get totalIdleRate {
     // Require at least one actual idle generator upgrade before any idle
@@ -2052,6 +2088,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     prestigeMultiplier += nextPrestigeDelta;
     prestigeCount += 1;
     _queueNewlyUnlockedUpgrades(previousPrestigeCount, prestigeCount);
+    _queueNexusReadyNotice(previousPrestigeCount, prestigeCount);
+    // prestige() fires partway through the reveal animation (at
+    // kPrestigeFirePoint), well before it visually finishes — don't start the
+    // tutorial yet or its card would pop up over the still-playing reveal.
+    // setPrestigeAnimating(false) picks this up once the reveal is done.
+    _artifactMilestonesBeforePrestige =
+        ArtifactState.milestonesReached(previousPrestigeCount);
 
     number = BigInt.zero;
     clickPower = BigInt.from(
@@ -2176,6 +2219,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _nexusTutorialSeen = false;
       _neuralTutorialSeen = false;
       _upgradeTutorialSeen = false;
+      _artifactTutorialSeen = false;
     }
     _recalculateDerivedStatsFromUpgrades();
   }
@@ -2369,6 +2413,34 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Sentinel id (not a real upgrade) queued into [_pendingUnlockNotices]
+  /// the moment the Nexus becomes stabilizable, so the same banner pipeline
+  /// used for upgrade unlocks can surface it too.
+  static const String nexusReadyNoticeId = 'nexus_stabilize';
+
+  /// Queues a one-time notice the moment [oldCount] → [newCount] crosses the
+  /// Nexus unlock threshold, mirroring [_queueNewlyUnlockedUpgrades].
+  void _queueNexusReadyNotice(int oldCount, int newCount) {
+    if (!_nexusStabilized && oldCount < 3 && newCount >= 3) {
+      _pendingUnlockNotices.add(nexusReadyNoticeId);
+    }
+  }
+
+  /// Starts the (once-ever) Artifacts tutorial once the prestige reveal
+  /// animation finishes, if that prestige just crossed the first artifact
+  /// milestone. Mirrors how the Nexus/Neural sub-tutorials fire off a real
+  /// gameplay event, but deferred past the animation so the card doesn't pop
+  /// up over it — see the capture site in [prestige].
+  void _maybeStartArtifactsTutorial() {
+    final before = _artifactMilestonesBeforePrestige;
+    _artifactMilestonesBeforePrestige = null;
+    if (before == null) return;
+    if (_artifactTutorialSeen || _tutorialStep != TutorialStep.done) return;
+    if (before == 0 && ArtifactState.milestonesReached(prestigeCount) > 0) {
+      _tutorialStep = TutorialStep.artifactsIntro;
+    }
+  }
+
   /// Queues a notice the first time a never-bought upgrade's cost becomes
   /// affordable, so the player is told "new upgrade available" as soon as
   /// they can actually buy it rather than having to notice it themselves in
@@ -2482,6 +2554,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       nexusTutorialSeen: _nexusTutorialSeen,
       neuralTutorialSeen: _neuralTutorialSeen,
       upgradeTutorialSeen: _upgradeTutorialSeen,
+      artifactTutorialSeen: _artifactTutorialSeen,
       nexusStabilized: _nexusStabilized,
       neuralNetworkJson: neuralNetwork.toJsonString(),
       testEnvironmentEnabled: _testEnvironmentEnabled,
@@ -2696,6 +2769,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     } else if (_tutorialStep == TutorialStep.upgradesDone) {
       _completeUpgradeTutorial();
       notifyListeners();
+    } else if (_tutorialStep == TutorialStep.artifactsIntro) {
+      _tutorialStep = TutorialStep.artifactsEmpower;
+      notifyListeners();
+    } else if (_tutorialStep == TutorialStep.artifactsEmpower) {
+      _completeArtifactsTutorial();
     }
   }
 
@@ -2704,6 +2782,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         step == TutorialStep.nexusUpgrades ||
         step == TutorialStep.nexusResearchOptProtocol ||
         step == TutorialStep.nexusGoal;
+  }
+
+  bool _isArtifactsTutorialStep(TutorialStep step) {
+    return step == TutorialStep.artifactsIntro ||
+        step == TutorialStep.artifactsEmpower;
   }
 
   bool _isNeuralTutorialStep(TutorialStep step) {
@@ -2800,6 +2883,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleStateSave();
   }
 
+  void _completeArtifactsTutorial() {
+    _artifactTutorialSeen = true;
+    _tutorialStep = TutorialStep.done;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
   void skipTutorial() {
     if (_isNexusTutorialStep(_tutorialStep)) {
       _completeNexusTutorial();
@@ -2807,6 +2897,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (_isNeuralTutorialStep(_tutorialStep)) {
       _completeNeuralTutorial();
+      return;
+    }
+    if (_isArtifactsTutorialStep(_tutorialStep)) {
+      _completeArtifactsTutorial();
       return;
     }
     if (_isUpgradeTutorialStep(_tutorialStep)) {

@@ -45,6 +45,10 @@ enum TutorialStep {
   /// Final "good luck" message on main screen.
   goodLuck,
 
+  /// ── Artifacts tutorial (fires once, after the first artifact milestone) ─
+  artifactsIntro,
+  artifactsEmpower,
+
   /// ── Nexus tutorial (fires once, after first stabilization) ────────────
   nexusIntro,
   nexusUpgrades,
@@ -102,7 +106,7 @@ enum TutorialStep {
 /// SKIP needs this: skipping out of the upgrade deep-dive used to jump to
 /// `learnPrestige` rather than ending, so the player had to press SKIP up to
 /// four times to actually escape.
-enum TutorialScope { main, nexus, neural, upgrades, none }
+enum TutorialScope { main, nexus, neural, upgrades, artifacts, none }
 
 /// How the overlay renders a step.
 ///
@@ -462,6 +466,22 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     title: "YOU'RE READY!",
     body:
         "You've learned the basics. Now go grind, prestige, and climb the leaderboards. Good luck!",
+  ),
+
+  // ── Artifacts tutorial ───────────────────────────────────────────────────
+  TutorialStep.artifactsIntro: TutorialStepSpec(
+    scope: TutorialScope.artifacts,
+    mode: TutorialMode.tapToContinue,
+    title: 'ARTIFACTS',
+    body:
+        'At certain prestige milestones you earn an Artifact — a permanent relic that boosts your run forever. Pick one now; artifacts you pass on can reappear at a later milestone.',
+  ),
+  TutorialStep.artifactsEmpower: TutorialStepSpec(
+    scope: TutorialScope.artifacts,
+    mode: TutorialMode.tapToContinue,
+    title: 'EMPOWER THEM',
+    body:
+        'Every artifact you own can be empowered by spending Prestige Points — there is no level cap, so keep investing PP in your favorites as you earn more.',
   ),
 
   // ── Nexus tutorial ───────────────────────────────────────────────────────

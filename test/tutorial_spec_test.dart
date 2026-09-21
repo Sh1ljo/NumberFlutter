@@ -80,12 +80,13 @@ void main() {
       }
     });
 
-    test('each of the four tutorials has steps', () {
+    test('each tutorial has steps', () {
       for (final scope in [
         TutorialScope.main,
         TutorialScope.nexus,
         TutorialScope.neural,
         TutorialScope.upgrades,
+        TutorialScope.artifacts,
       ]) {
         final steps = tutorialSpecs.entries
             .where((e) => e.value.scope == scope)

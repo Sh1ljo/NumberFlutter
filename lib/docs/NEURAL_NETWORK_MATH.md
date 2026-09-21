@@ -57,10 +57,15 @@ column as each sibling branches rather than all at once. Children are kept sorte
 
 ```
 maxGradientLevel = 9
-gradientUpgradeCost = 10,000 × 10^gradientLevel
+gradientUpgradeCost = 50,000 × 12^gradientLevel
 ```
 
-→ 10K, 100K, 1M, 10M, 100M, 1B, 10B, 100B, 1T. Maxing all 22 neurons is **~24.4 T**.
+→ 50K, 600K, 7.2M, 86.4M, ~1.04B, ~12.4B, ~149.3B, ~1.79T, ~21.5T. Maxing all 22 neurons is
+**~516 T**.
+
+Deep layers (past the 7-layer pyramid) multiply this by an extra `15^depth`, so late-game deep
+neurons cost dramatically more than pyramid ones at the same gradient level — see
+`NeuralNeuron.baseGradientCost`.
 
 `NeuralNeuron.maxGradientLevel` is the single source of truth — `NeuronDetailSheet` reads it
 for both the `GR x/y` badge and the pip row. Those used to be hardcoded to 5 while the logic
@@ -80,12 +85,12 @@ activation is free forever.
 ### Branching (adds a layer)
 
 ```
-addLayerCost(currentLayerCount) = 1,000,000 × 8^(currentLayerCount - 1)
+addLayerCost(currentLayerCount) = 4,000,000 × 10^(currentLayerCount - 1)
 ```
 
-→ 1M, 8M, 64M, 512M, ~4.1B, ~32.8B. Charged **per branch** using the *current layer count*, so
+→ 4M, 40M, 400M, 4B, 40B, 400B. Charged **per branch** using the *current layer count*, so
 every parent in the same expansion wave pays the same price. Fully expanding the pyramid costs
-`1M + 2×8M + 4×64M + 2×512M + 4.1B + 32.8B ≈ **38.2 B**`.
+`4M + 2×40M + 4×400M + 2×4B + 40B + 400B ≈ **450 B**`.
 
 ---
 

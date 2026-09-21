@@ -194,6 +194,7 @@ void main() {
           nexusTutorialSeen: false,
           neuralTutorialSeen: false,
           upgradeTutorialSeen: false,
+          artifactTutorialSeen: false,
           nexusStabilized: false,
         );
 

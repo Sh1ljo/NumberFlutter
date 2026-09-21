@@ -247,8 +247,8 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    widget.prestigeCount == 0
-                        ? 'To stabilize the Nexus, reach Prestige 1.'
+                    widget.prestigeCount < 3
+                        ? 'To stabilize the Nexus, reach Prestige 3.'
                         : 'The Nexus awaits stabilization.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.outlineVariant,
@@ -256,7 +256,7 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  if (widget.prestigeCount > 0) ...[
+                  if (widget.prestigeCount >= 3) ...[
                     const SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: _stabilizeNexus,

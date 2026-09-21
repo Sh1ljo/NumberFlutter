@@ -141,19 +141,22 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     final renderObject = _keyFor(step)?.currentContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.hasSize) return;
 
-    final offset = renderObject.localToGlobal(Offset.zero);
+    // Transform both corners rather than just the top-left plus the raw local
+    // size: a target inside a scaled ancestor (e.g. the neural canvas's
+    // InteractiveViewer) renders larger or smaller on screen than its local
+    // size, so adding the untransformed size to a transformed offset produces
+    // a hole that's both the wrong size and off-center.
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    final bottomRight = renderObject.localToGlobal(
+      Offset(renderObject.size.width, renderObject.size.height),
+    );
     final screen = screenSize ?? MediaQuery.of(context).size;
 
     // Clip to the screen. left/top used to be clamped to >= 0 while
     // right/bottom were not, so a partially off-screen target produced dim
     // bars with negative dimensions that silently no-op'd, leaving undimmed
     // gaps around the hole.
-    final raw = Rect.fromLTWH(
-      offset.dx - _holePadding,
-      offset.dy - _holePadding,
-      renderObject.size.width + _holePadding * 2,
-      renderObject.size.height + _holePadding * 2,
-    );
+    final raw = Rect.fromPoints(topLeft, bottomRight).inflate(_holePadding);
     final clipped = raw.intersect(Offset.zero & screen);
     final next = (clipped.width <= 0 || clipped.height <= 0) ? null : clipped;
 

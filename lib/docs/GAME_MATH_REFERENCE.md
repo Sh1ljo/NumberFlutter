@@ -242,7 +242,7 @@ Surge Protocol refunds `netWorthBefore × 0.005 × level` (0.5% per level, max 2
 
 ## 6. Nexus (research tree) — spends PP
 
-Unlocked by `nexusStabilized`, gated behind `prestigeCount >= 1`. Stabilization itself is free.
+Unlocked by `nexusStabilized`, gated behind `prestigeCount >= 3`. Stabilization itself is free.
 
 ```
 costForNextLevel = costsScale ? baseCostPerLevel × 1.6^level : baseCostPerLevel

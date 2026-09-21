@@ -2,10 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Slow, subtle grayscale backdrop for the main tap screen: two soft radial
-/// blobs drift gently to add a bit of life without pulling focus from the
-/// number or the tap area. Intentionally plain (no particles, no motifs) so
-/// it reads as ambience rather than a second visual theme.
+/// Ambient backdrop for the main tap screen: soft radial blobs drift in
+/// wide, visible orbits and a scattering of faint particles drifts and
+/// pulses over them, so the screen behind the number reads as alive without
+/// pulling focus from it. Grayscale/primary-tinted only, matching the app's
+/// monochrome theme — no color motifs.
 class AmbientGradientBackground extends StatefulWidget {
   const AmbientGradientBackground({super.key});
 
@@ -23,7 +24,7 @@ class _AmbientGradientBackgroundState extends State<AmbientGradientBackground>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 28),
+      duration: const Duration(seconds: 16),
     )..repeat();
   }
 
@@ -35,16 +36,12 @@ class _AmbientGradientBackgroundState extends State<AmbientGradientBackground>
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return IgnorePointer(
       child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            return CustomPaint(
-              painter: _AmbientPainter(t: _controller.value),
-              size: Size.infinite,
-            );
-          },
+        child: CustomPaint(
+          painter: _AmbientPainter(progress: _controller, primary: primary),
+          size: Size.infinite,
         ),
       ),
     );
@@ -52,35 +49,66 @@ class _AmbientGradientBackgroundState extends State<AmbientGradientBackground>
 }
 
 class _AmbientPainter extends CustomPainter {
-  _AmbientPainter({required this.t});
+  _AmbientPainter({required this.progress, required this.primary})
+      : super(repaint: progress);
 
-  final double t;
+  final Animation<double> progress;
+  final Color primary;
+
+  final Paint _particlePaint = Paint();
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final angle1 = t * 2 * math.pi;
-    final angle2 = angle1 + math.pi;
+    final t = progress.value * 2 * math.pi;
 
-    _paintBlob(
-      canvas,
-      center: Offset(
-        size.width * (0.3 + 0.12 * math.cos(angle1)),
-        size.height * (0.26 + 0.08 * math.sin(angle1)),
-      ),
-      radius: size.shortestSide * 0.55,
-      color: Colors.white.withValues(alpha: 0.05),
-    );
+    // Wide, slow-orbiting glow blobs. Amplitudes are a fraction of the
+    // shorter side so the drift stays visible on both phone and tablet
+    // aspect ratios.
+    const blobs = <(double cx, double cy, double orbit, double radius,
+        double alpha, double speed, double phase)>[
+      (0.30, 0.24, 0.30, 0.58, 0.11, 1.0, 0.0),
+      (0.72, 0.72, 0.26, 0.62, 0.085, 0.8, math.pi),
+      (0.78, 0.20, 0.18, 0.34, 0.07, 1.3, 2.1),
+    ];
+    for (final blob in blobs) {
+      final angle = t * blob.$6 + blob.$7;
+      final cx =
+          size.width * blob.$1 + size.shortestSide * blob.$3 * math.cos(angle);
+      final cy =
+          size.height * blob.$2 + size.shortestSide * blob.$3 * math.sin(angle);
+      _paintBlob(
+        canvas,
+        center: Offset(cx, cy),
+        radius: size.shortestSide * blob.$4,
+        color: primary.withValues(alpha: blob.$5),
+      );
+    }
 
-    _paintBlob(
-      canvas,
-      center: Offset(
-        size.width * (0.72 + 0.1 * math.cos(angle2)),
-        size.height * (0.76 + 0.09 * math.sin(angle2)),
-      ),
-      radius: size.shortestSide * 0.6,
-      color: Colors.white.withValues(alpha: 0.035),
-    );
+    // Faint drifting particles for texture and a sense of motion up close.
+    const particleCount = 22;
+    for (var i = 0; i < particleCount; i++) {
+      final baseX = ((i * 73) % 100) / 100.0;
+      final baseY = ((i * 37 + 17) % 100) / 100.0;
+      final phase = i * 0.61;
+      final speed = 0.3 + (i % 7) * 0.07;
+
+      final x =
+          size.width * ((baseX + 0.05 * math.sin(t * speed + phase) + 1.0) % 1.0);
+      final y = size.height *
+          ((baseY + 0.06 * math.cos(t * (speed * 0.8) + phase * 1.2) + 1.0) %
+              1.0);
+
+      final pulse = 0.5 + 0.5 * math.sin(t * (0.8 + (i % 5) * 0.1) + phase);
+      final r = 0.8 + pulse * 1.4;
+      final alpha = 0.06 + pulse * 0.12;
+
+      canvas.drawCircle(
+        Offset(x, y),
+        r,
+        _particlePaint..color = primary.withValues(alpha: alpha),
+      );
+    }
   }
 
   void _paintBlob(
@@ -98,5 +126,5 @@ class _AmbientPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AmbientPainter oldDelegate) =>
-      oldDelegate.t != t;
+      oldDelegate.progress != progress || oldDelegate.primary != primary;
 }

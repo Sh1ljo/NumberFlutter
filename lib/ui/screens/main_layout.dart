@@ -497,9 +497,16 @@ class _MainLayoutState extends State<MainLayout> {
     }
     final upgradeIds = List<String>.from(gameState.pendingUnlockedUpgradeIds);
     final achievementIds = List<String>.from(gameState.pendingAchievementIds);
-    if (upgradeIds.isEmpty && achievementIds.isEmpty) return;
+    final hasNexusNotice =
+        upgradeIds.remove(GameState.nexusReadyNoticeId);
+    if (upgradeIds.isEmpty && achievementIds.isEmpty && !hasNexusNotice) {
+      return;
+    }
 
     void drain() {
+      if (hasNexusNotice) {
+        gameState.dismissUnlockNotice(GameState.nexusReadyNoticeId);
+      }
       for (final id in upgradeIds) {
         gameState.dismissUnlockNotice(id);
       }
@@ -521,6 +528,34 @@ class _MainLayoutState extends State<MainLayout> {
     final lastClosed = _lastNoticeClosedAt;
     if (lastClosed != null &&
         DateTime.now().difference(lastClosed) < _noticeGap) {
+      return;
+    }
+
+    // Rare one-off event: give it its own notice rather than folding it into
+    // the upgrade/achievement branching below.
+    if (hasNexusNotice) {
+      drain();
+      _unlockNoticeVisible = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          _unlockNoticeVisible = false;
+          return;
+        }
+        final overlay = Overlay.of(context, rootOverlay: true);
+        _unlockNoticeEntry?.remove();
+        _unlockNoticeEntry = OverlayEntry(
+          builder: (ctx) => _UpgradeUnlockedNotice(
+            label: 'NEXUS READY',
+            message: 'The Nexus awaits stabilization.',
+            onClosed: _removeUnlockNotice,
+            onTap: () {
+              _removeUnlockNotice();
+              _goToPrestigeTab();
+            },
+          ),
+        );
+        overlay.insert(_unlockNoticeEntry!);
+      });
       return;
     }
     drain();
@@ -638,6 +673,13 @@ class _MainLayoutState extends State<MainLayout> {
     if (_currentIndex != 1) {
       setState(() => _currentIndex = 1);
       context.read<GameState>().onMainTabChanged(1);
+    }
+  }
+
+  void _goToPrestigeTab() {
+    if (_currentIndex != 2) {
+      setState(() => _currentIndex = 2);
+      context.read<GameState>().onMainTabChanged(2);
     }
   }
 
@@ -766,21 +808,25 @@ class _MainLayoutState extends State<MainLayout> {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: BottomNavBar(
-                  currentIndex: _currentIndex,
-                  itemKeys: _navKeys,
-                  onIndexChanged: (index) {
-                    // Handle "More" menu button
-                    if (index == 4) {
-                      _showMoreMenu(context);
-                      return;
-                    }
-                    if (index == _currentIndex) return;
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                    context.read<GameState>().onMainTabChanged(index);
-                  },
+                child: Selector<GameState, bool>(
+                  selector: (_, gs) => gs.pendingArtifactChoices > 0,
+                  builder: (context, hasPendingArtifact, _) => BottomNavBar(
+                    currentIndex: _currentIndex,
+                    itemKeys: _navKeys,
+                    showPrestigeBadge: hasPendingArtifact,
+                    onIndexChanged: (index) {
+                      // Handle "More" menu button
+                      if (index == 4) {
+                        _showMoreMenu(context);
+                        return;
+                      }
+                      if (index == _currentIndex) return;
+                      setState(() {
+                        _currentIndex = index;
+                      });
+                      context.read<GameState>().onMainTabChanged(index);
+                    },
+                  ),
                 ),
               ),
             TutorialOverlay(

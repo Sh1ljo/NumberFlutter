@@ -18,6 +18,7 @@ class StorageService {
   static const String _keyNexusTutorialSeen = 'nexusTutorialSeen';
   static const String _keyNeuralTutorialSeen = 'neuralTutorialSeen';
   static const String _keyUpgradeTutorialSeen = 'upgradeTutorialSeen';
+  static const String _keyArtifactTutorialSeen = 'artifactTutorialSeen';
   static const String _keyNexusStabilized = 'nexusStabilized';
   static const String _keyNeuralNetwork = 'neural_network';
   static const String _keyTestEnvironmentEnabled = 'testEnvironmentEnabled';
@@ -72,6 +73,7 @@ class StorageService {
     required bool nexusTutorialSeen,
     required bool neuralTutorialSeen,
     required bool upgradeTutorialSeen,
+    required bool artifactTutorialSeen,
     required bool nexusStabilized,
     String? neuralNetworkJson,
     bool testEnvironmentEnabled = false,
@@ -98,6 +100,7 @@ class StorageService {
     await _setBool(prefs, _keyNexusTutorialSeen, nexusTutorialSeen);
     await _setBool(prefs, _keyNeuralTutorialSeen, neuralTutorialSeen);
     await _setBool(prefs, _keyUpgradeTutorialSeen, upgradeTutorialSeen);
+    await _setBool(prefs, _keyArtifactTutorialSeen, artifactTutorialSeen);
     await _setBool(prefs, _keyNexusStabilized, nexusStabilized);
     await _setBool(
         prefs, _keyTestEnvironmentEnabled, testEnvironmentEnabled);
@@ -177,6 +180,7 @@ class StorageService {
       'nexusTutorialSeen': prefs.getBool(_keyNexusTutorialSeen) ?? false,
       'neuralTutorialSeen': prefs.getBool(_keyNeuralTutorialSeen) ?? false,
       'upgradeTutorialSeen': prefs.getBool(_keyUpgradeTutorialSeen) ?? false,
+      'artifactTutorialSeen': prefs.getBool(_keyArtifactTutorialSeen) ?? false,
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
       'testEnvironmentEnabled': prefs.getBool(_keyTestEnvironmentEnabled) ?? false,
       'neuralNetwork': prefs.getString(_keyNeuralNetwork),
@@ -207,6 +211,7 @@ class StorageService {
     _keyNexusTutorialSeen,
     _keyNeuralTutorialSeen,
     _keyUpgradeTutorialSeen,
+    _keyArtifactTutorialSeen,
     _keyNexusStabilized,
     _keyNeuralNetwork,
     _keyTestEnvironmentEnabled,
@@ -250,6 +255,7 @@ class StorageService {
     await prefs.remove(_keyNexusTutorialSeen);
     await prefs.remove(_keyNeuralTutorialSeen);
     await prefs.remove(_keyUpgradeTutorialSeen);
+    await prefs.remove(_keyArtifactTutorialSeen);
     await prefs.remove(_keyNexusStabilized);
     await prefs.remove(_keyNeuralNetwork);
     await prefs.remove(_keyLifetimeClicks);

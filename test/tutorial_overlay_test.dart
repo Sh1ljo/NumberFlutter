@@ -283,4 +283,66 @@ void main() {
       expect(rect.bottom, lessThanOrEqualTo(520));
     });
   });
+
+  group('scaled targets', () {
+    testWidgets(
+        'a target inside a scaled ancestor gets a hole matching its scaled '
+        'size, not its raw local size', (tester) async {
+      // Reproduces the neural canvas's InteractiveViewer bug: a target's
+      // RenderBox reports its own untransformed local size even when an
+      // ancestor (Transform.scale here, InteractiveViewer there) renders it
+      // much larger on screen.
+      final key = GlobalKey();
+      gameState.debugSetTutorialStep(TutorialStep.prestigeMultiplierHint);
+
+      tester.view.physicalSize = const Size(390, 780);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<GameState>.value(
+          value: gameState,
+          child: MaterialApp(
+            theme: ThemeData.dark(),
+            home: Scaffold(
+              body: Stack(
+                children: [
+                  Positioned(
+                    left: 40,
+                    top: 100,
+                    child: Transform.scale(
+                      scale: 3.0,
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        key: key,
+                        width: 60,
+                        height: 60,
+                        color: Colors.purple,
+                      ),
+                    ),
+                  ),
+                  TutorialOverlay(
+                    resolveKey: (t) =>
+                        t == TutorialTarget.prestigeMultiplier ? key : null,
+                    currentTab: TutorialTab.prestige,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+
+      // Visually the container spans (40,100) to (220,280) after the 3x
+      // scale. The old code sized the hole from the untransformed 60x60
+      // local size, so this tap — near the scaled target's real bottom-right
+      // corner but well outside a 60x60 box — would have missed it.
+      await tester.tapAt(const Offset(200, 260));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(gameState.tutorialStep, TutorialStep.prestigeGainHint);
+    });
+  });
 }

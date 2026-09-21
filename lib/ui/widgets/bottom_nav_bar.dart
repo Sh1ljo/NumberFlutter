@@ -5,11 +5,16 @@ class BottomNavBar extends StatelessWidget {
   final ValueChanged<int> onIndexChanged;
   final List<GlobalKey?>? itemKeys;
 
+  /// Shows a small dot on the PRESTIGE item — something is waiting there
+  /// (e.g. an artifact choice) even while the player is on another tab.
+  final bool showPrestigeBadge;
+
   const BottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onIndexChanged,
     this.itemKeys,
+    this.showPrestigeBadge = false,
   });
 
   /// Height of the bar's own chrome, excluding any system inset.
@@ -60,6 +65,7 @@ class BottomNavBar extends StatelessWidget {
                 icon: _navIcon(i),
                 label: _navLabel(i),
                 isActive: currentIndex == i,
+                showBadge: i == 2 && showPrestigeBadge,
                 onTap: () => onIndexChanged(i),
               ),
             ),
@@ -103,6 +109,7 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool isActive;
+  final bool showBadge;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -110,6 +117,7 @@ class _NavItem extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.isActive,
+    this.showBadge = false,
     required this.onTap,
   });
 
@@ -134,7 +142,25 @@ class _NavItem extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 22),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  if (showBadge)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 3),
               Text(
                 label,

@@ -54,11 +54,11 @@ class NeuralNeuron {
   }
 
   /// Price of the next gradient level, ignoring the cap. Deep layers (past
-  /// the original pyramid) cost 10x more per layer of depth.
+  /// the original pyramid) cost 15x more per layer of depth.
   BigInt get baseGradientCost {
     final depth = layerIndex - (NeuralNetwork.pyramidLayerCount - 1);
-    final deepFactor = depth > 0 ? BigInt.from(10).pow(depth) : BigInt.one;
-    return BigInt.from(10000) * BigInt.from(10).pow(gradientLevel) * deepFactor;
+    final deepFactor = depth > 0 ? BigInt.from(15).pow(depth) : BigInt.one;
+    return BigInt.from(50000) * BigInt.from(12).pow(gradientLevel) * deepFactor;
   }
 
   BigInt activationChangeCost(String targetFn) {
@@ -255,11 +255,11 @@ class NeuralNetwork {
     return math.log(1.0 + x * 9.0) / math.log(10.0);
   }
 
-  // Exponential layer cost: 1M for first branch, ×8 per additional layer.
-  // 1M → 8M → 64M → 512M → ~4.1B → ~32.8B
+  // Exponential layer cost: 4M for first branch, ×10 per additional layer.
+  // 4M → 40M → 400M → 4B → 40B → 400B
   BigInt addLayerCost(int currentLayerCount) {
-    const base = 1000000.0;
-    const growth = 8.0;
+    const base = 4000000.0;
+    const growth = 10.0;
     final scaled = base * math.pow(growth, currentLayerCount - 1);
     return BigInt.from(scaled.floor());
   }

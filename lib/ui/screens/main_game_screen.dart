@@ -242,6 +242,11 @@ class _MainGameScreenState extends State<MainGameScreen> {
                           Row(
                             children: [
                               IconButton(
+                                tooltip: 'Stats',
+                                onPressed: _openStatsScreen,
+                                icon: const Icon(Icons.query_stats),
+                              ),
+                              IconButton(
                                 tooltip: 'Achievements',
                                 onPressed: () =>
                                     AchievementsScreen.open(context),
@@ -333,6 +338,28 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                     style: theme.textTheme.labelSmall?.copyWith(
                                       color: theme.colorScheme.primary
                                           .withValues(alpha: 0.5),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            RepaintBoundary(
+                              child: Selector<GameState, double>(
+                                selector: (_, state) => state.totalMultiplier,
+                                builder: (context, multiplier, child) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: GestureDetector(
+                                      onTap: _openStatsScreen,
+                                      child: Text(
+                                        'TOTAL MULTIPLIER  x${multiplier.toStringAsFixed(2)}',
+                                        style:
+                                            theme.textTheme.labelSmall?.copyWith(
+                                          letterSpacing: 1.2,
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.45),
+                                        ),
+                                      ),
                                     ),
                                   );
                                 },

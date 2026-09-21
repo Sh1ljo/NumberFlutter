@@ -317,7 +317,28 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                   dividerColor: Colors.transparent,
                   tabs: [
                     const Tab(text: 'PRESTIGE'),
-                    const Tab(text: 'NEXUS'),
+                    Tab(
+                      child: Selector<GameState, bool>(
+                        selector: (_, gs) => gs.nexusReadyToStabilize,
+                        builder: (context, ready, _) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('NEXUS'),
+                            if (ready) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                     Tab(
                       child: Selector<GameState, int>(
                         selector: (_, gs) => gs.pendingArtifactChoices,

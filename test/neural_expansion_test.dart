@@ -118,7 +118,7 @@ void main() {
       final shallow = NeuralNeuron(id: 'layer_6_neuron_0');
       final deep = NeuralNeuron(id: 'layer_8_neuron_0');
       expect(
-          deep.baseGradientCost, shallow.baseGradientCost * BigInt.from(100));
+          deep.baseGradientCost, shallow.baseGradientCost * BigInt.from(225));
     });
   });
 
