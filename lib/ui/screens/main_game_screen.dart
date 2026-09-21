@@ -210,7 +210,6 @@ class _MainGameScreenState extends State<MainGameScreen> {
       body: Stack(
         key: _rootStackKey,
         children: [
-          const AmbientGradientBackground(),
           SafeArea(
             child: Column(
                 children: [
@@ -297,7 +296,11 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
                   // Main tap area
                   Expanded(
-                    child: Listener(
+                    child: Stack(
+                      children: [
+                        const Positioned.fill(
+                            child: AmbientGradientBackground()),
+                        Listener(
                       key: widget.tapAreaKey,
                       behavior: HitTestBehavior.opaque,
                       onPointerDown: (event) => _onTapAnywhere(event.position),
@@ -406,6 +409,8 @@ class _MainGameScreenState extends State<MainGameScreen> {
                           ],
                         ),
                       ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

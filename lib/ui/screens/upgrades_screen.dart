@@ -6,6 +6,7 @@ import '../../logic/backend_service.dart';
 import '../../models/upgrade.dart';
 import '../../utils/number_formatter.dart';
 import '../widgets/profile_editor_dialog.dart';
+import 'leaderboard_screen.dart';
 import 'player_stats_screen.dart';
 
 class UpgradesScreen extends StatefulWidget {
@@ -34,9 +35,8 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
   }
 
   Future<void> _openLeaderboardScreen() async {
-    // TODO: Implement leaderboard screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Leaderboard coming soon!')),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
     );
   }
 

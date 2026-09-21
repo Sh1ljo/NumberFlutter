@@ -5,6 +5,7 @@ import '../../../logic/game_state.dart';
 import '../../../logic/backend_service.dart';
 import '../../../utils/number_formatter.dart';
 import '../../widgets/profile_editor_dialog.dart';
+import '../leaderboard_screen.dart';
 import '../player_stats_screen.dart';
 import 'prestige_constants.dart';
 import 'widgets/prestige_gain_card.dart';
@@ -45,9 +46,8 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   }
 
   Future<void> _openLeaderboardScreen() async {
-    // TODO: Implement leaderboard screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Leaderboard coming soon!')),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
     );
   }
 
