@@ -447,7 +447,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(1000),
-    ),
     Upgrade(
       id: 'click_singularity_press',
       name: 'Singularity Press',
@@ -456,6 +455,54 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(7500),
+    ),
+    Upgrade(
+      id: 'click_subatomic_tap',
+      name: 'Subatomic Tap',
+      description: 'Adds +50,000 base click power per level.',
+      baseCost: BigInt.from(50000000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(50000),
+    ),
+    Upgrade(
+      id: 'click_quantum_forge',
+      name: 'Quantum Forge',
+      description: 'Adds +500,000 base click power per level.',
+      baseCost: BigInt.from(1000000000),
+      costMultiplier: 1.15,
+      effectType: clickCategory,
+      effectValue: BigInt.from(500000),
+    ),
+    Upgrade(
+      id: 'click_chronos_press',
+      name: 'Chronos Press',
+      description:
+          'Adds +5,000,000 base click power per level. Requires 2 prestiges.',
+      baseCost: BigInt.from(25000000000),
+      costMultiplier: 1.16,
+      effectType: clickCategory,
+      effectValue: BigInt.from(5000000),
+    ),
+    Upgrade(
+      id: 'click_hyperdimensional_strike',
+      name: 'Hyperdimensional Strike',
+      description:
+          'Adds +50,000,000 base click power per level. Requires 4 prestiges.',
+      baseCost: BigInt.from(500000000000),
+      costMultiplier: 1.18,
+      effectType: clickCategory,
+      effectValue: BigInt.from(50000000),
+    ),
+    Upgrade(
+      id: 'click_omni_touch',
+      name: 'Omni-Touch Engine',
+      description:
+          'Adds +1,000,000,000 base click power per level. Requires 7 prestiges.',
+      baseCost: BigInt.from(10000000000000),
+      costMultiplier: 1.20,
+      effectType: clickCategory,
+      effectValue: BigInt.from(1000000000),
     ),
     Upgrade(
       id: autoClickerId,
@@ -521,6 +568,45 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       effectValue: 1000000.0,
     ),
     Upgrade(
+      id: 'idle_dark_matter',
+      name: 'Dark Matter Collector',
+      description: 'Adds +10,000,000 base numbers per second per level.',
+      baseCost: BigInt.from(1000000000),
+      costMultiplier: 1.16,
+      effectType: idleCategory,
+      effectValue: 10000000.0,
+    ),
+    Upgrade(
+      id: 'idle_neutron_reactor',
+      name: 'Neutron Reactor',
+      description:
+          'Adds +100,000,000 base numbers per second per level. Requires 3 prestiges.',
+      baseCost: BigInt.from(20000000000),
+      costMultiplier: 1.16,
+      effectType: idleCategory,
+      effectValue: 100000000.0,
+    ),
+    Upgrade(
+      id: 'idle_multiverse_synthesizer',
+      name: 'Multiverse Synthesizer',
+      description:
+          'Adds +1,000,000,000 base numbers per second per level. Requires 6 prestiges.',
+      baseCost: BigInt.from(500000000000),
+      costMultiplier: 1.17,
+      effectType: idleCategory,
+      effectValue: 1000000000.0,
+    ),
+    Upgrade(
+      id: 'idle_tachyon_accelerator',
+      name: 'Tachyon Accelerator',
+      description:
+          'Adds +20,000,000,000 base numbers per second per level. Requires 10 prestiges.',
+      baseCost: BigInt.from(50000000000000),
+      costMultiplier: 1.20,
+      effectType: idleCategory,
+      effectValue: 20000000000.0,
+    ),
+    Upgrade(
       id: dimensionalTapId,
       name: 'Dimensional Tap',
       description:
@@ -552,7 +638,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       effectType: clickCategory,
       effectValue: 0,
     ),
-      ];
+  ];
 
   List<Upgrade> upgrades = defaultUpgrades();
 
@@ -1959,7 +2045,19 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  final Map<String, (int, int, BigInt, double, ({BigInt cost, int amount}))> _purchaseInfoCache = {};
+
   ({BigInt cost, int amount}) getPurchaseInfo(Upgrade upgrade) {
+    final costFactor = upgradeCostReductionFactor;
+    final cached = _purchaseInfoCache[upgrade.id];
+    if (cached != null &&
+        cached.$1 == upgrade.level &&
+        cached.$2 == buyAmount &&
+        cached.$3 == number &&
+        cached.$4 == costFactor) {
+      return cached.$5;
+    }
+
     int toBuy;
     if (isUpgradeDeepDiveActive) {
       // The deep-dive budget covers exactly one level of each guided
@@ -1982,7 +2080,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (upgrade.maxLevel != -1) {
       final remainingLevels = upgrade.maxLevel - upgrade.level;
       if (remainingLevels <= 0) {
-        return (cost: BigInt.zero, amount: 0);
+        final zeroRes = (cost: BigInt.zero, amount: 0);
+        _purchaseInfoCache[upgrade.id] = (upgrade.level, buyAmount, number, costFactor, zeroRes);
+        return zeroRes;
       }
       toBuy = math.min(toBuy, remainingLevels);
     }
@@ -1994,7 +2094,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
     double currentMultiplier = _costMultiplierAtLevel(upgrade);
 
-    final costFactor = upgradeCostReductionFactor;
     while (bought < toBuy) {
       BigInt cost = BigInt.from(
           upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
@@ -2024,12 +2123,17 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     int finalAmount = isMaxMode ? bought : toBuy;
+    final ({BigInt cost, int amount}) result;
     if (isMaxMode && finalAmount == 0) {
       final singleCost = BigInt.from(
           upgrade.baseCost.toDouble() * currentMultiplier * costFactor);
-      return (cost: singleCost, amount: 0);
+      result = (cost: singleCost, amount: 0);
+    } else {
+      result = (cost: totalCost, amount: finalAmount);
     }
-    return (cost: totalCost, amount: finalAmount);
+
+    _purchaseInfoCache[upgrade.id] = (upgrade.level, buyAmount, number, costFactor, result);
+    return result;
   }
 
   /// `costMultiplier ^ level`, computed as the repeated product it has always
@@ -2057,8 +2161,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   int minPrestigeForUpgrade(String id) {
     if (id == dimensionalTapId) return 1;
+    if (id == 'click_chronos_press') return 2;
+    if (id == 'idle_neutron_reactor') return 3;
+    if (id == 'click_hyperdimensional_strike') return 4;
     if (id == cascadeResonatorId) return 5;
+    if (id == 'idle_multiverse_synthesizer') return 6;
+    if (id == 'click_omni_touch') return 7;
     if (id == temporalCollapseId) return 8;
+    if (id == 'idle_tachyon_accelerator') return 10;
     return 0;
   }
 

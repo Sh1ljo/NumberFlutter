@@ -228,9 +228,6 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
                   .where((upgrade) => upgrade.effectType == selectedCategory)
-                  .where((upgrade) =>
-                      prestigeCount >=
-                      gameState.minPrestigeForUpgrade(upgrade.id))
                   .toList();
 
               return Expanded(
@@ -281,7 +278,9 @@ double _calculateAffordabilityProgress(BigInt amount, BigInt target) {
   final scaledAmount = (amount >> commonShift).toDouble();
   final scaledTarget = (target >> commonShift).toDouble();
   if (scaledTarget <= 0) return 0.0;
-  return (scaledAmount / scaledTarget).clamp(0.0, 1.0);
+  final raw = (scaledAmount / scaledTarget).clamp(0.0, 1.0);
+  // Quantize progress to 100 steps (0.01 resolution) to prevent micro-increment rebuilds
+  return (raw * 100).floor() / 100.0;
 }
 
 /// Everything a row renders apart from the affordability bar.
@@ -293,6 +292,8 @@ typedef _UpgradeRowData = ({
   bool blockedByTutorial,
   bool recommended,
   int milestoneMultiplier,
+  int minPrestige,
+  bool isLockedByPrestige,
 });
 
 /// One upgrade row, listening only to its own purchase info. Rows used to be
@@ -305,16 +306,20 @@ class _UpgradeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final data = context.select<GameState, _UpgradeRowData>((gs) {
-      final info = gs.getPurchaseInfo(upgrade);
+      final minPrestige = gs.minPrestigeForUpgrade(upgrade.id);
+      final isLocked = gs.prestigeCount < minPrestige;
+      final info = isLocked ? (cost: BigInt.zero, amount: 0) : gs.getPurchaseInfo(upgrade);
       final blocked = gs.tutorialBlocksPurchase(upgrade.id);
       return (
         level: upgrade.level,
         isMaxed: upgrade.isMaxed,
         info: info,
-        canAfford: !blocked && info.amount > 0 && gs.number >= info.cost,
+        canAfford: !isLocked && !blocked && info.amount > 0 && gs.number >= info.cost,
         blockedByTutorial: blocked,
-        recommended: gs.recommendedUpgrade?.upgradeId == upgrade.id,
+        recommended: !isLocked && gs.recommendedUpgrade?.upgradeId == upgrade.id,
         milestoneMultiplier: gs.upgradeMilestoneMultiplier(upgrade),
+        minPrestige: minPrestige,
+        isLockedByPrestige: isLocked,
       );
     });
     return _UpgradeItem(
@@ -324,6 +329,8 @@ class _UpgradeRow extends StatelessWidget {
       recommended: data.recommended,
       info: data.info,
       milestoneMultiplier: data.milestoneMultiplier,
+      minPrestige: data.minPrestige,
+      isLockedByPrestige: data.isLockedByPrestige,
     );
   }
 }
@@ -410,6 +417,8 @@ class _UpgradeItem extends StatelessWidget {
   final bool recommended;
   final ({BigInt cost, int amount}) info;
   final int milestoneMultiplier;
+  final int minPrestige;
+  final bool isLockedByPrestige;
 
   const _UpgradeItem({
     required this.upgrade,
@@ -418,12 +427,77 @@ class _UpgradeItem extends StatelessWidget {
     required this.recommended,
     required this.info,
     required this.milestoneMultiplier,
+    required this.minPrestige,
+    required this.isLockedByPrestige,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMaxed = upgrade.isMaxed;
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.4);
+
+    if (isLockedByPrestige) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8.0),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+              width: 2,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 10.0),
+        child: Row(
+          children: [
+            Icon(Icons.lock_outline, size: 20, color: mutedColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    upgrade.name,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 18,
+                      color: mutedColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Unlocks at Prestige $minPrestige',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: mutedColor,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            OutlinedButton(
+              onPressed: null,
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: mutedColor.withValues(alpha: 0.3)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                minimumSize: const Size(0, 32),
+              ),
+              child: Text(
+                'LOCKED',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: mutedColor,
+                  fontSize: 11,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8.0),

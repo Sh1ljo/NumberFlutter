@@ -75,10 +75,13 @@ class NumberFormatter {
       final lead = asString.substring(0, intDigits);
       final rest = asString.substring(intDigits);
       final decimals = rest.padRight(2, '0').substring(0, 2);
-      String compact = '$lead.$decimals';
-      while (compact.contains('.') &&
-          (compact.endsWith('0') || compact.endsWith('.'))) {
-        compact = compact.substring(0, compact.length - 1);
+      final String compact;
+      if (decimals == '00') {
+        compact = lead;
+      } else if (decimals[1] == '0') {
+        compact = '$lead.${decimals[0]}';
+      } else {
+        compact = '$lead.$decimals';
       }
       return '$compact${_suffixes[suffixIndex]}';
     }
