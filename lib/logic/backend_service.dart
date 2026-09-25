@@ -4,7 +4,7 @@ import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -484,6 +484,48 @@ class BackendService {
   static String? _nonEmpty(Object? value) {
     final text = (value as String?)?.trim();
     return (text == null || text.isEmpty) ? null : text;
+  }
+
+  /// Wipes a player's history after a factory reset: every archived
+  /// prestige run, the profile's run totals, and the tutorial flag, so the
+  /// account starts over the way the local save did. The display name and
+  /// location are kept.
+  ///
+  /// The progress row and leaderboard row are overwritten separately by
+  /// the forced upload of the fresh save.
+  Future<void> resetPlayerHistory({required String userId}) async {
+    if (!_initialized) return;
+    final profileRef = _profiles.doc(userId);
+    await profileRef.set(
+      {
+        'tutorial_completed': false,
+        'total_sessions': 0,
+        'total_prestige_currency': 0,
+        'last_session_archived_at': FieldValue.delete(),
+      },
+      SetOptions(merge: true),
+    );
+    _leaderboardCache.clear();
+
+    // Best effort: needs the rules that let an owner delete their own runs
+    // (firestore.rules). Nothing in the app reads them back, so a refusal
+    // here must not hold up the reset.
+    try {
+      const page = 200;
+      while (true) {
+        final snapshot =
+            await profileRef.collection('sessions').limit(page).get();
+        if (snapshot.docs.isEmpty) break;
+        final batch = _db.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+        if (snapshot.docs.length < page) break;
+      }
+    } catch (e) {
+      debugPrint('Could not delete archived runs: $e');
+    }
   }
 
   Future<void> archiveSession({

@@ -279,10 +279,17 @@ void main() {
       expect(find.text('CHAPTER 1 · FIRST STEPS · 1/12'), findsOneWidget);
     });
 
-    testWidgets('a tip shows its label', (tester) async {
+    testWidgets('a lesson card shows its label and position',
+        (tester) async {
       gameState.debugSetTutorialStep(TutorialStep.tipOverclock);
       await pumpHarness(tester);
-      expect(find.text('NEW UPGRADE'), findsOneWidget);
+      expect(find.text('NEW UPGRADE · 5/5'), findsOneWidget);
+    });
+
+    testWidgets('a tip shows its label', (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.nexusSignal);
+      await pumpHarness(tester);
+      expect(find.text('INCOMING SIGNAL'), findsOneWidget);
     });
 
     testWidgets('the road ahead shows every locked system, the last hidden',

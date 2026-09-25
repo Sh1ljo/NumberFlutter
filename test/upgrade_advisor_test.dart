@@ -169,6 +169,45 @@ void main() {
       expect(gs.number, number);
     });
 
+    test('just short of the prestige requirement it says to save instead',
+        () {
+      gs.debugClickRateOverride = 0;
+      _u(gs, GameState.autoClickerId).level = 10;
+      gs.debugRecalculateDerivedStats();
+      // A second of idle income away: nothing can pay for itself in time.
+      gs.number = gs.prestigeRequirement - BigInt.one;
+
+      expect(gs.recommendedUpgrade, isNull);
+      expect(gs.advisorSavingForPrestige, isTrue);
+    });
+
+    test('far from the requirement it recommends as usual', () {
+      gs.debugClickRateOverride = 0;
+      _u(gs, GameState.autoClickerId).level = 10;
+      gs.debugRecalculateDerivedStats();
+      gs.number = BigInt.from(5000);
+
+      expect(gs.recommendedUpgrade, isNotNull);
+      expect(gs.advisorSavingForPrestige, isFalse);
+    });
+
+    test('once prestige is ready it only spends the surplus above it', () {
+      gs.debugClickRateOverride = 0;
+      _u(gs, GameState.autoClickerId).level = 10;
+      gs.debugRecalculateDerivedStats();
+      final requirement = gs.prestigeRequirement;
+      gs.number = requirement + BigInt.from(2000);
+
+      final rec = gs.recommendedUpgrade!;
+      expect(rec.reserve, requirement);
+      expect(rec.affordableWith(gs.number), rec.affordableNow);
+      if (rec.affordableNow) {
+        expect(gs.buyUpgradeLevels(rec.upgradeId, rec.amount), isTrue);
+        expect(gs.number >= requirement, isTrue,
+            reason: 'following the advice must keep PRESTIGE available');
+      }
+    });
+
     test('following it every time grows production (greedy sim)', () {
       gs.debugClickRateOverride = 2;
       gs.number = BigInt.from(200);

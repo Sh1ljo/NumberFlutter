@@ -30,6 +30,14 @@ class StorageService {
   static const String _keyArtifacts = 'artifacts';
   static const String _keyShop = 'shop';
 
+  /// Account whose cloud save and history still have to be wiped after a
+  /// factory reset that couldn't reach the cloud. Survives [clearAllData]
+  /// on purpose.
+  static const String _keyPendingCloudReset = 'pendingCloudResetUserId';
+
+  /// Prefix of the raw copies [backupRawSave] keeps of unreadable saves.
+  static const String _corruptBackupPrefix = 'corrupt_save_backup_';
+
   SharedPreferences? _prefs;
 
   /// Last value this service wrote per key. A save runs every 5s and after
@@ -257,7 +265,7 @@ class StorageService {
     };
     if (raw.isEmpty) return;
     await prefs.setString(
-      'corrupt_save_backup_${DateTime.now().millisecondsSinceEpoch}',
+      '$_corruptBackupPrefix${DateTime.now().millisecondsSinceEpoch}',
       jsonEncode(raw),
     );
   }
@@ -289,5 +297,23 @@ class StorageService {
     await prefs.remove(_keyAchievements);
     await prefs.remove(_keyArtifacts);
     await prefs.remove(_keyShop);
+    // Old copies of unreadable saves are history too.
+    for (final key in prefs.getKeys().toList()) {
+      if (key.startsWith(_corruptBackupPrefix)) await prefs.remove(key);
+    }
+  }
+
+  Future<String?> loadPendingCloudReset() async {
+    final prefs = await _instance();
+    return prefs.getString(_keyPendingCloudReset);
+  }
+
+  Future<void> savePendingCloudReset(String? userId) async {
+    final prefs = await _instance();
+    if (userId == null) {
+      await prefs.remove(_keyPendingCloudReset);
+    } else {
+      await prefs.setString(_keyPendingCloudReset, userId);
+    }
   }
 }

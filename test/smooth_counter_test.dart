@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:number_flutter/ui/widgets/ambient_gradient_background.dart';
+import 'package:number_flutter/ui/widgets/floating_tap_text.dart';
 import 'package:number_flutter/ui/widgets/pulse_number.dart';
 import 'package:number_flutter/ui/widgets/tap_ripple_effect.dart';
 import 'package:number_flutter/utils/number_formatter.dart';
@@ -105,6 +106,34 @@ void main() {
     // Ripples remove themselves when their 420ms animation completes.
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(TapRippleEffect), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tap numbers, strikes included, rise and clear themselves',
+      (tester) async {
+    final layerKey = GlobalKey<FloatingTapTextLayerState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            Positioned.fill(child: FloatingTapTextLayer(key: layerKey)),
+          ],
+        ),
+      ),
+    );
+    final layer = layerKey.currentState!;
+    layer.add(
+        text: '+12', isProbabilityStrike: false, position: const Offset(80, 300));
+    layer.add(
+        text: '+120', isProbabilityStrike: true, position: const Offset(160, 300));
+    await tester.pump();
+    expect(layer.activeCount, 2);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    // The plain one (680ms) and the strike (760ms) are both gone after 800ms.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(layer.activeCount, 0);
     expect(tester.takeException(), isNull);
   });
 }

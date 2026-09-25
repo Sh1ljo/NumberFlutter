@@ -61,6 +61,11 @@ class UpgradeRecommendation {
   /// Taps per second the estimate assumed.
   final double assumedClickRate;
 
+  /// Numbers the advisor keeps banked rather than spends. Once the prestige
+  /// requirement is reached it only spends the surplus above it, so
+  /// following the advice never takes PRESTIGE away again.
+  final BigInt reserve;
+
   const UpgradeRecommendation({
     required this.upgradeId,
     required this.category,
@@ -70,9 +75,13 @@ class UpgradeRecommendation {
     required this.paybackSeconds,
     required this.secondsToAfford,
     required this.assumedClickRate,
+    required this.reserve,
   });
 
   bool get affordableNow => secondsToAfford <= 0;
+
+  /// Whether [number] covers the cost without touching [reserve].
+  bool affordableWith(BigInt number) => number - reserve >= cost;
 
   @override
   bool operator ==(Object other) =>
@@ -82,9 +91,10 @@ class UpgradeRecommendation {
       other.cost == cost &&
       other.gainPerSecond == gainPerSecond &&
       other.paybackSeconds == paybackSeconds &&
-      other.secondsToAfford == secondsToAfford;
+      other.secondsToAfford == secondsToAfford &&
+      other.reserve == reserve;
 
   @override
   int get hashCode => Object.hash(upgradeId, amount, cost, gainPerSecond,
-      paybackSeconds, secondsToAfford);
+      paybackSeconds, secondsToAfford, reserve);
 }

@@ -64,12 +64,21 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   /// the target instead of being resolved once and then left behind.
   ScrollPosition? _trackedScroll;
 
+  /// A card whose step points at something waits for that target to be
+  /// found (and scrolled to) before it appears, so it lands next to it
+  /// instead of appearing mid-screen and jumping. If the target takes
+  /// longer than this, the card shows anyway.
+  bool _holeWaitOver = true;
+  Timer? _holeWaitTimer;
+  static const Duration _maxHoleWait = Duration(milliseconds: 700);
+
   static const double _holePadding = 8.0;
 
   @override
   void dispose() {
     _retryTimer?.cancel();
     _armTimer?.cancel();
+    _holeWaitTimer?.cancel();
     _detachScroll();
     super.dispose();
   }
@@ -211,6 +220,13 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         // changes. Still kicked from build, but it only schedules a
         // post-frame measurement and never calls setState synchronously.
         if (step != _lastStep) {
+          _holeWaitTimer?.cancel();
+          _holeWaitOver = spec.target == null;
+          if (!_holeWaitOver) {
+            _holeWaitTimer = Timer(_maxHoleWait, () {
+              if (mounted) setState(() => _holeWaitOver = true);
+            });
+          }
           _tapArmed = false;
           _armTimer?.cancel();
           _armTimer = Timer(
@@ -347,12 +363,34 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     }
 
     final onTap = tapToContinue ? continueIfArmed : null;
+    // Still looking for the target: keep the card back so it doesn't
+    // appear in the middle and then jump.
+    final waitingForHole =
+        spec.target != null && hole == null && !_holeWaitOver;
 
     final children = <Widget>[];
 
+    // An unresolved spotlightAction step deliberately renders no dim, so the
+    // player can still reach the UI while the target is being located.
+    if (hole != null || tapToContinue) {
+      // One painted layer for the dim, the hole and its pulsing outline.
+      // It fades in, and the hole glides between targets, rather than
+      // everything popping in at once.
+      children.add(Positioned.fill(
+        // Keyed so it keeps its animation state while the bars, card and
+        // SKIP around it come and go.
+        key: const ValueKey('spotlight-layer'),
+        child: _SpotlightLayer(
+          hole: hole,
+          transition: _lastStep,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ));
+    }
+
     if (hole != null) {
-      // Four bars around the hole. Taps on them are swallowed (or advance the
-      // step), so only the spotlit target stays reachable.
+      // Four invisible bars around the hole take the taps: swallowed (or
+      // advancing the step), so only the spotlit target stays reachable.
       for (final bar in [
         Rect.fromLTRB(0, 0, size.width, hole.top),
         Rect.fromLTRB(0, hole.bottom, size.width, size.height),
@@ -361,26 +399,24 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       ]) {
         children.add(_DimBar(rect: bar, onBlock: onTap));
       }
-      children.add(_PulseOutline(rect: hole));
       if (tapInsideHole) {
         children.add(_HoleTapLayer(rect: hole, onTap: continueIfArmed));
       }
     } else if (tapToContinue) {
       // No target (or not resolved yet) but the step advances on any tap:
-      // dim the whole screen and take the tap.
+      // take the tap anywhere.
       children.add(Positioned.fill(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: ColoredBox(color: Colors.black.withValues(alpha: 0.58)),
+          child: const SizedBox.expand(),
         ),
       ));
     }
-    // An unresolved spotlightAction step deliberately renders no dim, so the
-    // player can still reach the UI while the target is being located.
 
-    final showCard =
-        spec.hasCopy && (hole != null || tapToContinue || spec.target == null);
+    final showCard = spec.hasCopy &&
+        !waitingForHole &&
+        (hole != null || tapToContinue || spec.target == null);
     if (showCard) {
       children.add(_CaptionCard(
         title: spec.title!,
@@ -412,6 +448,8 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     switch (spec.visual) {
       case TutorialVisual.roadmap:
         return _Roadmap(prestigeRequirement: gameState.prestigeRequirement);
+      case TutorialVisual.lessonProgress:
+        return const _LessonProgress();
       case null:
         return null;
     }
@@ -557,11 +595,226 @@ class _DimBar extends StatelessWidget {
       top: rect.top,
       width: rect.width,
       height: rect.height,
+      // Painted by _SpotlightLayer; this only takes the tap.
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onBlock ?? () {},
-        child: ColoredBox(color: Colors.black.withValues(alpha: 0.58)),
+        child: const SizedBox.expand(),
       ),
+    );
+  }
+}
+
+/// The spotlight's dim, with the hole cut out and a pulsing outline around
+/// it, painted in one layer.
+///
+/// It fades in when it first appears. When the hole moves to a new target
+/// (a new step) it glides there; when it first appears it closes in from
+/// the edges of the screen, or opens up from the target if the screen was
+/// already dimmed. Small moves within a step (the target scrolling) follow
+/// directly. Every frame is a repaint only: no widget rebuilds, no
+/// offscreen layers.
+class _SpotlightLayer extends StatefulWidget {
+  /// Null dims the whole screen.
+  final Rect? hole;
+
+  /// Changes when the step does. A new hole for a new step animates; a new
+  /// hole within the same step (scroll tracking) snaps.
+  final Object? transition;
+  final Color color;
+
+  const _SpotlightLayer({
+    required this.hole,
+    required this.transition,
+    required this.color,
+  });
+
+  @override
+  State<_SpotlightLayer> createState() => _SpotlightLayerState();
+}
+
+class _SpotlightLayerState extends State<_SpotlightLayer>
+    with TickerProviderStateMixin {
+  static const double _dimAlpha = 0.58;
+
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  )..forward();
+  late final AnimationController _move = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+    value: 1,
+  );
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+
+  Rect? _from;
+  Rect? _to;
+  bool _animateFromScreenEdge = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _to = widget.hole;
+    if (_to != null) {
+      _animateFromScreenEdge = true;
+      _move.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SpotlightLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.hole;
+    if (next == _to) return;
+    final shown = _currentHole(null);
+    _to = next;
+    if (next == null) {
+      _from = null;
+      _move.value = 1;
+      return;
+    }
+    final newStep = widget.transition != oldWidget.transition;
+    if (shown == null) {
+      // First hole: close in from the screen edge while the dim is still
+      // fading in; open up from the target if it was already dark.
+      _from = null;
+      _animateFromScreenEdge = _fade.value < 1;
+      _move.forward(from: 0);
+    } else if (newStep || _move.isAnimating) {
+      _from = shown;
+      _move.forward(from: 0);
+    } else {
+      _move.value = 1;
+    }
+  }
+
+  /// The hole as drawn right now; [screen] is needed only while it closes
+  /// in from the screen edge.
+  Rect? _currentHole(Size? screen) {
+    final to = _to;
+    if (to == null) return null;
+    final t = Curves.easeOutCubic.transform(_move.value);
+    if (t >= 1) return to;
+    final from = _from ??
+        (_animateFromScreenEdge && screen != null
+            ? (Offset.zero & screen).inflate(48)
+            : Rect.fromCenter(center: to.center, width: 0, height: 0));
+    return Rect.lerp(from, to, t);
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _move.dispose();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _SpotlightPainter(
+            state: this,
+            repaint: Listenable.merge([_fade, _move, _pulse]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SpotlightPainter extends CustomPainter {
+  _SpotlightPainter({required this.state, required Listenable repaint})
+      : super(repaint: repaint);
+
+  final _SpotlightLayerState state;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fade = Curves.easeOut.transform(state._fade.value);
+    final dim = Paint()
+      ..color = Color.fromRGBO(0, 0, 0, _SpotlightLayerState._dimAlpha * fade);
+    final hole = state._currentHole(size);
+    if (hole == null || hole.isEmpty) {
+      canvas.drawRect(Offset.zero & size, dim);
+      return;
+    }
+    final rrect = RRect.fromRectAndRadius(hole, const Radius.circular(4));
+    canvas.drawPath(
+      Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRect(Offset.zero & size)
+        ..addRRect(rrect),
+      dim,
+    );
+    final pulse = Curves.easeInOut.transform(state._pulse.value);
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = state.widget.color
+            .withValues(alpha: (0.35 + pulse * 0.45) * fade),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SpotlightPainter oldDelegate) =>
+      oldDelegate.state != state;
+}
+
+/// A lesson's "try it" goal as a live bar: taps, combo or streak so far.
+class _LessonProgress extends StatelessWidget {
+  const _LessonProgress();
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = context.select<GameState, ({int current, int target})?>(
+        (gs) => gs.lessonProgress);
+    if (progress == null || progress.target <= 0) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final fraction = (progress.current / progress.target).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${progress.current} / ${progress.target}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            letterSpacing: 1.4,
+            fontWeight: FontWeight.w700,
+            color: cs.primary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: SizedBox(
+            height: 6,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: cs.outlineVariant.withValues(alpha: 0.4)),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: fraction,
+                  child: ColoredBox(color: cs.primary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -646,13 +899,15 @@ class _CaptionCard extends StatelessWidget {
         // moved, which is what made it look like it was jumping.
         key: ValueKey(title),
         tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 280),
+        duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
+        // Fade with a small rise and scale, in step with the spotlight's
+        // fade-in.
         builder: (context, v, child) => Opacity(
           opacity: v,
           child: Transform.translate(
-            offset: Offset(0, (1 - v) * 12),
-            child: child,
+            offset: Offset(0, (1 - v) * 10),
+            child: Transform.scale(scale: 0.97 + 0.03 * v, child: child),
           ),
         ),
         child: DecoratedBox(

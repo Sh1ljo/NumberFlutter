@@ -70,8 +70,12 @@ abstract class GuideData {
         title: 'The advisor',
         body:
             'The RECOMMENDED card on UPGRADES points at the purchase that pays '
-            'for itself fastest, weighted by how much you actually tap. BUY '
-            'on the card buys exactly the amount it suggests.',
+            'for itself fastest, weighted by how much you actually tap, and '
+            'shows what it adds and how soon it pays back. Close to the '
+            'prestige requirement it only suggests buys that get you there '
+            'sooner, or tells you to save. Once prestige is ready it only '
+            'spends what is above the requirement. BUY on the card buys '
+            'exactly the amount it suggests.',
         isUnlocked: _always,
       ),
       GuideEntry(

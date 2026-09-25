@@ -30,10 +30,11 @@ service cloud.firestore {
         && optionalString(request.resource.data, 'city', 100);
       allow delete: if false;
 
-      // Archived prestige runs: private and append-only.
+      // Archived prestige runs: private, never edited. The owner can
+      // delete them, which a factory reset does.
       match /sessions/{sessionId} {
-        allow read, create: if isOwner(uid);
-        allow update, delete: if false;
+        allow read, create, delete: if isOwner(uid);
+        allow update: if false;
       }
     }
 

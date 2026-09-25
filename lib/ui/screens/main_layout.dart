@@ -54,6 +54,8 @@ class _MainLayoutState extends State<MainLayout> {
   GameState? _gameState;
 
   final GlobalKey _tapAreaKey = GlobalKey();
+  final GlobalKey _temporalCollapseButtonKey = GlobalKey();
+  final GlobalKey _idleRateKey = GlobalKey();
   final GlobalKey _neuralNeuronKey = GlobalKey();
   final GlobalKey _neuralHudKey = GlobalKey();
   final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
@@ -113,6 +115,24 @@ class _MainLayoutState extends State<MainLayout> {
         return _upgradeRowKeys[GameState.autoClickerId];
       case TutorialTarget.upgradeClickPower:
         return _upgradeRowKeys[GameState.clickPowerId];
+      case TutorialTarget.upgradeProbabilityStrike:
+        return _upgradeRowKeys[GameState.probabilityStrikeId];
+      case TutorialTarget.upgradeMomentum:
+        return _upgradeRowKeys[GameState.momentumId];
+      case TutorialTarget.upgradeKineticSynergy:
+        return _upgradeRowKeys[GameState.kineticSynergyId];
+      case TutorialTarget.upgradeOverclock:
+        return _upgradeRowKeys[GameState.overclockId];
+      case TutorialTarget.upgradeDimensionalTap:
+        return _upgradeRowKeys[GameState.dimensionalTapId];
+      case TutorialTarget.upgradeCascadeResonator:
+        return _upgradeRowKeys[GameState.cascadeResonatorId];
+      case TutorialTarget.upgradeTemporalCollapse:
+        return _upgradeRowKeys[GameState.temporalCollapseId];
+      case TutorialTarget.temporalCollapseButton:
+        return _temporalCollapseButtonKey;
+      case TutorialTarget.idleRate:
+        return _idleRateKey;
     }
   }
 
@@ -120,7 +140,11 @@ class _MainLayoutState extends State<MainLayout> {
   void initState() {
     super.initState();
     _screens = [
-      MainGameScreen(tapAreaKey: _tapAreaKey),
+      MainGameScreen(
+        tapAreaKey: _tapAreaKey,
+        temporalCollapseKey: _temporalCollapseButtonKey,
+        idleRateKey: _idleRateKey,
+      ),
       UpgradesScreen(
         upgradeRowKeys: _upgradeRowKeys,
         idleCategoryKey: _idleCategoryKey,

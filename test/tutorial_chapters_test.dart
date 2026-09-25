@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:number_flutter/logic/game_state.dart';
 import 'package:number_flutter/logic/tutorial_step.dart';
+import 'package:number_flutter/models/upgrade.dart';
 
 Future<GameState> _game([Map<String, Object> prefs = const {}]) async {
   SharedPreferences.setMockInitialValues(prefs);
@@ -21,6 +22,9 @@ Future<void> _prestigeAndReveal(GameState gs) async {
 
 int _level(GameState gs, String id) =>
     gs.upgrades.firstWhere((u) => u.id == id).level;
+
+Upgrade _upgrade(GameState gs, String id) =>
+    gs.upgrades.firstWhere((u) => u.id == id);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -173,43 +177,212 @@ void main() {
     });
   });
 
-  group('tips', () {
-    test('a special upgrade is introduced the first time it is affordable',
+  group('upgrade lessons', () {
+    Future<void> revealDelay() => Future<void>.delayed(
+        GameState.lessonRevealDelay + const Duration(milliseconds: 100));
+
+    test('Probability Strike: buy it, land a strike, then the explanation',
         () async {
       final gs = await _game();
       addTearDown(gs.dispose);
       gs.debugSetTutorialStep(TutorialStep.done);
+      gs.onMainTabChanged(TutorialTab.generators);
 
       gs.number = BigInt.from(25000);
       gs.click();
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeOpen);
+
+      gs.onMainTabChanged(TutorialTab.upgrades);
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeBuy);
+      expect(gs.selectedUpgradeCategory, GameState.clickCategory);
+
+      gs.buyUpgrade(GameState.probabilityStrikeId);
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeBack);
+
+      gs.onMainTabChanged(TutorialTab.generators);
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeTry);
+
+      // Guaranteed by the lesson's third tap at the latest.
+      var struck = false;
+      for (var i = 0; i < GameState.lessonGuaranteedStrikeTap; i++) {
+        struck = gs.click().probabilityStrikeTriggered || struck;
+      }
+      expect(struck, isTrue);
+      // The strike stays on screen for a moment before the card covers it.
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeTry);
+      await revealDelay();
       expect(gs.tutorialStep, TutorialStep.tipProbabilityStrike);
 
       gs.onTutorialTapToContinue();
       expect(gs.tutorialStep, TutorialStep.done);
       expect(
           gs.hasSeenTutorialBeat(TutorialStep.tipProbabilityStrike), isTrue);
-
-      gs.click();
-      expect(gs.tutorialStep, TutorialStep.done);
     });
 
-    test('an upgrade bought before its card came up is never announced',
+    test('already on UPGRADES, the lesson goes straight to the purchase',
         () async {
       final gs = await _game();
       addTearDown(gs.dispose);
       gs.debugSetTutorialStep(TutorialStep.done);
-      gs.upgrades
-          .firstWhere((u) => u.id == GameState.probabilityStrikeId)
-          .level = 1;
+      gs.onMainTabChanged(TutorialTab.upgrades);
+      // Past the advisor tip, which the first UPGRADES visit shows.
+      if (gs.tutorialStep == TutorialStep.tipAdvisor) {
+        gs.onTutorialTapToContinue();
+      }
+
+      gs.number = BigInt.from(25000);
+      gs.click();
+
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeBuy);
+    });
+
+    test('Momentum finishes once the combo is built', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      _upgrade(gs, GameState.momentumId).level = 1;
+      gs.debugSetTutorialStep(TutorialStep.momentumTry);
+
+      for (var i = 0; i < 24; i++) {
+        gs.click();
+      }
+      expect(gs.lessonProgress, (current: 24, target: 25));
+      gs.click();
+      await revealDelay();
+      expect(gs.tutorialStep, TutorialStep.tipMomentum);
+    });
+
+    test('Kinetic Synergy finishes after a few taps', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      _upgrade(gs, GameState.kineticSynergyId).level = 1;
+      gs.debugSetTutorialStep(TutorialStep.kineticSynergyTry);
+
+      for (var i = 0; i < 5; i++) {
+        gs.click();
+      }
+      await revealDelay();
+      expect(gs.tutorialStep, TutorialStep.tipKineticSynergy);
+    });
+
+    test('Overclock finishes when the streak fires it', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      _upgrade(gs, GameState.overclockId).level = 1;
+      gs.debugSetTutorialStep(TutorialStep.overclockTry);
+
+      for (var i = 0; i < 49; i++) {
+        gs.click();
+      }
+      expect(gs.isOverclockActive, isFalse);
+      expect(gs.lessonProgress, (current: 49, target: 50));
+      gs.click();
+      expect(gs.isOverclockActive, isTrue);
+      await revealDelay();
+      expect(gs.tutorialStep, TutorialStep.tipOverclock);
+    });
+
+    test('Cascade Resonator: look at the rate, then the explanation',
+        () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      _upgrade(gs, GameState.cascadeResonatorId).level = 1;
+      gs.debugSetTutorialStep(TutorialStep.cascadeResonatorTry);
+
+      gs.onTutorialTapToContinue();
+      expect(gs.tutorialStep, TutorialStep.tipCascadeResonator);
+      gs.onTutorialTapToContinue();
+      expect(gs.hasSeenTutorialBeat(TutorialStep.tipCascadeResonator), isTrue);
+    });
+
+    test('Temporal Collapse finishes when it is fired', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      _upgrade(gs, GameState.temporalCollapseId).level = 1;
+      gs.debugSetTutorialStep(TutorialStep.temporalCollapseTry);
+
+      gs.activateTemporalCollapse();
+      await revealDelay();
+      expect(gs.tutorialStep, TutorialStep.tipTemporalCollapse);
+    });
+
+    test('prestige-gated lessons wait for their prestige', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      gs.debugSetTutorialStep(TutorialStep.done);
+      for (final id in [
+        GameState.probabilityStrikeId,
+        GameState.momentumId,
+        GameState.kineticSynergyId,
+        GameState.overclockId,
+      ]) {
+        _upgrade(gs, id).level = 1;
+      }
+
+      // One prestige in, with money for anything: only Dimensional Tap
+      // (prestige 1) is taught; Cascade Resonator (5) and Temporal Collapse
+      // (8) are still locked.
+      gs.prestigeCount = 1;
+      gs.number = BigInt.from(10).pow(30);
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.dimensionalTapOpen);
+
+      gs.skipTutorial();
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.done);
+
+      gs.prestigeCount = 5;
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.cascadeResonatorOpen);
+    });
+
+    test('SKIP ends a lesson and remembers it', () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      gs.debugSetTutorialStep(TutorialStep.momentumBuy);
+
+      gs.skipTutorial();
+
+      expect(gs.tutorialStep, TutorialStep.done);
+      expect(gs.hasSeenTutorialBeat(TutorialStep.tipMomentum), isTrue);
+    });
+
+    test('stands down, unseen, when the upgrade stops being affordable',
+        () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      gs.debugSetTutorialStep(TutorialStep.done);
+      gs.number = BigInt.from(25000);
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeOpen);
+
+      gs.number = BigInt.from(100);
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.done);
+      expect(
+          gs.hasSeenTutorialBeat(TutorialStep.tipProbabilityStrike), isFalse);
+
+      gs.number = BigInt.from(25000);
+      gs.click();
+      expect(gs.tutorialStep, TutorialStep.probabilityStrikeOpen);
+    });
+
+    test('an upgrade bought before its lesson came up is never announced',
+        () async {
+      final gs = await _game();
+      addTearDown(gs.dispose);
+      gs.debugSetTutorialStep(TutorialStep.done);
+      _upgrade(gs, GameState.probabilityStrikeId).level = 1;
 
       gs.number = BigInt.from(100000);
       gs.click();
 
-      expect(gs.tutorialStep, TutorialStep.tipMomentum);
+      expect(gs.tutorialStep, TutorialStep.momentumOpen);
       expect(
           gs.hasSeenTutorialBeat(TutorialStep.tipProbabilityStrike), isTrue);
     });
+  });
 
+  group('tips', () {
     test('tips never interrupt chapter 1', () async {
       final gs = await _game();
       addTearDown(gs.dispose);

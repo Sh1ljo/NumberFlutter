@@ -127,6 +127,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const Duration _cloudPushInterval = Duration(seconds: 20);
   static const Duration _cloudMaxBackoff = Duration(minutes: 5);
   bool _cloudSyncInProgress = false;
+  Completer<void>? _cloudSyncDone;
   String? _lastCloudSyncError;
 
   // ── Connectivity ──────────────────────────────────────────────────────
@@ -303,6 +304,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   int _mainTab = TutorialTab.generators;
 
   TutorialStep get tutorialStep => _tutorialStep;
+
+  /// Nothing is showing, or only a single card or upgrade lesson that can
+  /// give way to a chapter and come back later.
+  bool get _tutorialStepIsInterruptible {
+    if (_tutorialStep == TutorialStep.done) return true;
+    final scope = specFor(_tutorialStep).scope;
+    return scope == TutorialScope.tips || scope == TutorialScope.lesson;
+  }
   bool get tutorialCompleted => _tutorialCompleted;
   bool get isTutorialActive => _tutorialStep != TutorialStep.done;
   bool get nexusTutorialSeen => _nexusTutorialSeen;
@@ -372,12 +381,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _nexusStabilized = true;
     _nexusStabilizeStartedAt = null;
     _seenBeats.add(TutorialStep.nexusAwakens);
-    // A tip that popped up during the stabilize animation gives way: it is
-    // not marked seen, so it simply comes back later. The Nexus chapter
+    // A tip or upgrade lesson that popped up during the stabilize animation
+    // gives way: it is not marked seen, so it simply comes back later. The Nexus chapter
     // only ever gets this one chance.
-    if (!_nexusTutorialSeen &&
-        (_tutorialStep == TutorialStep.done ||
-            specFor(_tutorialStep).scope == TutorialScope.tips)) {
+    if (!_nexusTutorialSeen && _tutorialStepIsInterruptible) {
       _tutorialStep = TutorialStep.nexusIntro;
     }
     notifyListeners();
@@ -843,8 +850,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (nodeId == 'neural_genesis' &&
         !_neuralTutorialSeen &&
-        (_tutorialStep == TutorialStep.done ||
-            specFor(_tutorialStep).scope == TutorialScope.tips)) {
+        _tutorialStepIsInterruptible) {
       // Exactly what the three guided actions cost. This used to be a flat
       // 100M, most of which the tutorial never asked the player to spend.
       number += neuralTutorialGrant;
@@ -1335,6 +1341,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (prestigeCount >= 1) _seenBeats.add(TutorialStep.prestigeReady);
     if (prestigeCount >= 2) _seenBeats.add(TutorialStep.nexusSignal);
     if (_nexusStabilized) _seenBeats.add(TutorialStep.nexusAwakens);
+    // One prestige past an upgrade's unlock, a veteran has met it.
+    if (prestigeCount > minPrestigeForUpgrade(dimensionalTapId)) {
+      _seenBeats.add(TutorialStep.tipDimensionalTap);
+    }
+    if (prestigeCount > minPrestigeForUpgrade(cascadeResonatorId)) {
+      _seenBeats.add(TutorialStep.tipCascadeResonator);
+    }
     if (prestigeCount >= minPrestigeForUpgrade(temporalCollapseId)) {
       _seenBeats.add(TutorialStep.tipTemporalCollapse);
     }
@@ -1353,6 +1366,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     unawaited(_initConnectivityMonitoring());
     try {
+      _pendingCloudResetUserId = await _storageService.loadPendingCloudReset();
       final data = await _storageService.loadGame();
       number = data['number'] as BigInt;
 
@@ -2011,9 +2025,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _activateOverclock();
     }
 
+    final lessonTap = _countLessonTap();
     final bool probabilityStrikeTriggered =
         _isUpgradeActive(probabilityStrikeId) &&
-            _rng.nextDouble() < _probabilityStrikeChance;
+            (_rng.nextDouble() < _probabilityStrikeChance ||
+                _lessonWantsStrike(lessonTap));
 
     final baseClickGain = clickPower.toDouble() *
         prestigeMultiplier *
@@ -2053,6 +2069,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     number += gained;
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
+    _advanceLessonOnTap(probabilityStrikeTriggered);
     _checkTutorialTriggers();
     final personalBestReached = highestNumber > previousHighest;
 
@@ -2124,6 +2141,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         durationOverrideSeconds ?? _overclockDurationSeconds;
     _overclockActive = true;
     _unlockAchievement(Achievements.firstOverclock);
+    _advanceLessonOnGoal(LessonGoal.streak);
     notifyListeners();
 
     _overclockTimer = Timer(Duration(seconds: durationSeconds), () {
@@ -2178,6 +2196,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // Doubles production for the duration via _temporalCollapseFactor.
     _temporalCollapseActive = true;
     _unlockAchievement(Achievements.firstCollapse);
+    _advanceLessonOnGoal(LessonGoal.ability);
     notifyListeners();
 
     _temporalCollapseActiveTimer?.cancel();
@@ -2875,9 +2894,23 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// that plan contains. The result is "buy 7×", not "buy one, then look
   /// again".
   ///
+  /// The run's goal is the prestige requirement, so the advisor plans
+  /// around it:
+  ///
+  /// * Below it, a purchase only qualifies if it gets the player there
+  ///   sooner. Affordable now, that reduces to "pays for itself before the
+  ///   requirement would be reached anyway". Near the end of a run this
+  ///   stops it from spending the bank on something that only delays the
+  ///   prestige.
+  /// * At or above it, only the surplus above the requirement is spent, so
+  ///   following the advice never takes PRESTIGE away again.
+  ///
   /// Cached for a second, and refreshed immediately after any purchase.
   UpgradeRecommendation? get recommendedUpgrade {
-    if (_tutorialSteersPurchases) return null;
+    if (_tutorialSteersPurchases) {
+      _advisorSavingForPrestige = false;
+      return null;
+    }
     final nowMs = clock().millisecondsSinceEpoch;
     final signature = Object.hash(
       Object.hashAll(upgrades.map((u) => u.level)),
@@ -2893,7 +2926,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return _cachedRecommendation = _computeRecommendation();
   }
 
+  /// True when the advisor has nothing to recommend because every purchase
+  /// would delay reaching the prestige requirement: the best move is to
+  /// save up and prestige.
+  bool get advisorSavingForPrestige {
+    recommendedUpgrade;
+    return _advisorSavingForPrestige;
+  }
+
+  bool _advisorSavingForPrestige = false;
+
   UpgradeRecommendation? _computeRecommendation() {
+    _advisorSavingForPrestige = false;
     final rate = _advisorClickRate;
     final baseValue = _expectedValuePerSecond(rate);
     if (!(baseValue > 0)) return null;
@@ -2902,14 +2946,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // The idle tiers share one cost-per-effect, so the best pick often
     // alternates between neighbours level by level; the recommendation is
     // the first pick plus every other level of it the plan also buys.
+    final requirement = prestigeRequirement;
+    final reserve = number >= requirement ? requirement : BigInt.zero;
+    final target = reserve == BigInt.zero ? requirement.toDouble() : null;
+
     final plan = <String, int>{};
     Upgrade? pick;
-    var budget = number;
+    var budget = number - reserve;
     var value = baseValue;
 
     for (var step = 0; step < 30; step++) {
-      final best =
-          _withExtraLevels(plan, () => _bestCandidate(budget, value, rate));
+      final best = _withExtraLevels(
+          plan, () => _bestCandidate(budget, value, rate, target));
       if (best == null) break;
       if (pick != null && best.cost > budget) break;
       pick ??= best.upgrade;
@@ -2918,14 +2966,17 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       value = best.valueAfter;
       if (budget < BigInt.zero) break;
     }
-    if (pick == null) return null;
+    if (pick == null) {
+      _advisorSavingForPrestige = target != null;
+      return null;
+    }
 
     final amount = plan[pick.id]!;
     final totalCost = _costOfLevels(pick, pick.level, amount);
     final gain = _withExtraLevels(
             {pick.id: amount}, () => _expectedValuePerSecond(rate)) -
         baseValue;
-    final shortfall = (totalCost - number).toDouble();
+    final shortfall = (totalCost - (number - reserve)).toDouble();
     return UpgradeRecommendation(
       upgradeId: pick.id,
       category: pick.effectType,
@@ -2935,16 +2986,21 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       paybackSeconds: gain > 0 ? totalCost.toDouble() / gain : double.infinity,
       secondsToAfford: shortfall > 0 ? shortfall / baseValue : 0,
       assumedClickRate: rate,
+      reserve: reserve,
     );
   }
 
   /// Best single candidate at the current (possibly simulated) levels.
   /// Returns the upgrade, how many levels, their cost and the income after.
+  ///
+  /// With a [target] (the prestige requirement, not yet reached), a
+  /// candidate must also get the bank to it sooner than saving would.
   ({Upgrade upgrade, int count, BigInt cost, double valueAfter})?
       _bestCandidate(
     BigInt budget,
     double value,
     double rate,
+    double? target,
   ) {
     final budgetD = budget.toDouble();
     ({Upgrade upgrade, int count, BigInt cost, double valueAfter})? best;
@@ -2968,12 +3024,24 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         }
         if (count <= 0) continue;
         final cost = _costOfLevels(upgrade, level, count);
+        final costD = cost.toDouble();
+        final toAfford = costD > budgetD ? (costD - budgetD) / value : 0.0;
+        // The score is toAfford plus a positive payback, so this candidate
+        // can't win. Skips the expensive income simulation below for most
+        // of the catalog.
+        if (toAfford >= bestScore) continue;
+        // Bank at the moment of purchase: now, or once it reaches the cost.
+        final bankAtPurchase = costD > budgetD ? costD : budgetD;
+        if (target != null && bankAtPurchase >= target) continue;
         final after = _withExtraLevels(
             {upgrade.id: count}, () => _expectedValuePerSecond(rate));
         final gain = after - value;
         if (!(gain > 0)) continue;
-        final costD = cost.toDouble();
-        final toAfford = costD > budgetD ? (costD - budgetD) / value : 0.0;
+        if (target != null) {
+          final saving = (target - budgetD) / value;
+          final buying = toAfford + (target - bankAtPurchase + costD) / after;
+          if (buying >= saving) continue;
+        }
         final score = toAfford + costD / gain;
         if (score < bestScore) {
           bestScore = score;
@@ -3082,20 +3150,74 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Calculates how many prestige points would be earned on prestige
   double get prestigePointsOnPrestige => nextPrestigeReward;
 
-  Future<void> hardReset({bool preserveTutorial = false}) async {
+  /// Factory reset: every stat and every record of past play, on this
+  /// device and, when signed in, in the cloud.
+  ///
+  /// Locally: the whole save, including achievements, lifetime taps, shop
+  /// items and old backup copies. In the cloud: the save and leaderboard
+  /// row are overwritten with the fresh game, and
+  /// [BackendService.resetPlayerHistory] clears archived runs, run totals
+  /// and the tutorial flag (so onboarding starts again on every device).
+  ///
+  /// If the cloud can't be reached, that part is remembered and finished by
+  /// the next sync; until then a sync can't bring old data back.
+  Future<FactoryResetResult> hardReset({bool preserveTutorial = false}) async {
+    // A sync already on the wire carries the old save and could restore it
+    // over the reset. Let it land first; the reset then overwrites it.
+    await _awaitCloudSync();
+    _saveDebounceTimer?.cancel();
+    final userId =
+        _syncService.isAvailable ? _syncService.currentUserId : null;
+    // All synchronous, before the next await: from here on, any sync (the
+    // periodic one included) force-uploads the fresh game and finishes the
+    // reset, so none can pull the old cloud save back in.
     _resetToFreshState(preserveTutorial: preserveTutorial);
+    _lastSavedAt = DateTime.now();
+    if (userId != null) _pendingCloudResetUserId = userId;
 
     await _storageService.clearAllData();
-    _lastSavedAt = DateTime.now();
+    if (userId != null) await _storageService.savePendingCloudReset(userId);
     await _persistState(skipCloudUpload: true);
-    if (_syncService.isAvailable && _syncService.currentUserId != null) {
-      await syncWithCloud(forceUpload: true);
+
+    var result = FactoryResetResult.deviceOnly;
+    if (userId != null) {
+      // One may have started meanwhile; it does the same job.
+      await _awaitCloudSync();
+      if (_cloudResetPending) await syncWithCloud(forceUpload: true);
+      result = _cloudResetPending
+          ? FactoryResetResult.cloudPending
+          : FactoryResetResult.deviceAndCloud;
     }
 
     notifyListeners();
     if (!preserveTutorial) {
       _onTutorialResetCallback?.call();
     }
+    return result;
+  }
+
+  /// Signed-in account whose cloud data a factory reset still has to wipe.
+  String? _pendingCloudResetUserId;
+
+  bool get _cloudResetPending {
+    final pending = _pendingCloudResetUserId;
+    return pending != null && pending == _syncService.currentUserId;
+  }
+
+  /// Wipes the cloud history after a reset's forced upload has landed.
+  Future<void> _finishCloudReset(String userId) async {
+    await BackendService.instance.resetPlayerHistory(userId: userId);
+    _pendingCloudResetUserId = null;
+    await _storageService.savePendingCloudReset(null);
+  }
+
+  Future<void> _awaitCloudSync() async {
+    final running = _cloudSyncDone;
+    if (!_cloudSyncInProgress || running == null) return;
+    await running.future.timeout(
+      const Duration(seconds: 20),
+      onTimeout: () {},
+    );
   }
 
   /// Puts every piece of game state back to a brand-new game. Touches no
@@ -3147,6 +3269,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _overclockCoreElapsed = 0.0;
     _compoundVaultElapsed = 0.0;
     neuralNetwork = NeuralNetwork.initial();
+    _lessonAdvanceTimer?.cancel();
+    _lessonTaps = 0;
     if (!preserveTutorial) {
       _tutorialCompleted = false;
       _tutorialStep = TutorialStep.welcome;
@@ -3389,17 +3513,22 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (userId == null) return;
 
     _cloudSyncInProgress = true;
+    final done = _cloudSyncDone = Completer<void>();
     _lastCloudSyncError = null;
     notifyListeners();
 
     try {
       _updateHighestNumber();
       final local = _buildLocalProgress(userId);
+      // After a factory reset the fresh local save is the truth: it must
+      // overwrite the cloud copy, not merge with it or lose to it.
+      final resetting = _cloudResetPending;
       final result = await _syncService.syncProgress(
         localProgress: local,
-        forceUpload: forceUpload,
+        forceUpload: forceUpload || resetting,
       );
       if (result == null) return;
+      if (resetting) await _finishCloudReset(userId);
 
       // Either the cloud copy was restored or there was none to protect.
       _loadFailed = false;
@@ -3426,6 +3555,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } finally {
       _cloudSyncInProgress = false;
+      done.complete();
       notifyListeners();
     }
   }
@@ -3572,6 +3702,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// honouring a remote `false` meant signing in could restart onboarding on
   /// top of a mature local save.
   void setTutorialCompletionFromProfile(bool completed) {
+    // A factory reset the cloud hasn't heard about yet: its "completed" is
+    // the old game's.
+    if (_cloudResetPending) return;
     if (!completed) {
       if (_tutorialCompleted) {
         // Local says done, remote disagrees: push our truth up instead.
@@ -3621,6 +3754,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// tab, so the step could otherwise never advance.
   void _enterStep(TutorialStep step) {
     _tutorialStep = step;
+    _lessonTaps = 0;
+    final lesson = lessonFor(step);
+    if (lesson != null && step == lesson.open) {
+      // The lesson introduces the upgrade itself; the generic "now
+      // affordable" popup would only repeat it afterwards.
+      _pendingUnlockNotices.remove(lesson.upgradeId);
+    }
     final spec = specFor(step);
     if (spec.mode == TutorialMode.passthroughHint) {
       final next = _stepAfterTab(step, _mainTab);
@@ -3660,6 +3800,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case TutorialStep.navNeural:
         return tab == TutorialTab.neural ? TutorialStep.neuralIntro : null;
       default:
+        final lesson = lessonFor(step);
+        if (lesson == null) return null;
+        if (step == lesson.open) {
+          return tab == TutorialTab.upgrades ? lesson.buy : null;
+        }
+        if (step == lesson.back) {
+          return tab == TutorialTab.generators ? lesson.tryIt : null;
+        }
         return null;
     }
   }
@@ -3706,7 +3854,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case TutorialStep.neuralAccuracyLimit:
         _completeNeuralTutorial();
       default:
-        if (specFor(_tutorialStep).scope == TutorialScope.tips) {
+        final lesson = lessonFor(_tutorialStep);
+        if (lesson != null) {
+          if (_tutorialStep == lesson.explain) {
+            _finishBeat(lesson.beat);
+          } else if (_tutorialStep == lesson.tryIt &&
+              lesson.goal == LessonGoal.look) {
+            _enterStep(lesson.explain);
+          }
+        } else if (specFor(_tutorialStep).scope == TutorialScope.tips) {
           _finishBeat(_tutorialStep);
         }
     }
@@ -3774,6 +3930,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _completeNeuralTutorial();
       case TutorialScope.tips:
         _finishBeat(step);
+      case TutorialScope.lesson:
+        _lessonAdvanceTimer?.cancel();
+        _finishBeat(lessonFor(step)!.beat);
       case TutorialScope.none:
         return;
     }
@@ -3784,6 +3943,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final next = _stepAfterTab(_tutorialStep, index);
     if (next != null) {
       _tutorialStep = next;
+      _lessonTaps = 0;
       _applyStepSideEffects(next);
       notifyListeners();
       _scheduleStateSave();
@@ -3805,6 +3965,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _advanceTutorialOnPurchase(String upgradeId) {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson != null &&
+        lesson.upgradeId == upgradeId &&
+        (_tutorialStep == lesson.open || _tutorialStep == lesson.buy)) {
+      _enterStep(lesson.back);
+      return;
+    }
     if (_tutorialStep == TutorialStep.buyAutoClicker &&
         upgradeId == autoClickerId) {
       _enterStep(TutorialStep.navGenerators);
@@ -3847,6 +4014,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _tutorialStep = TutorialStep.done;
       return true;
     }
+    if (_lessonNoLongerFits()) {
+      _lessonAdvanceTimer?.cancel();
+      _tutorialStep = TutorialStep.done;
+      return true;
+    }
     if (_tutorialStep != TutorialStep.done ||
         !_tutorialCompleted ||
         isPrestigeAnimating ||
@@ -3865,23 +4037,124 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         number >= prestigeRequirement) {
       return TutorialStep.prestigeReady;
     }
-    for (final entry in upgradeTipSteps.entries) {
-      final tip = entry.value;
-      if (_seenBeats.contains(tip)) continue;
-      final upgrade = _upgradeById(entry.key);
+    for (final lesson in upgradeLessons) {
+      if (_seenBeats.contains(lesson.beat)) continue;
+      final upgrade = _upgradeById(lesson.upgradeId);
       if (upgrade == null) continue;
       if (upgrade.level > 0) {
-        // Bought without ever seeing the card: nothing left to announce.
-        _seenBeats.add(tip);
+        // Bought without ever seeing the lesson: nothing left to announce.
+        _seenBeats.add(lesson.beat);
         continue;
       }
       if (prestigeCount < minPrestigeForUpgrade(upgrade.id)) continue;
-      if (number >= _costOfLevels(upgrade, 0, 1)) return tip;
+      if (number >= _costOfLevels(upgrade, 0, 1)) return lesson.open;
     }
     if (!_seenBeats.contains(TutorialStep.tipEpoch) && canStartEpoch) {
       return TutorialStep.tipEpoch;
     }
     return null;
+  }
+
+  // ── Upgrade lessons ──
+
+  /// Taps counted since the current step began; lessons use it for their
+  /// "try it" goals.
+  int _lessonTaps = 0;
+  Timer? _lessonAdvanceTimer;
+
+  /// A lesson's "try it" step lingers this long after its goal is met, so
+  /// the player sees the effect before the explanation covers it.
+  static const Duration lessonRevealDelay = Duration(milliseconds: 900);
+
+  /// The Probability Strike lesson guarantees a strike on this tap of its
+  /// "try it" step, so the player isn't left tapping on a 1-in-20 chance.
+  static const int lessonGuaranteedStrikeTap = 3;
+
+  /// Counts a tap toward the current lesson's "try it" step, and returns
+  /// how many it has seen (0 outside one).
+  int _countLessonTap() {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson == null || _tutorialStep != lesson.tryIt) return 0;
+    return ++_lessonTaps;
+  }
+
+  bool _lessonWantsStrike(int lessonTap) =>
+      _tutorialStep == TutorialStep.probabilityStrikeTry &&
+      lessonTap == lessonGuaranteedStrikeTap;
+
+  void _advanceLessonOnTap(bool struck) {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson == null || _tutorialStep != lesson.tryIt) return;
+    final met = switch (lesson.goal) {
+      LessonGoal.strike => struck,
+      LessonGoal.combo => _clickStreak >= lesson.goalCount,
+      LessonGoal.taps => _lessonTaps >= lesson.goalCount,
+      LessonGoal.streak || LessonGoal.look || LessonGoal.ability => false,
+    };
+    if (met) _revealLessonExplanation(lesson);
+  }
+
+  /// Overclock firing and Temporal Collapse being used finish their
+  /// lessons' "try it" steps.
+  void _advanceLessonOnGoal(LessonGoal goal) {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson == null ||
+        _tutorialStep != lesson.tryIt ||
+        lesson.goal != goal) {
+      return;
+    }
+    _revealLessonExplanation(lesson);
+  }
+
+  void _revealLessonExplanation(UpgradeLesson lesson) {
+    if (_lessonAdvanceTimer?.isActive ?? false) return;
+    final from = _tutorialStep;
+    _lessonAdvanceTimer = Timer(lessonRevealDelay, () {
+      if (_tutorialStep == from) _enterStep(lesson.explain);
+    });
+  }
+
+  /// Live progress toward the current lesson's "try it" goal, for the
+  /// card's progress bar. Null when there is nothing to count.
+  ({int current, int target})? get lessonProgress {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson == null || _tutorialStep != lesson.tryIt) return null;
+    switch (lesson.goal) {
+      case LessonGoal.combo:
+        return (
+          current: math.min(_clickStreak, lesson.goalCount),
+          target: lesson.goalCount,
+        );
+      case LessonGoal.streak:
+        final target = _overclockStreakRequirement;
+        return (current: math.min(_clickStreak, target), target: target);
+      case LessonGoal.taps:
+        return (
+          current: math.min(_lessonTaps, lesson.goalCount),
+          target: lesson.goalCount,
+        );
+      case LessonGoal.strike:
+      case LessonGoal.look:
+      case LessonGoal.ability:
+        return null;
+    }
+  }
+
+  /// A lesson that can no longer be followed: before the purchase the
+  /// player can't afford it any more; after it, the upgrade is gone (a
+  /// prestige reset it). It stands down unseen and comes back when the
+  /// upgrade is next affordable.
+  bool _lessonNoLongerFits() {
+    final lesson = lessonFor(_tutorialStep);
+    if (lesson == null) return false;
+    final upgrade = _upgradeById(lesson.upgradeId);
+    if (upgrade == null) return true;
+    final beforePurchase =
+        _tutorialStep == lesson.open || _tutorialStep == lesson.buy;
+    if (beforePurchase) {
+      return upgrade.level == 0 && number < _costOfLevels(upgrade, 0, 1);
+    }
+    return upgrade.level == 0;
   }
 
   /// Starts the chapter or teaser a prestige just earned, once its reveal
@@ -3891,7 +4164,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final before = _artifactMilestonesBeforePrestige;
     _artifactMilestonesBeforePrestige = null;
     if (before == null) return;
-    if (_tutorialStep != TutorialStep.done || !_tutorialCompleted) return;
+    // A lesson or single card still up gives way; it comes back later.
+    if (!_tutorialStepIsInterruptible || !_tutorialCompleted) return;
 
     TutorialStep? next;
     if (!_artifactTutorialSeen &&
@@ -3945,6 +4219,19 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _neuralSparkBoostTimer?.cancel();
     _shopSparkSurgeTimer?.cancel();
     _saveDebounceTimer?.cancel();
+    _lessonAdvanceTimer?.cancel();
     super.dispose();
   }
+}
+
+/// How far a factory reset got.
+enum FactoryResetResult {
+  /// Not signed in: this device's data is gone; there was no cloud to clear.
+  deviceOnly,
+
+  /// This device and the signed-in account's cloud data are both clear.
+  deviceAndCloud,
+
+  /// This device is clear; the cloud part will finish on the next sync.
+  cloudPending,
 }

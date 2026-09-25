@@ -46,12 +46,54 @@ enum TutorialStep {
   /// The road ahead: locked silhouettes of every system still to come.
   roadAhead,
 
-  // ── Tips · one card when a new upgrade first becomes affordable ────────
+  // ── Tips ───────────────────────────────────────────────────────────────
+  /// First visit to UPGRADES after chapter 1: the advisor card.
   tipAdvisor,
+
+  // ── Upgrade lessons · the first time a special upgrade is affordable ───
+  // Each walks the player through buying it, then makes it happen on the
+  // play field, then explains it. The last card of each (tip…) is also the
+  // lesson's "seen" record, so its name must never change.
+  probabilityStrikeOpen,
+  probabilityStrikeBuy,
+  probabilityStrikeBack,
+  probabilityStrikeTry,
   tipProbabilityStrike,
+
+  momentumOpen,
+  momentumBuy,
+  momentumBack,
+  momentumTry,
   tipMomentum,
+
+  kineticSynergyOpen,
+  kineticSynergyBuy,
+  kineticSynergyBack,
+  kineticSynergyTry,
   tipKineticSynergy,
+
+  overclockOpen,
+  overclockBuy,
+  overclockBack,
+  overclockTry,
   tipOverclock,
+
+  dimensionalTapOpen,
+  dimensionalTapBuy,
+  dimensionalTapBack,
+  dimensionalTapTry,
+  tipDimensionalTap,
+
+  cascadeResonatorOpen,
+  cascadeResonatorBuy,
+  cascadeResonatorBack,
+  cascadeResonatorTry,
+  tipCascadeResonator,
+
+  temporalCollapseOpen,
+  temporalCollapseBuy,
+  temporalCollapseBack,
+  temporalCollapseTry,
   tipTemporalCollapse,
 
   // ── Chapter 2 · First prestige (first time the requirement is reached) ─
@@ -157,9 +199,13 @@ enum TutorialScope {
   nexus,
   neural,
 
-  /// Single cards (new-upgrade tips and teasers). Each is its own
+  /// Single cards (the advisor tip and teasers). Each is its own
   /// one-shot "tutorial", remembered by its step.
   tips,
+
+  /// A special upgrade's lesson (see [upgradeLessons]). SKIP ends it and
+  /// remembers it as seen.
+  lesson,
   none,
 }
 
@@ -195,6 +241,9 @@ enum TutorialMode {
 enum TutorialVisual {
   /// Locked silhouettes of every system still ahead of the player.
   roadmap,
+
+  /// Live progress bar for a lesson's "try it" goal (taps, streak, combo).
+  lessonProgress,
 }
 
 /// Named UI target, resolved to a GlobalKey by the overlay via a registry
@@ -216,6 +265,19 @@ enum TutorialTarget {
   neuralHud,
   upgradeAutoClicker,
   upgradeClickPower,
+  upgradeProbabilityStrike,
+  upgradeMomentum,
+  upgradeKineticSynergy,
+  upgradeOverclock,
+  upgradeDimensionalTap,
+  upgradeCascadeResonator,
+  upgradeTemporalCollapse,
+
+  /// The TEMPORAL COLLAPSE button on GENERATORS.
+  temporalCollapseButton,
+
+  /// The "+N / sec" line on GENERATORS.
+  idleRate,
 }
 
 /// Tab indices in MainLayout's screen list.
@@ -392,16 +454,171 @@ String? tutorialKickerFor(TutorialStep step) {
     return 'CHAPTER ${chapter.number} · ${chapter.name} · '
         '$index/${chapter.steps.length}';
   }
+  final lesson = lessonFor(step);
+  if (lesson != null) {
+    final index = lesson.steps.indexOf(step) + 1;
+    return '${lesson.label} · $index/${lesson.steps.length}';
+  }
   return specFor(step).kicker;
 }
 
-/// Upgrade → the tip card shown the first time it becomes affordable.
-const Map<String, TutorialStep> upgradeTipSteps = {
-  'click_probability_strike': TutorialStep.tipProbabilityStrike,
-  'click_momentum': TutorialStep.tipMomentum,
-  'click_kinetic_synergy': TutorialStep.tipKineticSynergy,
-  'click_overclock': TutorialStep.tipOverclock,
-  'click_temporal_collapse': TutorialStep.tipTemporalCollapse,
+/// What the player has to do on the play field before a lesson explains
+/// the upgrade.
+enum LessonGoal {
+  /// Land a Probability Strike (the lesson guarantees one within a few taps).
+  strike,
+
+  /// Build a Momentum combo of [UpgradeLesson.goalCount] taps.
+  combo,
+
+  /// Keep an unbroken streak until Overclock fires.
+  streak,
+
+  /// Tap [UpgradeLesson.goalCount] times.
+  taps,
+
+  /// Look at the spotlit stat and tap it.
+  look,
+
+  /// Fire the active ability.
+  ability,
+}
+
+/// A special upgrade's lesson: open UPGRADES, buy it, go back to the play
+/// field, see it work, then a short explanation.
+class UpgradeLesson {
+  final String upgradeId;
+
+  /// Kicker prefix, e.g. "NEW UPGRADE".
+  final String label;
+  final LessonGoal goal;
+
+  /// Taps (or combo length) the "try it" step asks for, where it counts.
+  final int goalCount;
+
+  /// open, buy, back, try, explain — in that order.
+  final List<TutorialStep> steps;
+
+  const UpgradeLesson({
+    required this.upgradeId,
+    required this.label,
+    required this.goal,
+    required this.steps,
+    this.goalCount = 0,
+  });
+
+  TutorialStep get open => steps[0];
+  TutorialStep get buy => steps[1];
+  TutorialStep get back => steps[2];
+  TutorialStep get tryIt => steps[3];
+  TutorialStep get explain => steps[4];
+
+  /// Recorded as seen once the lesson is finished or skipped.
+  TutorialStep get beat => explain;
+}
+
+/// In the order they become affordable in a first run.
+const List<UpgradeLesson> upgradeLessons = [
+  UpgradeLesson(
+    upgradeId: 'click_probability_strike',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.strike,
+    steps: [
+      TutorialStep.probabilityStrikeOpen,
+      TutorialStep.probabilityStrikeBuy,
+      TutorialStep.probabilityStrikeBack,
+      TutorialStep.probabilityStrikeTry,
+      TutorialStep.tipProbabilityStrike,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'click_momentum',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.combo,
+    goalCount: 25,
+    steps: [
+      TutorialStep.momentumOpen,
+      TutorialStep.momentumBuy,
+      TutorialStep.momentumBack,
+      TutorialStep.momentumTry,
+      TutorialStep.tipMomentum,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'click_kinetic_synergy',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.taps,
+    goalCount: 5,
+    steps: [
+      TutorialStep.kineticSynergyOpen,
+      TutorialStep.kineticSynergyBuy,
+      TutorialStep.kineticSynergyBack,
+      TutorialStep.kineticSynergyTry,
+      TutorialStep.tipKineticSynergy,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'click_overclock',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.streak,
+    steps: [
+      TutorialStep.overclockOpen,
+      TutorialStep.overclockBuy,
+      TutorialStep.overclockBack,
+      TutorialStep.overclockTry,
+      TutorialStep.tipOverclock,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'click_dimensional_tap',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.taps,
+    goalCount: 5,
+    steps: [
+      TutorialStep.dimensionalTapOpen,
+      TutorialStep.dimensionalTapBuy,
+      TutorialStep.dimensionalTapBack,
+      TutorialStep.dimensionalTapTry,
+      TutorialStep.tipDimensionalTap,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'idle_cascade_resonator',
+    label: _kickerNewUpgrade,
+    goal: LessonGoal.look,
+    steps: [
+      TutorialStep.cascadeResonatorOpen,
+      TutorialStep.cascadeResonatorBuy,
+      TutorialStep.cascadeResonatorBack,
+      TutorialStep.cascadeResonatorTry,
+      TutorialStep.tipCascadeResonator,
+    ],
+  ),
+  UpgradeLesson(
+    upgradeId: 'click_temporal_collapse',
+    label: 'NEW ABILITY',
+    goal: LessonGoal.ability,
+    steps: [
+      TutorialStep.temporalCollapseOpen,
+      TutorialStep.temporalCollapseBuy,
+      TutorialStep.temporalCollapseBack,
+      TutorialStep.temporalCollapseTry,
+      TutorialStep.tipTemporalCollapse,
+    ],
+  ),
+];
+
+/// The lesson [step] belongs to, or null.
+UpgradeLesson? lessonFor(TutorialStep step) {
+  for (final lesson in upgradeLessons) {
+    if (lesson.steps.contains(step)) return lesson;
+  }
+  return null;
+}
+
+/// Upgrade → the step that records its lesson as seen.
+final Map<String, TutorialStep> upgradeTipSteps = {
+  for (final lesson in upgradeLessons) lesson.upgradeId: lesson.beat,
 };
 
 const String _clickCategory = 'click';
@@ -533,59 +750,327 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     kicker: 'TIP',
     title: 'NOT SURE WHAT TO BUY?',
     body:
-        'The RECOMMENDED card always points at the purchase that pays for '
-        'itself fastest — tap BUY to follow it. The ×1 / ×10 / NEXT / MAX '
-        'toggle up top buys in bulk.',
+        'The RECOMMENDED card points at the purchase that pays for itself '
+        'fastest, and tells you when saving up for prestige is the better '
+        'move. Tap BUY to follow it. The ×1 / ×10 / NEXT / MAX toggle up top '
+        'buys in bulk.',
   ),
-  TutorialStep.tipProbabilityStrike: TutorialStepSpec(
-    scope: TutorialScope.tips,
-    mode: TutorialMode.tapToContinue,
-    kicker: _kickerNewUpgrade,
+
+  // ── Upgrade lessons ──────────────────────────────────────────────────────
+  // open → buy → back → try → explain. See [upgradeLessons].
+
+  // Probability Strike
+  TutorialStep.probabilityStrikeOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
     title: 'PROBABILITY STRIKE',
     body:
-        'You can now afford Probability Strike (UPGRADES › CLICK). Every tap '
-        'gets a 5% chance to hit for ×10 — and each level makes strikes '
-        'hit harder.',
+        'A new upgrade is within reach: it gives every tap a chance to hit '
+        'ten times harder. Open UPGRADES and let us try it.',
   ),
-  TutorialStep.tipMomentum: TutorialStepSpec(
-    scope: TutorialScope.tips,
+  TutorialStep.probabilityStrikeBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeProbabilityStrike,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Probability Strike.',
+  ),
+  TutorialStep.probabilityStrikeBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'NOW SEE IT',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.probabilityStrikeTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.floatingHint,
+    requiredTab: TutorialTab.generators,
+    title: 'WATCH FOR GOLD',
+    body: 'Tap away. When a strike lands you will see a big gold number.',
+  ),
+  TutorialStep.tipProbabilityStrike: TutorialStepSpec(
+    scope: TutorialScope.lesson,
     mode: TutorialMode.tapToContinue,
-    kicker: _kickerNewUpgrade,
+    title: 'THAT WAS A STRIKE',
+    body:
+        'About 1 tap in 20 strikes for ×10. Each level adds another ×2 to '
+        'every strike, so it pays most for players who tap a lot.',
+  ),
+
+  // Momentum
+  TutorialStep.momentumOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
     title: 'MOMENTUM',
     body:
-        'Momentum is affordable (UPGRADES › CLICK). Tap without stopping to '
-        'build a combo — the bar fills and every tap is multiplied. Pause '
-        'and it drains.',
+        'Momentum turns fast tapping into a growing combo. Open UPGRADES to '
+        'get it.',
   ),
-  TutorialStep.tipKineticSynergy: TutorialStepSpec(
-    scope: TutorialScope.tips,
+  TutorialStep.momentumBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeMomentum,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Momentum.',
+  ),
+  TutorialStep.momentumBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'BUILD A COMBO',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.momentumTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.floatingHint,
+    requiredTab: TutorialTab.generators,
+    title: 'KEEP TAPPING',
+    body:
+        'Tap without stopping and watch the MOMENTUM bar at the top fill up. '
+        'Every tap in the chain is worth a little more than the last.',
+    visual: TutorialVisual.lessonProgress,
+  ),
+  TutorialStep.tipMomentum: TutorialStepSpec(
+    scope: TutorialScope.lesson,
     mode: TutorialMode.tapToContinue,
-    kicker: _kickerNewUpgrade,
+    title: 'THAT IS MOMENTUM',
+    body:
+        'Each tap in an unbroken chain adds +2%, up to ×2. Pause for over a '
+        'second and the chain starts again. Levels build the combo faster, '
+        'raise the cap and slow the drain.',
+  ),
+
+  // Kinetic Synergy
+  TutorialStep.kineticSynergyOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
     title: 'KINETIC SYNERGY',
     body:
-        'Kinetic Synergy is affordable (UPGRADES › CLICK). Each level adds 1% '
-        'of your idle income to every tap, so idle and tapping grow together.',
+        'This one links your taps to your idle income. Open UPGRADES to get '
+        'it.',
   ),
-  TutorialStep.tipOverclock: TutorialStepSpec(
-    scope: TutorialScope.tips,
+  TutorialStep.kineticSynergyBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeKineticSynergy,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Kinetic Synergy.',
+  ),
+  TutorialStep.kineticSynergyBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'NOW SEE IT',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.kineticSynergyTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.floatingHint,
+    requiredTab: TutorialTab.generators,
+    title: 'TAP A FEW TIMES',
+    body:
+        'Every tap now carries a slice of your idle income on top of its '
+        'usual value. Watch the numbers.',
+    visual: TutorialVisual.lessonProgress,
+  ),
+  TutorialStep.tipKineticSynergy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
     mode: TutorialMode.tapToContinue,
-    kicker: _kickerNewUpgrade,
+    title: 'IDLE POWERS YOUR TAPS',
+    body:
+        'Each level adds 1% of your idle income per second to every tap. The '
+        'more your generators make, the harder you hit.',
+  ),
+
+  // Overclock
+  TutorialStep.overclockOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
     title: 'OVERCLOCK',
     body:
-        'Overclock is affordable (UPGRADES › CLICK). Keep an unbroken tapping '
-        'streak going and you trigger a surge that doubles your idle income '
-        'for 30 seconds.',
+        'Overclock rewards a long tapping streak with a surge of idle '
+        'income. Open UPGRADES to get it.',
   ),
-  TutorialStep.tipTemporalCollapse: TutorialStepSpec(
-    scope: TutorialScope.tips,
+  TutorialStep.overclockBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeOverclock,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Overclock.',
+  ),
+  TutorialStep.overclockBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'NOW SEE IT',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.overclockTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.floatingHint,
+    requiredTab: TutorialTab.generators,
+    title: 'NO BREAKS',
+    body:
+        'Tap without pausing for more than a second until the streak below '
+        'fills. A pause starts it again from zero.',
+    visual: TutorialVisual.lessonProgress,
+  ),
+  TutorialStep.tipOverclock: TutorialStepSpec(
+    scope: TutorialScope.lesson,
     mode: TutorialMode.tapToContinue,
-    kicker: 'ABILITY UNLOCKED',
+    title: 'OVERCLOCKED',
+    body:
+        'Your idle income is doubled for the next 30 seconds. It fires once '
+        'per streak: pause, then start a new streak to fire it again. '
+        'Levels make the surge stronger and longer, and the streak shorter.',
+  ),
+
+  // Dimensional Tap
+  TutorialStep.dimensionalTapOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
+    title: 'DIMENSIONAL TAP',
+    body:
+        'Your prestige opened a click upgrade that grows with every '
+        'prestige. Open UPGRADES to get it.',
+  ),
+  TutorialStep.dimensionalTapBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeDimensionalTap,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Dimensional Tap.',
+  ),
+  TutorialStep.dimensionalTapBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'NOW SEE IT',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.dimensionalTapTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.floatingHint,
+    requiredTab: TutorialTab.generators,
+    title: 'FEEL THE DIFFERENCE',
+    body: 'Tap a few times and compare the numbers with before.',
+    visual: TutorialVisual.lessonProgress,
+  ),
+  TutorialStep.tipDimensionalTap: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.tapToContinue,
+    title: 'IT GROWS WITH PRESTIGE',
+    body:
+        'Each level adds click power equal to 500 × your prestige '
+        'multiplier. Every prestige raises that multiplier, so it hits '
+        'harder every run.',
+  ),
+
+  // Cascade Resonator
+  TutorialStep.cascadeResonatorOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
+    title: 'CASCADE RESONATOR',
+    body:
+        'This one doubles all of your idle income at once. Open UPGRADES to '
+        'get it.',
+  ),
+  TutorialStep.cascadeResonatorBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeCascadeResonator,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _idleCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Cascade Resonator.',
+  ),
+  TutorialStep.cascadeResonatorBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'NOW SEE IT',
+    body: 'Head back to GENERATORS.',
+  ),
+  TutorialStep.cascadeResonatorTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightTapToContinue,
+    target: TutorialTarget.idleRate,
+    requiredTab: TutorialTab.generators,
+    title: 'DOUBLED',
+    body:
+        'That is your idle income now: twice what it was a moment ago. '
+        'Tap it to continue.',
+  ),
+  TutorialStep.tipCascadeResonator: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.tapToContinue,
+    title: '×2, ×4, ×8…',
+    body:
+        'Every level doubles your whole idle rate again, on top of every '
+        'other multiplier. It gets expensive fast, but nothing else grows '
+        'idle income like it.',
+  ),
+
+  // Temporal Collapse
+  TutorialStep.temporalCollapseOpen: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navUpgrades,
     title: 'TEMPORAL COLLAPSE',
     body:
-        'Your first active ability is affordable (UPGRADES › CLICK). Once '
-        'bought, a button appears on GENERATORS: it collapses 60 seconds of '
-        'idle into one burst and doubles your prestige multiplier for a '
-        'short time. Then it recharges.',
+        'Your first active ability is within reach. Open UPGRADES to get '
+        'it.',
+  ),
+  TutorialStep.temporalCollapseBuy: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.upgradeTemporalCollapse,
+    requiredTab: TutorialTab.upgrades,
+    requiredCategory: _clickCategory,
+    title: 'BUY IT',
+    body: 'Buy one level of Temporal Collapse.',
+  ),
+  TutorialStep.temporalCollapseBack: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navGenerators,
+    title: 'A NEW BUTTON',
+    body: 'Head back to GENERATORS. Something new is waiting there.',
+  ),
+  TutorialStep.temporalCollapseTry: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.temporalCollapseButton,
+    requiredTab: TutorialTab.generators,
+    title: 'FIRE IT',
+    body: 'Tap TEMPORAL COLLAPSE.',
+  ),
+  TutorialStep.tipTemporalCollapse: TutorialStepSpec(
+    scope: TutorialScope.lesson,
+    mode: TutorialMode.tapToContinue,
+    title: 'TIME, COLLAPSED',
+    body:
+        'You just got 60 seconds of idle income in one burst, and '
+        'everything you make is doubled for the next 45 seconds. Then it '
+        'recharges for a few minutes. Levels add to the burst, stretch the '
+        'boost and shorten the recharge.',
   ),
 
   // ── Chapter 2 · First prestige ───────────────────────────────────────────

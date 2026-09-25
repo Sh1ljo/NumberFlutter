@@ -88,6 +88,7 @@ void main() {
         TutorialScope.nexus,
         TutorialScope.neural,
         TutorialScope.tips,
+        TutorialScope.lesson,
       ]) {
         final steps = tutorialSpecs.entries
             .where((e) => e.value.scope == scope)
@@ -138,6 +139,15 @@ void main() {
         TutorialTarget.advisorBanner: TutorialTab.upgrades,
         TutorialTarget.upgradeAutoClicker: TutorialTab.upgrades,
         TutorialTarget.upgradeClickPower: TutorialTab.upgrades,
+        TutorialTarget.upgradeProbabilityStrike: TutorialTab.upgrades,
+        TutorialTarget.upgradeMomentum: TutorialTab.upgrades,
+        TutorialTarget.upgradeKineticSynergy: TutorialTab.upgrades,
+        TutorialTarget.upgradeOverclock: TutorialTab.upgrades,
+        TutorialTarget.upgradeDimensionalTap: TutorialTab.upgrades,
+        TutorialTarget.upgradeCascadeResonator: TutorialTab.upgrades,
+        TutorialTarget.upgradeTemporalCollapse: TutorialTab.upgrades,
+        TutorialTarget.temporalCollapseButton: TutorialTab.generators,
+        TutorialTarget.idleRate: TutorialTab.generators,
         TutorialTarget.prestigeMultiplier: TutorialTab.prestige,
         TutorialTarget.prestigeGainCard: TutorialTab.prestige,
         TutorialTarget.prestigeInitiate: TutorialTab.prestige,
@@ -186,8 +196,19 @@ void main() {
     });
 
     test('upgrade-row targets declare the category they live under', () {
-      const idleRows = [TutorialTarget.upgradeAutoClicker];
-      const clickRows = [TutorialTarget.upgradeClickPower];
+      const idleRows = [
+        TutorialTarget.upgradeAutoClicker,
+        TutorialTarget.upgradeCascadeResonator,
+      ];
+      const clickRows = [
+        TutorialTarget.upgradeClickPower,
+        TutorialTarget.upgradeProbabilityStrike,
+        TutorialTarget.upgradeMomentum,
+        TutorialTarget.upgradeKineticSynergy,
+        TutorialTarget.upgradeOverclock,
+        TutorialTarget.upgradeDimensionalTap,
+        TutorialTarget.upgradeTemporalCollapse,
+      ];
       for (final entry in tutorialSpecs.entries) {
         final target = entry.value.target;
         if (idleRows.contains(target)) {
@@ -219,15 +240,23 @@ void main() {
   });
 
   group('chapters', () {
-    test('every step belongs to exactly one chapter, or is a single card',
-        () {
+    test(
+        'every step belongs to exactly one chapter or lesson, or is a '
+        'single card', () {
       for (final step in TutorialStep.values) {
         if (step == TutorialStep.done) continue;
         final owners =
             tutorialChapters.where((c) => c.steps.contains(step)).length;
+        final lessons =
+            upgradeLessons.where((l) => l.steps.contains(step)).length;
         final scope = specFor(step).scope;
         if (scope == TutorialScope.tips) {
-          expect(owners, 0, reason: '${step.name} is a tip inside a chapter');
+          expect(owners + lessons, 0,
+              reason: '${step.name} is a tip inside a chapter or lesson');
+        } else if (scope == TutorialScope.lesson) {
+          expect(owners, 0, reason: '${step.name} is a lesson step in a chapter');
+          expect(lessons, 1,
+              reason: '${step.name} is in $lessons lessons, not exactly one');
         } else {
           expect(owners, 1,
               reason: '${step.name} is in $owners chapters, not exactly one');
@@ -263,11 +292,67 @@ void main() {
       }
     });
 
-    test('every upgrade tip is a single card', () {
-      for (final step in upgradeTipSteps.values) {
-        expect(specFor(step).scope, TutorialScope.tips);
-        expect(specFor(step).mode, TutorialMode.tapToContinue);
+  });
+
+  group('upgrade lessons', () {
+    test('each goes open, buy, back, try, explain', () {
+      for (final lesson in upgradeLessons) {
+        final name = lesson.upgradeId;
+        expect(lesson.steps, hasLength(5), reason: name);
+        for (final step in lesson.steps) {
+          expect(specFor(step).scope, TutorialScope.lesson, reason: step.name);
+        }
+        expect(specFor(lesson.open).target, TutorialTarget.navUpgrades,
+            reason: name);
+        expect(specFor(lesson.buy).mode, TutorialMode.spotlightAction,
+            reason: name);
+        expect(specFor(lesson.buy).requiredTab, TutorialTab.upgrades,
+            reason: name);
+        expect(specFor(lesson.back).target, TutorialTarget.navGenerators,
+            reason: name);
+        expect(specFor(lesson.tryIt).requiredTab, TutorialTab.generators,
+            reason: name);
+        expect(specFor(lesson.explain).mode, TutorialMode.tapToContinue,
+            reason: name);
+        expect(lesson.beat, lesson.explain, reason: name);
       }
+    });
+
+    test('covers every special upgrade, once each', () {
+      final ids = upgradeLessons.map((l) => l.upgradeId).toList();
+      expect(ids.toSet(), hasLength(ids.length));
+      expect(ids, containsAll(<String>[
+        'click_probability_strike',
+        'click_momentum',
+        'click_kinetic_synergy',
+        'click_overclock',
+        'click_dimensional_tap',
+        'idle_cascade_resonator',
+        'click_temporal_collapse',
+      ]));
+      expect(upgradeTipSteps.keys.toSet(), ids.toSet());
+    });
+
+    test('goals that count something show progress; the rest do not', () {
+      for (final lesson in upgradeLessons) {
+        final counts = lesson.goal == LessonGoal.combo ||
+            lesson.goal == LessonGoal.taps ||
+            lesson.goal == LessonGoal.streak;
+        expect(specFor(lesson.tryIt).visual == TutorialVisual.lessonProgress,
+            counts,
+            reason: lesson.upgradeId);
+        if (lesson.goal == LessonGoal.combo ||
+            lesson.goal == LessonGoal.taps) {
+          expect(lesson.goalCount, greaterThan(0), reason: lesson.upgradeId);
+        }
+      }
+    });
+
+    test('every lesson card is labelled with its position', () {
+      expect(tutorialKickerFor(TutorialStep.probabilityStrikeOpen),
+          'NEW UPGRADE · 1/5');
+      expect(tutorialKickerFor(TutorialStep.tipTemporalCollapse),
+          'NEW ABILITY · 5/5');
     });
   });
 

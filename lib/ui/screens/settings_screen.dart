@@ -494,7 +494,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: theme.textTheme.titleLarge
                   ?.copyWith(color: theme.colorScheme.error)),
           content: Text(
-            'Are you sure you want to completely erase all data? This action cannot be undone.',
+            'This erases everything: your number, upgrades, prestiges, '
+            'artifacts, the Nexus, your neural network, achievements, shop '
+            'items and every stat and record. If you are signed in, your '
+            'cloud save, leaderboard score and prestige history are erased '
+            'too, and the tutorial starts again.\n\n'
+            'This cannot be undone.',
             style: theme.textTheme.bodyLarge,
           ),
           actions: [
@@ -506,9 +511,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                await gameState.hardReset();
+                final messenger = ScaffoldMessenger.maybeOf(context);
+                final result = await gameState.hardReset();
                 if (dialogContext.mounted) {
                   Navigator.of(dialogContext).pop();
+                }
+                if (result == FactoryResetResult.cloudPending) {
+                  messenger?.showSnackBar(const SnackBar(
+                    content: Text(
+                      'Erased on this device. Your cloud save and history '
+                      'will be erased as soon as you are back online.',
+                    ),
+                  ));
                 }
               },
               style: ElevatedButton.styleFrom(

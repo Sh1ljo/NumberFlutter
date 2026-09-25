@@ -21,7 +21,17 @@ import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
 
-  const MainGameScreen({super.key, this.tapAreaKey});
+  /// Tutorial spotlight targets: the TEMPORAL COLLAPSE button and the
+  /// "+N / sec" line.
+  final GlobalKey? temporalCollapseKey;
+  final GlobalKey? idleRateKey;
+
+  const MainGameScreen({
+    super.key,
+    this.tapAreaKey,
+    this.temporalCollapseKey,
+    this.idleRateKey,
+  });
 
   @override
   State<MainGameScreen> createState() => _MainGameScreenState();
@@ -378,6 +388,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                   final shownRate =
                                       rates.total > 0 ? rates.total : 0.0;
                                   return Text(
+                                    key: widget.idleRateKey,
                                     '+${NumberFormatter.formatDouble(shownRate)} / sec',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                       color: theme.colorScheme.primary
@@ -436,6 +447,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
                               builder: (context, data, child) {
                                 if (!data.show) return const SizedBox.shrink();
                                 return _TemporalCollapseButton(
+                                  key: widget.temporalCollapseKey,
                                   active: data.active,
                                   coolingDown: data.cooling,
                                   onTap: () => context
@@ -535,6 +547,7 @@ class _TemporalCollapseButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _TemporalCollapseButton({
+    super.key,
     required this.active,
     required this.coolingDown,
     required this.onTap,

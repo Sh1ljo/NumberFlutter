@@ -729,12 +729,19 @@ class _RecommendationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final rec = context
         .select<GameState, UpgradeRecommendation?>((gs) => gs.recommendedUpgrade);
-    if (rec == null) return const SizedBox(height: 4);
+    final saving =
+        context.select<GameState, bool>((gs) => gs.advisorSavingForPrestige);
+    if (rec == null) {
+      return saving ? const _SaveForPrestigeCard() : const SizedBox(height: 4);
+    }
 
     final theme = Theme.of(context);
     final gs = context.read<GameState>();
     final upgrade = gs.upgrades.firstWhere((u) => u.id == rec.upgradeId);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.65);
+    final payback = rec.paybackSeconds.isFinite
+        ? ' · pays back in ${NumberFormatter.formatDuration(rec.paybackSeconds)}'
+        : '';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
@@ -756,22 +763,38 @@ class _RecommendationCard extends StatelessWidget {
                     size: 14, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text.rich(
-                    TextSpan(children: [
-                      TextSpan(text: upgrade.name),
-                      TextSpan(
-                        text: '  ×${rec.amount}',
-                        style: TextStyle(color: theme.colorScheme.primary),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text.rich(
+                        TextSpan(children: [
+                          TextSpan(text: upgrade.name),
+                          TextSpan(
+                            text: '  ×${rec.amount}',
+                            style: TextStyle(color: theme.colorScheme.primary),
+                          ),
+                        ]),
+                        style:
+                            theme.textTheme.titleMedium?.copyWith(fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ]),
-                    style: theme.textTheme.titleMedium?.copyWith(fontSize: 14),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                      // Why this pick: what it adds and how fast it has
+                      // earned its price back.
+                      Text(
+                        '+${NumberFormatter.formatDouble(rec.gainPerSecond)}/s$payback',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: muted, fontSize: 10),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
                 Selector<GameState, bool>(
-                  selector: (_, gs) => gs.number >= rec.cost,
+                  selector: (_, gs) => rec.affordableWith(gs.number),
                   builder: (context, affordable, _) => affordable
                       ? ElevatedButton(
                           onPressed: () =>
@@ -799,6 +822,60 @@ class _RecommendationCard extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown in the advisor's place when every purchase would only delay the
+/// prestige requirement: the best move left is to save up and prestige.
+class _SaveForPrestigeCard extends StatelessWidget {
+  const _SaveForPrestigeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final requirement =
+        context.select<GameState, BigInt>((gs) => gs.prestigeRequirement);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.65);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withValues(alpha: 0.08),
+          border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.7)),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            children: [
+              Icon(Icons.savings_outlined,
+                  size: 14, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Save for prestige',
+                      style:
+                          theme.textTheme.titleMedium?.copyWith(fontSize: 14),
+                    ),
+                    Text(
+                      'Nothing here pays for itself before you reach '
+                      '${NumberFormatter.format(requirement)}.',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: muted, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
