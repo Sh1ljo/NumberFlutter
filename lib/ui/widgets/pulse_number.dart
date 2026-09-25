@@ -49,9 +49,17 @@ class PulseNumberState extends State<PulseNumber> with SingleTickerProviderState
             child: child,
           );
         },
-        child: Text(
-          NumberFormatter.format(widget.value),
-          style: Theme.of(context).textTheme.displayLarge,
+        // Fixed decimals + the theme's tabular figures keep the width constant
+        // between ticks, and scaleDown shrinks long suffixes ("123.45QaDc")
+        // instead of letting the counter wrap onto a second line.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            NumberFormatter.format(widget.value, fixedDecimals: true),
+            style: Theme.of(context).textTheme.displayLarge,
+            maxLines: 1,
+            softWrap: false,
+          ),
         ),
       ),
     );

@@ -183,19 +183,6 @@ class _MainLayoutState extends State<MainLayout> {
   /// Reacts to GameState changes outside of build, so dialogs, overlays and
   /// network fetches are never triggered as a build side effect.
   void _onGameStateChanged() {
-    final _perfSw = Stopwatch()..start(); // TEMP-PERF-PROBE
-    try {
-      _onGameStateChangedInner();
-    } finally {
-      _perfSw.stop(); // TEMP-PERF-PROBE
-      if (_perfSw.elapsedMilliseconds > 6) {
-        debugPrint('[PERF] _onGameStateChanged() took '
-            '${_perfSw.elapsedMilliseconds}ms');
-      }
-    }
-  }
-
-  void _onGameStateChangedInner() {
     if (!mounted) return;
 
     // notifyListeners() can in principle land mid-frame. Inserting an

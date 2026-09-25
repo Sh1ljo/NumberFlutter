@@ -60,7 +60,13 @@ class NumberFormatter {
 
   static final BigInt _thousand = BigInt.from(1000);
 
-  static String format(BigInt value) {
+  /// Compact display: 1234 -> "1.23K", 1200 -> "1.2K", 1000 -> "1K".
+  ///
+  /// [fixedDecimals] keeps both decimals ("1.20K", "1.00K") so the string
+  /// length only changes when the magnitude does. Use it for any number that
+  /// ticks live: trimming zeros made a centered counter change width several
+  /// times a second and visibly jump sideways.
+  static String format(BigInt value, {bool fixedDecimals = false}) {
     if (value < _thousand) {
       return value.toString();
     }
@@ -76,7 +82,9 @@ class NumberFormatter {
       final rest = asString.substring(intDigits);
       final decimals = rest.padRight(2, '0').substring(0, 2);
       final String compact;
-      if (decimals == '00') {
+      if (fixedDecimals) {
+        compact = '$lead.$decimals';
+      } else if (decimals == '00') {
         compact = lead;
       } else if (decimals[1] == '0') {
         compact = '$lead.${decimals[0]}';

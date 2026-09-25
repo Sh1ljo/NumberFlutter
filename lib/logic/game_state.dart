@@ -1845,7 +1845,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     bool probabilityStrikeTriggered,
     bool personalBestReached,
   }) click() {
-    final _perfSw = Stopwatch()..start(); // TEMP-PERF-PROBE
     final now = DateTime.now();
     final bool chainBroken = _lastManualClickTime == null ||
         now.difference(_lastManualClickTime!).inMilliseconds > 1000;
@@ -1943,11 +1942,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     _scheduleStateSave();
-    _perfSw.stop(); // TEMP-PERF-PROBE
-    if (_perfSw.elapsedMilliseconds > 6) {
-      debugPrint('[PERF] click() took ${_perfSw.elapsedMilliseconds}ms '
-          '(strike=$probabilityStrikeTriggered, step=$_tutorialStep)');
-    }
     return (
       gain: gained,
       probabilityStrikeTriggered: probabilityStrikeTriggered,
@@ -3358,7 +3352,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _writeState({required bool skipCloudUpload}) async {
-    final _perfSw = Stopwatch()..start(); // TEMP-PERF-PROBE
     _updateHighestNumber();
     await _storageService.saveGame(
       number: _persistableNumber,
@@ -3387,11 +3380,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       shopJson: jsonEncode(shopInventory.toJson()),
     );
     _lastSavedAt = DateTime.now();
-    _perfSw.stop(); // TEMP-PERF-PROBE
-    if (_perfSw.elapsedMilliseconds > 30) {
-      debugPrint('[PERF] _writeState() saveGame took '
-          '${_perfSw.elapsedMilliseconds}ms');
-    }
 
     if (skipCloudUpload ||
         !_syncService.isAvailable ||

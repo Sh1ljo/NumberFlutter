@@ -19,6 +19,14 @@ class AppTheme {
   static const Color outlineVariant = Color(0xFF474747);
   static const Color error = Color(0xFFFFB4AB);
 
+  /// Every digit gets the same advance width. Both fonts default to
+  /// proportional figures ('1' is ~30% narrower than '0' in Space Grotesk),
+  /// so a live-ticking number changed width every update and, when centered,
+  /// shook left and right.
+  static const List<FontFeature> _tabularFigures = [
+    FontFeature.tabularFigures(),
+  ];
+
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
@@ -34,16 +42,19 @@ class AppTheme {
       ),
       textTheme: TextTheme(
         displayLarge: GoogleFonts.spaceGrotesk(
+          fontFeatures: _tabularFigures,
           color: primary,
           fontWeight: FontWeight.w900,
           letterSpacing: -2.0,
         ),
         displayMedium: GoogleFonts.spaceGrotesk(
+          fontFeatures: _tabularFigures,
           color: primary,
           fontWeight: FontWeight.w700,
           letterSpacing: -1.0,
         ),
         titleLarge: GoogleFonts.spaceGrotesk(
+          fontFeatures: _tabularFigures,
           color: primary,
           fontWeight: FontWeight.bold,
         ),
@@ -56,6 +67,7 @@ class AppTheme {
           fontWeight: FontWeight.w300,
         ),
         labelSmall: GoogleFonts.manrope(
+          fontFeatures: _tabularFigures,
           color: outline,
           fontWeight: FontWeight.w600,
           letterSpacing: 1.5,

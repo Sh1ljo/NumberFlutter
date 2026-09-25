@@ -95,26 +95,49 @@ class _TapRippleEffectState extends State<TapRippleEffect>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final r = _radius.value;
-        return Positioned(
-          left: widget.position.dx - r,
-          top: widget.position.dy - r,
-          width: r * 2,
-          height: r * 2,
-          child: Opacity(
-            opacity: _opacity.value,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.4),
-              ),
-            ),
-          ),
-        );
-      },
+    // Laid out once at the ring's final size; the growth and fade happen at
+    // paint time. Animating Positioned's rect instead re-laid out the whole
+    // Stack every frame for every live ripple, and the Opacity wrapper
+    // added a compositing layer per ripple.
+    return Positioned(
+      left: widget.position.dx - _endRadius,
+      top: widget.position.dy - _endRadius,
+      width: _endRadius * 2,
+      height: _endRadius * 2,
+      child: CustomPaint(
+        painter: _RipplePainter(
+          controller: _controller,
+          radius: _radius,
+          opacity: _opacity,
+        ),
+      ),
     );
   }
+}
+
+class _RipplePainter extends CustomPainter {
+  _RipplePainter({
+    required Listenable controller,
+    required this.radius,
+    required this.opacity,
+  }) : super(repaint: controller);
+
+  final Animation<double> radius;
+  final Animation<double> opacity;
+
+  final Paint _paint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _paint.color = Colors.white.withValues(alpha: opacity.value);
+    // Border.all drew its stroke inside the box; match that.
+    final r = radius.value - _paint.strokeWidth / 2;
+    if (r > 0) canvas.drawCircle(size.center(Offset.zero), r, _paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RipplePainter oldDelegate) =>
+      oldDelegate.radius != radius || oldDelegate.opacity != opacity;
 }

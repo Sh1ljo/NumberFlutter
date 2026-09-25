@@ -158,7 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Selector<GameState, BigInt>(
                     selector: (_, gs) => gs.number,
                     builder: (context, number, _) => Text(
-                      NumberFormatter.format(number),
+                      NumberFormatter.format(number, fixedDecimals: true),
                       style:
                           theme.textTheme.titleLarge?.copyWith(fontSize: 24),
                     ),

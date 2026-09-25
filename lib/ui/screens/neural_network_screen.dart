@@ -94,7 +94,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                           selector: (_, state) => state.number,
                           builder: (context, number, child) {
                             return Text(
-                              NumberFormatter.format(number),
+                              NumberFormatter.format(number, fixedDecimals: true),
                               style: theme.textTheme.titleLarge
                                   ?.copyWith(fontSize: 24),
                             );

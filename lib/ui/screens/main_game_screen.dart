@@ -237,7 +237,8 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                 selector: (_, state) => state.number,
                                 builder: (context, number, child) {
                                   return Text(
-                                    NumberFormatter.format(number),
+                                    NumberFormatter.format(number,
+                                        fixedDecimals: true),
                                     style: theme.textTheme.titleLarge
                                         ?.copyWith(fontSize: 24),
                                   );
@@ -325,10 +326,14 @@ class _MainGameScreenState extends State<MainGameScreen> {
                               child: Selector<GameState, BigInt>(
                                 selector: (_, state) => state.number,
                                 builder: (context, number, child) {
-                                  return PulseNumber(
-                                    key: _numberKey,
-                                    value: number,
-                                    onTap: () {},
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 24),
+                                    child: PulseNumber(
+                                      key: _numberKey,
+                                      value: number,
+                                      onTap: () {},
+                                    ),
                                   );
                                 },
                               ),
