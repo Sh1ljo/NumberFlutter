@@ -48,7 +48,10 @@ class _MainGameScreenState extends State<MainGameScreen> {
   @override
   void initState() {
     super.initState();
-    _scheduleNextSpark();
+    // Defer so Provider is available (context.read is unsafe in initState).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scheduleNextSpark();
+    });
   }
 
   @override
@@ -59,8 +62,12 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
   void _scheduleNextSpark() {
     _sparkSpawnTimer?.cancel();
-    // Randomized so the spawn never feels like a metronome.
-    final delaySeconds = 10 + _sparkRng.nextInt(11); // 10..20s
+    // Randomized so the spawn never feels like a metronome. Spark Magnet
+    // shortens the delay window by 25%.
+    final factor =
+        context.read<GameState>().neuralSparkSpawnDelayFactor.clamp(0.25, 1.0);
+    final baseSeconds = 10 + _sparkRng.nextInt(11); // 10..20s
+    final delaySeconds = math.max(3, (baseSeconds * factor).round());
     _sparkSpawnTimer = Timer(Duration(seconds: delaySeconds), _trySpawnSpark);
   }
 

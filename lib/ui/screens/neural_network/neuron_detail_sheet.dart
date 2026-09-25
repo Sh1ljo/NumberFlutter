@@ -62,7 +62,7 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
       if (number >= state.neuronGradientCost(neuron)) affordMask |= 1;
       if (number >= state.neuralBranchCost) affordMask |= 2;
       for (int i = 0; i < activationFunctions.length; i++) {
-        if (number >= neuron.activationChangeCost(activationFunctions[i])) {
+        if (number >= state.neuronActivationCost(neuron, activationFunctions[i])) {
           affordMask |= 4 << i;
         }
       }
@@ -587,7 +587,8 @@ class _NeuronDetailSheetState extends State<NeuronDetailSheet>
                       Row(
                         children: activationFunctions.map((fn) {
                           final selected = fn == selectedFn;
-                          final cost = currentNeuron.activationChangeCost(fn);
+                          final cost =
+                              state.neuronActivationCost(currentNeuron, fn);
                           final canAfford =
                               cost == BigInt.zero || state.number >= cost;
                           return Expanded(

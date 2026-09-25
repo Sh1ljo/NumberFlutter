@@ -11,7 +11,10 @@ import '../data/artifact_data.dart';
 import '../models/artifact.dart';
 import '../models/neural_network.dart';
 import '../models/upgrade_recommendation.dart';
+import '../models/shop_product.dart';
+import '../data/shop_catalog.dart';
 import 'connectivity_service.dart';
+import 'shop_inventory.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
 import 'backend_service.dart';
@@ -353,11 +356,37 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _temporalCollapseActiveTimer;
   Timer? _temporalCollapseCooldownTimerRef;
   Timer? _neuralSparkBoostTimer;
+  Timer? _shopSparkSurgeTimer;
   double _neuralSparkBoostMultiplier = 1.0;
+  double _shopSparkSurgeMultiplier = 1.0;
   static const Duration _saveDebounceDuration = Duration(milliseconds: 350);
+
+  /// Owned shop permanents and timed boost expiry. Survives prestige; cleared
+  /// on hard reset. Replace the mock grant in [purchaseShopProduct] with IAP.
+  ShopInventory shopInventory = ShopInventory();
+
+  /// When true, [purchaseShopProduct] grants immediately with no store billing.
+  /// Flip to false and wire Play/App Store before release.
+  static bool mockShopPurchases = true;
 
   /// True while a caught "Neural Spark" click-power boost is active.
   bool get isNeuralSparkBoostActive => _neuralSparkBoostMultiplier != 1.0;
+
+  /// True while a paid Spark Surge production boost is active.
+  bool get isShopSparkSurgeActive => _shopSparkSurgeMultiplier != 1.0;
+
+  /// Multiplies all production (click + idle) from active shop timed boosts.
+  double get shopTimedProductionMultiplier => _shopSparkSurgeMultiplier;
+
+  /// Permanent shop click multiplier (primers + amplifiers).
+  double get shopClickMultiplier => shopInventory.clickMultiplier;
+
+  /// Permanent shop idle multiplier (primers + amplifiers).
+  double get shopIdleMultiplier => shopInventory.idleMultiplier;
+
+  /// Scale applied to Neural Spark spawn delays (Spark Magnet).
+  double get neuralSparkSpawnDelayFactor =>
+      shopInventory.neuralSparkSpawnDelayFactor;
 
   // Upgrades
   /// The upgrade catalog. Built fresh per call so each [GameState] owns its
@@ -691,7 +720,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Basis points (1/100 of 1%) of pre-prestige net worth paid after prestige.
-  int get surgeProtocolNetWorthCarryBps => _nexusLevel('surge_protocol') * 50;
+  int get surgeProtocolNetWorthCarryBps =>
+      _nexusLevel('surge_protocol') * 50 + shopInventory.surgeCarryBps;
 
   /// Multiplier applied to the prestige delta (Enhanced Extraction).
   double get prestigeDeltaMultiplier {
@@ -702,11 +732,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// Permanent flat idle rate bonus that survives prestige resets.
   double get permanentIdleBonus => _nexusLevel('idle_foundation') * 1.0;
 
-  /// Multiplier on offline gains (Quick Resume).
+  /// Multiplier on offline gains (Quick Resume nexus + Chrono Lens + shop).
   double get offlineGainMultiplier {
     final level = _nexusLevel('quick_resume');
     return (1.0 + level * 0.10) *
-        Artifacts.chronoOfflineMultiplier(_artifactLevel(Artifacts.chronoLens));
+        Artifacts.chronoOfflineMultiplier(_artifactLevel(Artifacts.chronoLens)) *
+        shopInventory.offlineGainMultiplier;
   }
 
   /// Offline time beyond this is not credited (idle income only; neural
@@ -714,7 +745,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const double baseOfflineCapHours = 12.0;
   double get offlineCapHours =>
       baseOfflineCapHours +
-      Artifacts.chronoCapBonusHours(_artifactLevel(Artifacts.chronoLens));
+      Artifacts.chronoCapBonusHours(_artifactLevel(Artifacts.chronoLens)) +
+      shopInventory.offlineCapBonusHours;
 
   /// Flat addition to the momentum cap (Kinetic Surge).
   double get momentumCapBonus => _nexusLevel('kinetic_surge') * 0.1;
@@ -725,10 +757,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return math.pow(1.05, level).toDouble();
   }
 
-  /// Multiplier on prestige points earned (Echo Protocol).
+  /// Multiplier on prestige points earned (Echo Protocol + shop Dividend).
   double get prestigePointsMultiplier {
     final level = _nexusLevel('echo_protocol');
-    return 1.0 + level * 0.10;
+    return (1.0 + level * 0.10) * shopInventory.prestigePointsMultiplier;
   }
 
   /// Tithe Engine: extra PP per artifact owned.
@@ -803,10 +835,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   BigInt _applyNeuralDiscount(BigInt cost) {
     final factor =
-        Artifacts.synapseCostFactor(_artifactLevel(Artifacts.synapseCrown));
+        Artifacts.synapseCostFactor(_artifactLevel(Artifacts.synapseCrown)) *
+            shopInventory.neuralCostFactor;
     if (factor >= 1.0) return cost;
     return cost * BigInt.from((factor * 10000).round()) ~/ BigInt.from(10000);
   }
+
+  /// Activation-change cost after Synapse Crown / Neural Patron discounts.
+  BigInt neuronActivationCost(NeuralNeuron neuron, String fn) =>
+      _applyNeuralDiscount(neuron.activationChangeCost(fn));
 
   BigInt get neuralBranchCost => _applyNeuralDiscount(
       neuralNetwork.addLayerCost(neuralNetwork.layers.length));
@@ -822,7 +859,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         ? null
         : neuralNetwork.layers.first.neurons.first;
     if (first == null) return BigInt.zero;
-    final paidActivation = NeuralNeuron(id: first.id).activationChangeCost('relu');
+    final paidActivation = neuronActivationCost(first, 'relu');
     return neuronGradientCost(first) + paidActivation + neuralBranchCost;
   }
 
@@ -871,7 +908,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   bool changeNeuronActivation(String neuronId, String fn) {
     final neuron = neuralNetwork.findNeuron(neuronId);
     if (neuron == null || neuron.activationFn == fn) return false;
-    final cost = neuron.activationChangeCost(fn);
+    final cost = neuronActivationCost(neuron, fn);
     if (cost > BigInt.zero && number < cost) return false;
     if (cost > BigInt.zero) number -= cost;
     neuron.activationFn = fn;
@@ -1271,6 +1308,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
           artifactState = ArtifactState();
         }
       }
+      final shopJson = data['shop'] as String?;
+      if (shopJson != null) {
+        try {
+          shopInventory = ShopInventory.fromJson(
+              jsonDecode(shopJson) as Map<String, dynamic>);
+        } catch (_) {
+          shopInventory = ShopInventory();
+        }
+      }
+      _restoreShopSparkSurgeFromInventory();
       _recalculateDerivedStatsFromUpgrades();
 
       final nnJson = data['neuralNetwork'] as String?;
@@ -1496,7 +1543,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _temporalCollapseFactor *
         resonanceMultiplier *
         neuralLossMultiplier *
-        globalProductionMultiplier;
+        globalProductionMultiplier *
+        shopIdleMultiplier *
+        shopTimedProductionMultiplier;
     if (_overclockActive) {
       multiplier *= _overclockIdleMultiplier;
     }
@@ -1518,7 +1567,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _temporalCollapseFactor *
         resonanceMultiplier *
         neuralLossMultiplier *
-        globalProductionMultiplier;
+        globalProductionMultiplier *
+        shopIdleMultiplier *
+        shopTimedProductionMultiplier;
     if (_overclockActive) {
       idleRate *= _overclockIdleMultiplier;
     }
@@ -1842,7 +1893,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         prestigeMultiplier *
         _temporalCollapseFactor *
         neuralLossMultiplier *
-        globalProductionMultiplier;
+        globalProductionMultiplier *
+        shopClickMultiplier *
+        shopTimedProductionMultiplier;
     // kineticBonus inherits every multiplier via totalIdleRate, so we don't
     // multiply it again here.
     final kineticBonus = totalIdleRate * _kineticSynergyShare;
@@ -1947,9 +2000,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
-  void _activateOverclock() {
+  void _activateOverclock({int? durationOverrideSeconds}) {
     _overclockTimer?.cancel();
-    final durationSeconds = _overclockDurationSeconds;
+    final durationSeconds =
+        durationOverrideSeconds ?? _overclockDurationSeconds;
     _overclockActive = true;
     _unlockAchievement(Achievements.firstOverclock);
     notifyListeners();
@@ -1979,9 +2033,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final lvl = _temporalCollapseLevel;
     final base = math.max(80, 180 - lvl * 20);
     final anchor = _artifactLevel(Artifacts.tempoAnchor);
-    if (anchor <= 0) return base;
-    return math.max(Artifacts.tempoCooldownFloorSeconds,
-        (base * Artifacts.tempoCooldownFactor(anchor)).round());
+    final afterAnchor = anchor <= 0
+        ? base
+        : math.max(Artifacts.tempoCooldownFloorSeconds,
+            (base * Artifacts.tempoCooldownFactor(anchor)).round());
+    return math.max(
+      1,
+      (afterAnchor * shopInventory.collapseCooldownFactor).round(),
+    );
   }
 
   bool get canActivateTemporalCollapse =>
@@ -2017,6 +2076,148 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
       });
     });
+  }
+
+  // ── Real-money shop (mock grant until IAP is wired) ─────────────────────
+
+  bool ownsShopProduct(String productId) => shopInventory.owns(productId);
+
+  Duration? shopSparkSurgeRemaining() {
+    final expires = shopInventory.sparkSurgeExpiresAt;
+    if (expires == null) return null;
+    final left = expires.difference(DateTime.now().toUtc());
+    if (left.isNegative) return null;
+    return left;
+  }
+
+  /// Whether [productId] can be granted right now (owned check, gates, etc.).
+  ShopPurchaseResult shopPurchaseAvailability(String productId) {
+    final product = ShopCatalog.byId(productId);
+    if (product == null) return ShopPurchaseResult.unknownProduct;
+    if (product.isPermanent && shopInventory.owns(productId)) {
+      return ShopPurchaseResult.alreadyOwned;
+    }
+    switch (product.effect) {
+      case ShopEffect.collapseReady:
+        if (_temporalCollapseLevel <= 0 || !_temporalCollapseCoolingDown) {
+          return ShopPurchaseResult.notAvailable;
+        }
+        return ShopPurchaseResult.success;
+      case ShopEffect.quickResume:
+        if (totalIdleRate <= 0) return ShopPurchaseResult.noIdleToClaim;
+        return ShopPurchaseResult.success;
+      default:
+        return ShopPurchaseResult.success;
+    }
+  }
+
+  /// Mock purchase: grants the effect immediately while [mockShopPurchases]
+  /// is true. Before release, set that flag false and replace this body with
+  /// store billing + receipt validation, then call [_grantShopProduct].
+  Future<ShopPurchaseResult> purchaseShopProduct(String productId) async {
+    final availability = shopPurchaseAvailability(productId);
+    if (availability != ShopPurchaseResult.success) return availability;
+
+    if (!mockShopPurchases) {
+      // TODO(iap): launch billing, verify receipt, then _grantShopProduct.
+      return ShopPurchaseResult.notAvailable;
+    }
+    return _grantShopProduct(productId);
+  }
+
+  /// Dev/test helper: grant without going through [purchaseShopProduct].
+  @visibleForTesting
+  ShopPurchaseResult debugGrantShopProduct(String productId) =>
+      _grantShopProduct(productId);
+
+  ShopPurchaseResult _grantShopProduct(String productId) {
+    final product = ShopCatalog.byId(productId);
+    if (product == null) return ShopPurchaseResult.unknownProduct;
+
+    final availability = shopPurchaseAvailability(productId);
+    if (availability != ShopPurchaseResult.success) return availability;
+
+    switch (product.effect) {
+      case ShopEffect.sparkSurge:
+        _activateShopSparkSurge();
+        break;
+      case ShopEffect.overclockCharge:
+        _activateOverclock(durationOverrideSeconds: 60);
+        break;
+      case ShopEffect.collapseReady:
+        _temporalCollapseCooldownTimerRef?.cancel();
+        _temporalCollapseCoolingDown = false;
+        break;
+      case ShopEffect.quickResume:
+        final claim = BigInt.from((totalIdleRate * 3600).floor());
+        if (claim <= BigInt.zero) return ShopPurchaseResult.noIdleToClaim;
+        number += claim;
+        _updateHighestNumber();
+        break;
+      case ShopEffect.clickPrimer:
+      case ShopEffect.idlePrimer:
+      case ShopEffect.chronoChip:
+      case ShopEffect.sparkMagnet:
+      case ShopEffect.kineticAmplifier:
+      case ShopEffect.idleAmplifier:
+      case ShopEffect.chronoLensPro:
+      case ShopEffect.collapseEfficiency:
+      case ShopEffect.surgeProtocol:
+      case ShopEffect.neuralPatron:
+      case ShopEffect.prestigeDividend:
+        shopInventory.grantPermanent(productId);
+        break;
+    }
+
+    notifyListeners();
+    _scheduleStateSave();
+    return ShopPurchaseResult.success;
+  }
+
+  void _activateShopSparkSurge({
+    Duration duration = const Duration(minutes: 5),
+  }) {
+    _shopSparkSurgeTimer?.cancel();
+    final expires = DateTime.now().toUtc().add(duration);
+    shopInventory.sparkSurgeExpiresAt = expires;
+    _shopSparkSurgeMultiplier = 1.5;
+    notifyListeners();
+
+    _shopSparkSurgeTimer = Timer(duration, () {
+      _shopSparkSurgeMultiplier = 1.0;
+      shopInventory.sparkSurgeExpiresAt = null;
+      notifyListeners();
+      _scheduleStateSave();
+    });
+  }
+
+  /// Restore a Spark Surge timer after load if the expiry is still in the future.
+  void _restoreShopSparkSurgeFromInventory() {
+    _shopSparkSurgeTimer?.cancel();
+    final expires = shopInventory.sparkSurgeExpiresAt;
+    if (expires == null) {
+      _shopSparkSurgeMultiplier = 1.0;
+      return;
+    }
+    final remaining = expires.difference(DateTime.now().toUtc());
+    if (remaining <= Duration.zero) {
+      shopInventory.sparkSurgeExpiresAt = null;
+      _shopSparkSurgeMultiplier = 1.0;
+      return;
+    }
+    _shopSparkSurgeMultiplier = 1.5;
+    _shopSparkSurgeTimer = Timer(remaining, () {
+      _shopSparkSurgeMultiplier = 1.0;
+      shopInventory.sparkSurgeExpiresAt = null;
+      notifyListeners();
+      _scheduleStateSave();
+    });
+  }
+
+  void _clearShopTimedBoosts() {
+    _shopSparkSurgeTimer?.cancel();
+    _shopSparkSurgeMultiplier = 1.0;
+    shopInventory.sparkSurgeExpiresAt = null;
   }
 
   void setBuyAmount(int amount) {
@@ -2252,6 +2453,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _recommendationComputedAtMs = 0;
   }
 
+  /// Test hook: force Temporal Collapse into cooldown for shop grant tests.
+  @visibleForTesting
+  void debugSetTemporalCollapseCoolingDown(bool value) {
+    _temporalCollapseCoolingDown = value;
+    notifyListeners();
+  }
+
   void _recordClickForRate(int nowMs) {
     _recentClickMs.add(nowMs);
     final cutoff = nowMs - _clickRateWindowMs;
@@ -2306,24 +2514,28 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Idle rate and per-tap value with every permanent multiplier, but none
-  /// of the timed boosts (Overclock, Temporal Collapse, Neural Spark) or
-  /// the momentum combo — the numbers the player keeps.
+  /// of the timed boosts (Overclock, Temporal Collapse, Neural Spark, shop
+  /// Spark Surge) or the momentum combo — the numbers the player keeps.
   ({double idle, double perClick}) _steadyProduction() {
     final overclock = _overclockActive;
     final collapse = _temporalCollapseActive;
+    final surge = _shopSparkSurgeMultiplier;
     _overclockActive = false;
     _temporalCollapseActive = false;
+    _shopSparkSurgeMultiplier = 1.0;
     try {
       final idle = totalIdleRate;
       final perClick = clickPower.toDouble() *
               prestigeMultiplier *
               neuralLossMultiplier *
-              globalProductionMultiplier +
+              globalProductionMultiplier *
+              shopClickMultiplier +
           idle * _kineticSynergyShare;
       return (idle: idle, perClick: perClick);
     } finally {
       _overclockActive = overclock;
       _temporalCollapseActive = collapse;
+      _shopSparkSurgeMultiplier = surge;
     }
   }
 
@@ -2707,6 +2919,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCooldownTimerRef?.cancel();
     _neuralSparkBoostMultiplier = 1.0;
     _neuralSparkBoostTimer?.cancel();
+    _clearShopTimedBoosts();
 
     for (var u in upgrades) {
       u.level = 0;
@@ -2779,6 +2992,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCooldownTimerRef?.cancel();
     _neuralSparkBoostMultiplier = 1.0;
     _neuralSparkBoostTimer?.cancel();
+    _clearShopTimedBoosts();
+    shopInventory.clear();
     offlineGainsThisSession = BigInt.zero;
     highestNumber = BigInt.zero;
     prestigeCurrency = 0.0;
@@ -2950,6 +3165,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseCooldownTimerRef?.cancel();
     _neuralSparkBoostMultiplier = 1.0;
     _neuralSparkBoostTimer?.cancel();
+    _clearShopTimedBoosts();
 
     if (restartDeepDive && _isUpgradeTutorialStep(_tutorialStep)) {
       _startUpgradeTutorial();
@@ -3167,6 +3383,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       lifetimeClicks: lifetimeClicks,
       achievements: _unlockedAchievements.toList()..sort(),
       artifactsJson: jsonEncode(artifactState.toJson()),
+      shopJson: jsonEncode(shopInventory.toJson()),
     );
     _lastSavedAt = DateTime.now();
     _perfSw.stop(); // TEMP-PERF-PROBE
@@ -3712,6 +3929,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _temporalCollapseActiveTimer?.cancel();
     _temporalCollapseCooldownTimerRef?.cancel();
     _neuralSparkBoostTimer?.cancel();
+    _shopSparkSurgeTimer?.cancel();
     _saveDebounceTimer?.cancel();
     super.dispose();
   }

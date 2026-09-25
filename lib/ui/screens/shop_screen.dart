@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../../data/shop_catalog.dart';
 import '../../logic/game_state.dart';
+import '../../logic/shop_inventory.dart';
+import '../../models/shop_product.dart';
 
 class ShopScreen extends StatelessWidget {
   const ShopScreen({super.key});
@@ -29,60 +33,52 @@ class ShopScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Boost your progression with special offers.',
+                'Affordable boosts and permanent upgrades. '
+                'Purchases apply instantly (billing comes later).',
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: cs.outline,
                   height: 1.45,
                 ),
               ),
               const SizedBox(height: 32),
-
-              // Permanent Upgrades Section
-              Text(
-                'PERMANENT UPGRADES',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 2.0,
-                  color: cs.outline,
-                  fontSize: 9,
+              _SectionHeader(
+                title: 'QUICK BOOSTS',
+                subtitle: '€0.20 – €0.50 · temporary help',
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
+              for (final product in ShopCatalog.quickBoosts) ...[
+                _ShopProductTile(product: product, theme: theme),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 16),
+              _SectionHeader(
+                title: 'STARTER PERMANENTS',
+                subtitle: '€0.50 – €1.00 · simple, mild forever bonuses',
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
+              for (final product in ShopCatalog.starterPermanents) ...[
+                _ShopProductTile(product: product, theme: theme),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 16),
+              _SectionHeader(
+                title: 'CORE PERMANENTS',
+                subtitle: '€1 – €5 · stronger forever upgrades',
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
+              for (final product in ShopCatalog.corePermanents) ...[
+                _ShopProductTile(
+                  product: product,
+                  theme: theme,
+                  isFeatured: product.id == ShopCatalog.kineticAmplifier ||
+                      product.id == ShopCatalog.idleAmplifier,
                 ),
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: '2x Cash Boost Forever',
-                description: 'Double all cash gains permanently',
-                price: '\$4.99',
-                icon: Icons.attach_money,
-                theme: theme,
-                isPermanent: true,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Double Idle Rate Forever',
-                description: '2x idle generation rate permanently',
-                price: '\$4.99',
-                icon: Icons.bolt,
-                theme: theme,
-                isPermanent: true,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Ad-Free Experience',
-                description: 'Remove all advertisements forever',
-                price: '\$4.99',
-                icon: Icons.remove_circle_outline,
-                theme: theme,
-                isPermanent: true,
-              ),
-              const SizedBox(height: 12),
-              _ShopItem(
-                name: 'Prestige Doubler',
-                description: 'Double your prestige multiplier growth',
-                price: '\$3.99',
-                icon: Icons.star,
-                theme: theme,
-                isPermanent: true,
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -91,114 +87,243 @@ class ShopScreen extends StatelessWidget {
   }
 }
 
-class _ShopItem extends StatelessWidget {
-  final String name;
-  final String description;
-  final String price;
-  final IconData icon;
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
   final ThemeData theme;
-  final bool isFeatured;
-  final bool isPermanent;
 
-  const _ShopItem({
-    required this.name,
-    required this.description,
-    required this.price,
-    required this.icon,
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
     required this.theme,
-    this.isFeatured = false,
-    this.isPermanent = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isFeatured
-            ? cs.primary.withValues(alpha: 0.08)
-            : cs.surfaceContainerLow.withValues(alpha: 0.55),
-        border: Border.all(
-          color: isFeatured
-              ? cs.primary.withValues(alpha: 0.65)
-              : cs.outlineVariant.withValues(alpha: 0.3),
-          width: 1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.labelSmall?.copyWith(
+            letterSpacing: 2.0,
+            color: cs.outline,
+            fontSize: 9,
+          ),
         ),
-        borderRadius: BorderRadius.circular(4),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: cs.outline.withValues(alpha: 0.75),
+            height: 1.3,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShopProductTile extends StatelessWidget {
+  final ShopProduct product;
+  final ThemeData theme;
+  final bool isFeatured;
+
+  const _ShopProductTile({
+    required this.product,
+    required this.theme,
+    this.isFeatured = false,
+  });
+
+  IconData get _icon {
+    switch (product.effect) {
+      case ShopEffect.sparkSurge:
+        return Icons.flash_on;
+      case ShopEffect.overclockCharge:
+        return Icons.speed;
+      case ShopEffect.collapseReady:
+        return Icons.restart_alt;
+      case ShopEffect.quickResume:
+        return Icons.hourglass_bottom;
+      case ShopEffect.clickPrimer:
+        return Icons.touch_app;
+      case ShopEffect.idlePrimer:
+        return Icons.trending_up;
+      case ShopEffect.chronoChip:
+        return Icons.schedule;
+      case ShopEffect.sparkMagnet:
+        return Icons.auto_awesome;
+      case ShopEffect.kineticAmplifier:
+        return Icons.pan_tool_alt;
+      case ShopEffect.idleAmplifier:
+        return Icons.bolt;
+      case ShopEffect.chronoLensPro:
+        return Icons.timelapse;
+      case ShopEffect.collapseEfficiency:
+        return Icons.timer_off;
+      case ShopEffect.surgeProtocol:
+        return Icons.swap_vert;
+      case ShopEffect.neuralPatron:
+        return Icons.hub;
+      case ShopEffect.prestigeDividend:
+        return Icons.star;
+    }
+  }
+
+  String _statusLabel(GameState gs) {
+    if (product.isPermanent && gs.ownsShopProduct(product.id)) {
+      return 'Owned';
+    }
+    if (product.effect == ShopEffect.sparkSurge && gs.isShopSparkSurgeActive) {
+      final left = gs.shopSparkSurgeRemaining();
+      if (left != null) {
+        final mins = left.inMinutes;
+        final secs = left.inSeconds % 60;
+        return 'Active ${mins}:${secs.toString().padLeft(2, '0')}';
+      }
+      return 'Active';
+    }
+    return product.isPermanent ? 'Forever' : 'Timed';
+  }
+
+  String _feedbackMessage(ShopPurchaseResult result) {
+    switch (result) {
+      case ShopPurchaseResult.success:
+        return product.isPermanent
+            ? '${product.name} unlocked'
+            : '${product.name} applied';
+      case ShopPurchaseResult.alreadyOwned:
+        return 'Already owned';
+      case ShopPurchaseResult.notAvailable:
+        return 'Collapse is not on cooldown';
+      case ShopPurchaseResult.noIdleToClaim:
+        return 'Need idle income first';
+      case ShopPurchaseResult.unknownProduct:
+        return 'Unknown product';
+    }
+  }
+
+  Future<void> _onBuy(BuildContext context) async {
+    final gs = context.read<GameState>();
+    final result = await gs.purchaseShopProduct(product.id);
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(_feedbackMessage(result)),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: isFeatured ? cs.primary : cs.outlineVariant,
-                width: 1,
-              ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = theme.colorScheme;
+    final owned = context.select<GameState, bool>(
+      (gs) => product.isPermanent && gs.ownsShopProduct(product.id),
+    );
+    final availability = context.select<GameState, ShopPurchaseResult>(
+      (gs) => gs.shopPurchaseAvailability(product.id),
+    );
+    final status = context.select<GameState, String>(_statusLabel);
+    final canBuy = availability == ShopPurchaseResult.success;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: canBuy ? () => _onBuy(context) : null,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isFeatured
+                ? cs.primary.withValues(alpha: 0.08)
+                : cs.surfaceContainerLow.withValues(alpha: 0.55),
+            border: Border.all(
+              color: owned
+                  ? cs.primary.withValues(alpha: 0.45)
+                  : isFeatured
+                      ? cs.primary.withValues(alpha: 0.65)
+                      : cs.outlineVariant.withValues(alpha: 0.3),
+              width: 1,
             ),
-            child: Icon(
-              icon,
-              size: 22,
-              color: isFeatured ? cs.primary : cs.onSurface,
-            ),
+            borderRadius: BorderRadius.circular(4),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  description,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.outline,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                price,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: isFeatured ? cs.primary : cs.onSurface,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: isFeatured || owned ? cs.primary : cs.outlineVariant,
+                    width: 1,
+                  ),
+                ),
+                child: Icon(
+                  _icon,
+                  size: 22,
+                  color: isFeatured || owned ? cs.primary : cs.onSurface,
                 ),
               ),
-              if (isPermanent)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    'Forever',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cs.outline,
-                      fontSize: 8,
-                      letterSpacing: 0.5,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      product.description,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.outline,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    owned ? 'OWNED' : product.priceLabel,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: owned || isFeatured ? cs.primary : cs.onSurface,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
                     ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      status,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.outline,
+                        fontSize: 8,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

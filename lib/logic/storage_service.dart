@@ -25,6 +25,7 @@ class StorageService {
   static const String _keyLifetimeClicks = 'lifetime_clicks';
   static const String _keyAchievements = 'achievements_unlocked';
   static const String _keyArtifacts = 'artifacts';
+  static const String _keyShop = 'shop';
 
   SharedPreferences? _prefs;
 
@@ -80,6 +81,7 @@ class StorageService {
     int lifetimeClicks = 0,
     List<String> achievements = const [],
     String? artifactsJson,
+    String? shopJson,
   }) async {
     final prefs = await _instance();
     await _setString(prefs, _keyNumber, number.toString());
@@ -111,6 +113,9 @@ class StorageService {
     await _setString(prefs, _keyAchievements, jsonEncode(achievements));
     if (artifactsJson != null) {
       await _setString(prefs, _keyArtifacts, artifactsJson);
+    }
+    if (shopJson != null) {
+      await _setString(prefs, _keyShop, shopJson);
     }
     await _setInt(
         prefs, _keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
@@ -187,6 +192,7 @@ class StorageService {
       'lifetimeClicks': prefs.getInt(_keyLifetimeClicks) ?? 0,
       'achievements': achievements,
       'artifacts': prefs.getString(_keyArtifacts),
+      'shop': prefs.getString(_keyShop),
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,
@@ -218,6 +224,7 @@ class StorageService {
     _keyLifetimeClicks,
     _keyAchievements,
     _keyArtifacts,
+    _keyShop,
   ];
 
   /// Copies the stored save, as-is, into one JSON blob under
@@ -261,5 +268,6 @@ class StorageService {
     await prefs.remove(_keyLifetimeClicks);
     await prefs.remove(_keyAchievements);
     await prefs.remove(_keyArtifacts);
+    await prefs.remove(_keyShop);
   }
 }
