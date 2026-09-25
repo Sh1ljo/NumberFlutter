@@ -123,8 +123,8 @@ void main() {
   });
 
   group('idle tier ladder', () {
-    test('covers all seven tiers', () {
-      expect(idleTiers.length, 7);
+    test('covers all eleven tiers', () {
+      expect(idleTiers.length, 11);
     });
 
     test('all tiers share one growth rate', () {

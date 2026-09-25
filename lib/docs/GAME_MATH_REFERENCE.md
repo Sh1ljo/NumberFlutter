@@ -53,7 +53,7 @@ raw level implies.
 
 ## 3. Idle branch
 
-All seven generator tiers are purely **additive** into `autoClickRate`:
+All eleven generator tiers are purely **additive** into `autoClickRate`:
 
 ```
 autoClickRate += effectValue × level × milestoneMult(level)
@@ -73,6 +73,13 @@ Post-rebalance every tier shares one growth rate and one cost-per-effect ratio
 | `idle_tesseract_array` | 10,000 | 1,500,000 | 1.16 |
 | `idle_entropy_harvester` | 100,000 | 15,000,000 | 1.16 |
 | `idle_void_resonance` | 1,000,000 | 150,000,000 | 1.16 |
+| `idle_dark_matter` | 10,000,000 | 1.5e9 | 1.16 |
+| `idle_neutron_reactor` | 1e8 | 1.5e10 | 1.16 |
+| `idle_multiverse_synthesizer` | 1e9 | 1.5e11 | 1.16 |
+| `idle_tachyon_accelerator` | 1e10 | 1.5e12 | 1.16 |
+
+The last three are also prestige-gated: Neutron Reactor needs 3 prestiges,
+Multiverse Synthesizer 6, Tachyon Accelerator 10 (`minPrestigeForUpgrade`).
 
 **Why uniform.** Cost per `+1/s` is therefore `150 × 1.16^L` for *every* tier, independent of
 which tier it is. The optimal play becomes "buy the lowest-level tier you can afford", which
@@ -130,7 +137,11 @@ clickPower = productionBaseClickPower (1)           // or 10,000 in test environ
 
 Production base click is `1`: a fresh save clicks for exactly one number. Click Power adds a
 realistic `+1` per level and is priced to match (15 base, ×1.15). Bigger flat gains come from
-a ladder of flat click upgrades, each a higher tier with a higher cost.
+a ladder of flat click upgrades, each a higher tier with a higher cost. From Quantum Fingertip
+up, each tier's price per point of click power doubles (1,000 → 2,000 → 4,000 → … → 64,000),
+so a new tier is never a strictly better deal than the one below it. When Subatomic Tap was
+cheaper per point than Singularity Press, the upgrade advisor chased click tiers forever and
+never recommended an idle generator.
 
 ### Click upgrades
 
@@ -146,11 +157,16 @@ a ladder of flat click upgrades, each a higher tier with a higher cost.
 | `click_overclock` | 125,000 | 1.82 | ∞ | see below |
 | `click_quantum_fingertip` | 1e6 | 1.15 | ∞ | `+1,000 × L × milestoneMult` click power |
 | `click_singularity_press` | 1.5e7 | 1.15 | ∞ | `+7,500 × L × milestoneMult` click power |
+| `click_subatomic_tap` | 2e8 | 1.15 | ∞ | `+50,000 × L × milestoneMult` click power |
+| `click_quantum_forge` | 4e9 | 1.15 | ∞ | `+500,000 × L × milestoneMult` click power |
+| `click_chronos_press` | 8e10 | 1.15 | ∞ | `+5e6 × L × milestoneMult` click power; needs 2 prestiges |
+| `click_hyperdimensional_strike` | 1.6e12 | 1.15 | ∞ | `+5e7 × L × milestoneMult` click power; needs 4 prestiges |
+| `click_omni_touch` | 6.4e13 | 1.15 | ∞ | `+1e9 × L × milestoneMult` click power; needs 7 prestiges |
 | `click_dimensional_tap` | 5e8 | 2.10 | ∞ | `+floor(prestigeMultiplier × L × 500)`; **no** milestone mult; needs 1 prestige |
 | `click_temporal_collapse` | 5e10 | 3.5 | 5 | burst `= floor(totalIdleRate × 60 × L)`, ×2 prestige mult for `30 + 15L` s, cooldown `max(80, 180 - 20L)` s; needs 8 prestiges |
 
 **A realistic note on the click branch.** Raw Click Power scales *linearly* in levels while
-idle stacks seven exponential tiers, so raw clicking will never rival late-game idle income —
+idle stacks eleven exponential tiers, so raw clicking will never rival late-game idle income —
 and it isn't meant to. Its two real jobs are:
 
 1. carrying the first few minutes of a run, before any generator is affordable, and
