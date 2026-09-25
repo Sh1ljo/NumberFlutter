@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../logic/trial/trial_calendar.dart';
+import '../../logic/trial/trial_rules.dart';
 import 'achievements_screen.dart';
+import 'trial/trial_screen.dart';
+import 'trial/trial_widgets.dart';
 
 class MoreMenuScreen extends StatelessWidget {
   final Function(int) onMenuItemSelected;
@@ -9,6 +13,13 @@ class MoreMenuScreen extends StatelessWidget {
     super.key,
     required this.onMenuItemSelected,
   });
+
+  static String _trialDescription() {
+    final week = TrialWeek.current();
+    final rules = modifiersForWeek(week).map((m) => m.title).join(' + ');
+    return 'Same start for everyone · $rules · '
+        'ends in ${formatTrialCountdown(week.remaining())}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +39,20 @@ class MoreMenuScreen extends StatelessWidget {
                 style: theme.textTheme.displayLarge?.copyWith(fontSize: 48),
               ),
               const SizedBox(height: 28),
+              _MenuItem(
+                title: 'Weekly Trial',
+                description: _trialDescription(),
+                icon: Icons.emoji_events_outlined,
+                accent: TrialPalette.accent,
+                onTap: () {
+                  final navigator = Navigator.of(context);
+                  navigator.pop();
+                  navigator.push(MaterialPageRoute<void>(
+                      builder: (_) => const TrialScreen()));
+                },
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
               _MenuItem(
                 title: 'Achievements',
                 description: 'Milestones — each one adds +1% production',
@@ -71,12 +96,16 @@ class _MenuItem extends StatelessWidget {
   final VoidCallback onTap;
   final ThemeData theme;
 
+  /// Highlights the item (border and icon) in this colour.
+  final Color? accent;
+
   const _MenuItem({
     required this.title,
     required this.description,
     required this.icon,
     required this.onTap,
     required this.theme,
+    this.accent,
   });
 
   @override
@@ -90,7 +119,8 @@ class _MenuItem extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.surfaceContainerLow.withValues(alpha: 0.55),
           border: Border.all(
-            color: cs.outlineVariant.withValues(alpha: 0.3),
+            color: accent?.withValues(alpha: 0.6) ??
+                cs.outlineVariant.withValues(alpha: 0.3),
             width: 1,
           ),
           borderRadius: BorderRadius.circular(4),
@@ -111,7 +141,7 @@ class _MenuItem extends StatelessWidget {
               child: Icon(
                 icon,
                 size: 22,
-                color: cs.onSurface,
+                color: accent ?? cs.onSurface,
               ),
             ),
             const SizedBox(width: 14),

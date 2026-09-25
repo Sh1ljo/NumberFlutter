@@ -22,6 +22,8 @@ import 'leaderboard_ranking.dart';
 ///   profiles/{uid}/sessions/{auto} — one doc per archived prestige run
 ///   player_progress/{uid}          — [PlayerProgress.toDatabase] (owner only)
 ///   leaderboard/{uid}              — public ranking row, see [_leaderboardFields]
+///   trial_weeks/{week}/entries/{uid}  — Weekly Trial score, see [submitTrialScore]
+///   trial_months/{month}/entries/{uid} — Monthly Trial points
 class BackendService {
   BackendService._();
 
@@ -82,6 +84,15 @@ class BackendService {
       _db.collection('player_progress');
   CollectionReference<Map<String, dynamic>> get _leaderboard =>
       _db.collection('leaderboard');
+
+  /// Each week and month gets its own bucket, so nothing ever has to be
+  /// "reset": a new period simply starts writing to a new, empty one.
+  CollectionReference<Map<String, dynamic>> _trialEntries(
+          TrialBoard board, String periodId) =>
+      _db
+          .collection(board == TrialBoard.weekly ? 'trial_weeks' : 'trial_months')
+          .doc(periodId)
+          .collection('entries');
 
   bool get _isMobile {
     if (kIsWeb) return false;
@@ -476,6 +487,150 @@ class BackendService {
     return ranked;
   }
 
+  // ── Weekly / Monthly Trial ────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> _publicProfileFields() async {
+    final userId = currentUserId;
+    if (_profileFields == null && userId != null) {
+      await fetchProfile(userId: userId);
+    }
+    final profile = _profileFields;
+    return {
+      if (profile?.displayName?.isNotEmpty ?? false)
+        'display_name': profile!.displayName,
+      if (profile?.country != null) 'country': profile!.country,
+      if (profile?.city != null) 'city': profile!.city,
+    };
+  }
+
+  /// Posts the signed-in player's Trial score for [weekId] and their running
+  /// total for [monthId].
+  ///
+  /// The two writes are independent on purpose: security rules refuse a
+  /// weekly write once the week has closed, and that must not also block
+  /// the monthly one (or the other way round).
+  Future<void> submitTrialScore({
+    required String weekId,
+    required String monthId,
+    required double scoreLog10,
+    required double total,
+    required int points,
+    required int tier,
+    required Map<String, int> monthWeeks,
+  }) async {
+    final userId = currentUserId;
+    if (!_initialized || userId == null) return;
+    final profile = await _publicProfileFields();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final monthPoints = monthWeeks.values.fold<int>(0, (a, b) => a + b);
+    final results = await Future.wait<Object?>([
+      _trialEntries(TrialBoard.weekly, weekId).doc(userId).set({
+        ...profile,
+        'score': scoreLog10,
+        'total': total,
+        'points': points,
+        'tier': tier,
+        'updated_at': now,
+      }).then<Object?>((_) => null, onError: (Object e) => e),
+      _trialEntries(TrialBoard.monthly, monthId).doc(userId).set({
+        ...profile,
+        'score': monthPoints,
+        'weeks': monthWeeks,
+        'updated_at': now,
+      }).then<Object?>((_) => null, onError: (Object e) => e),
+    ]);
+    _leaderboardCache.removeWhere((key, _) => key.startsWith('trial|'));
+    final error = results.whereType<Object>().firstOrNull;
+    if (error != null) throw error;
+  }
+
+  /// The signed-in player's per-week points already on the monthly board.
+  /// Lets a second device merge instead of overwriting.
+  Future<Map<String, int>> fetchMyTrialMonthWeeks(String monthId) async {
+    final userId = currentUserId;
+    if (!_initialized || userId == null) return const {};
+    final snapshot =
+        await _trialEntries(TrialBoard.monthly, monthId).doc(userId).get();
+    final weeks = snapshot.data()?['weeks'];
+    if (weeks is! Map) return const {};
+    return {
+      for (final e in weeks.entries)
+        if (e.value is num) e.key as String: (e.value as num).toInt(),
+    };
+  }
+
+  Query<Map<String, dynamic>> _trialQuery(
+    TrialBoard board,
+    String periodId, {
+    String? country,
+    String? city,
+  }) {
+    Query<Map<String, dynamic>> query = _trialEntries(board, periodId);
+    final c = country?.trim() ?? '';
+    final ci = city?.trim() ?? '';
+    if (c.isNotEmpty) query = query.where('country', isEqualTo: c);
+    if (ci.isNotEmpty) query = query.where('city', isEqualTo: ci);
+    return query;
+  }
+
+  /// Top of a Trial board. Rows: rank, user_id, display_name, country, city,
+  /// score, and for weekly boards total and tier.
+  Future<List<Map<String, dynamic>>> fetchTrialLeaderboard({
+    required TrialBoard board,
+    required String periodId,
+    String? country,
+    String? city,
+    int limit = 100,
+  }) async {
+    if (!_initialized) return <Map<String, dynamic>>[];
+    final cacheKey =
+        'trial|${board.name}|$periodId|${country ?? ''}|${city ?? ''}|$limit';
+    final cached = _leaderboardCache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.at) < _leaderboardCacheTtl) {
+      return cached.rows;
+    }
+    final snapshot = await _trialQuery(board, periodId,
+            country: country, city: city)
+        .orderBy('score', descending: true)
+        .limit(limit)
+        .get();
+    final rows = [
+      for (final doc in snapshot.docs)
+        {
+          'user_id': doc.id,
+          'display_name': _nonEmpty(doc.data()['display_name']) ?? 'Player',
+          'country': _nonEmpty(doc.data()['country']),
+          'city': _nonEmpty(doc.data()['city']),
+          'score': (doc.data()['score'] as num?)?.toDouble() ?? 0.0,
+          'total': (doc.data()['total'] as num?)?.toDouble() ?? 0.0,
+          'tier': (doc.data()['tier'] as num?)?.toInt() ?? 0,
+        },
+    ];
+    final ranked = withDenseRank(rows, (row) => row['score']);
+    _leaderboardCache[cacheKey] = (at: DateTime.now(), rows: ranked);
+    return ranked;
+  }
+
+  /// Rank of [score] on a Trial board: one plus the number of players
+  /// strictly ahead. A count query costs one read per 1000 entries, so this
+  /// works however far down the board the player is.
+  Future<int> fetchTrialRank({
+    required TrialBoard board,
+    required String periodId,
+    required double score,
+    String? country,
+    String? city,
+  }) async {
+    if (!_initialized) return 0;
+    final snapshot = await _trialQuery(board, periodId,
+            country: country, city: city)
+        .where('score', isGreaterThan: score)
+        .count()
+        .get();
+    return (snapshot.count ?? 0) + 1;
+  }
+
   static String? _clip(String? value, int maxLength) =>
       (value == null || value.length <= maxLength)
           ? value
@@ -522,3 +677,5 @@ class BackendService {
     await batch.commit();
   }
 }
+
+enum TrialBoard { weekly, monthly }

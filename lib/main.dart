@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'config/app_config.dart';
 import 'logic/game_state.dart';
 import 'logic/backend_service.dart';
+import 'logic/trial/trial_controller.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/main_layout.dart';
 import 'ui/screens/loading_screen.dart';
@@ -41,8 +42,13 @@ class NumberApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => GameState(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => GameState()),
+        // The Weekly Trial is its own run with its own state; it never
+        // touches GameState.
+        ChangeNotifierProvider(create: (_) => TrialController()),
+      ],
       child: MaterialApp(
         title: 'Number',
         debugShowCheckedModeBanner: false,
