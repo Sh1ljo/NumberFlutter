@@ -1,7 +1,7 @@
 # Next steps: Weekly Trial
 
 Do these on the main laptop before shipping the Weekly Trial
-(branch `claude/dreamy-johnson-rwr44y`).
+(now merged into `claude/youthful-babbage-4m83bi`).
 
 ## 1. Deploy the Firestore rules and indexes
 
