@@ -21,8 +21,8 @@ There are exactly two real currencies.
 | **Number** (`N`) | `BigInt number` | clicks, idle ticker, offline gains, Temporal Collapse burst, Surge Protocol carry-over | all upgrades, the whole neural network |
 | **Prestige Points** (`PP`) | `double prestigeCurrency` | `prestige()` | Nexus research nodes only |
 
-The shop screen displays USD prices but is a non-functional mock — no IAP plugin is wired up.
-See `PROD_READINESS.md`.
+Shop purchases are mocked (`GameState.mockShopPurchases` grants items for free) — no IAP
+plugin is wired up yet. See `LAUNCH_TODO.md`.
 
 ---
 
@@ -330,7 +330,7 @@ score = clamp(prestigeCount × 1e8, 0, 9e18)
 ```
 
 **Known bug:** the `prestigeCurrencyScaled × 10000` term is unclamped and overflows int64
-around prestige ~70. See `PROD_READINESS.md`.
+around prestige ~70. See `LAUNCH_TODO.md`.
 
 ---
 

@@ -195,7 +195,7 @@ The HUD shows `MULT × (capped)` when `neuralLossMultiplier < neuralLossRawMulti
 
 `_saveVersion = 4`, with real migrations — this is the **one** save path in the project that
 versions itself properly, and it's the pattern the rest of the game should follow
-(`PROD_READINESS.md` item 11).
+(see local save versioning in `LAUNCH_TODO.md`).
 
 - v0/v1 → v2: layer/neuron normalisation
 - pre-v4: activation grandfathering (a neuron already using a non-linear activation gets it

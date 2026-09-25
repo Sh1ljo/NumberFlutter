@@ -3,9 +3,8 @@
 Everything that stands between the current build and a store release. Each item
 was checked against the code on 2026-09-25, after the Firebase migration.
 
-`PROD_READINESS.md` is the older audit. It was written when the backend was
-Supabase, so its file paths and several findings are out of date. Use this file
-as the working checklist.
+This file replaces the old `PROD_READINESS.md` audit, which was written when the
+backend was Supabase and has been removed.
 
 Tick an item off (`[x]`) only once it's done **and verified on a release build**.
 
