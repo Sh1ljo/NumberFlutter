@@ -14,7 +14,7 @@ The backend is Firebase: **Auth** for accounts and **Firestore** for profiles, c
    firebase deploy --only firestore:rules,firestore:indexes
    ```
 
-   Rules live in `firestore.rules`, and the composite indexes for the country and city leaderboards are in `firestore.indexes.json`.
+   Rules live in `firestore.rules`, and the composite indexes for the country and city leaderboards (All-Time and the Weekly/Monthly Trial boards) are in `firestore.indexes.json`. Re-run this command whenever either file changes.
 
 ### Data model
 
