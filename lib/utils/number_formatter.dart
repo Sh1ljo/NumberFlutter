@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'big_number.dart';
+
 class NumberFormatter {
   static const List<String> _namedSuffixes = [
     '',
@@ -153,7 +155,7 @@ class NumberFormatter {
       if (s.endsWith('.')) s = s.substring(0, s.length - 1);
       return s;
     }
-    return format(BigInt.from(value.round()));
+    return format(wholeBigInt(value.roundToDouble()));
   }
 
   /// Short human duration: "now", "42s", "3m 05s", "2h 14m", "3d 4h".

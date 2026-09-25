@@ -18,6 +18,7 @@ import 'shop_inventory.dart';
 import 'storage_service.dart';
 import 'sync_service.dart';
 import 'backend_service.dart';
+import '../utils/big_number.dart';
 import 'tutorial_step.dart';
 
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
@@ -1369,10 +1370,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       final credited = diff < capSeconds ? diff : capSeconds;
       if (totalIdleRate > 0) {
         final offlineGains = totalIdleRate * credited * offlineGainMultiplier;
-        offlineGainsThisSession = BigInt.from(offlineGains.floor());
+        offlineGainsThisSession = wholeBigInt(offlineGains);
         number += offlineGainsThisSession;
         _updateHighestNumber();
-        _idleAccumulator += offlineGains - offlineGains.floor();
+        if (offlineGains.isFinite) {
+          _idleAccumulator += offlineGains - offlineGains.floorToDouble();
+        }
       }
 
       if (neuralNetworkUnlocked && neuralNetwork.loss > _neuralMinLoss) {
@@ -1413,8 +1416,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       if (effectiveRate > 0) {
         _idleAccumulator += effectiveRate / 10; // 10 ticks per second
         if (_idleAccumulator >= 1.0) {
-          int added = _idleAccumulator.floor();
-          number += BigInt.from(added);
+          final added = _idleAccumulator.floorToDouble();
+          number += wholeBigInt(added);
           _updateHighestNumber();
           _advanceTutorialOnNumberReached();
           _idleAccumulator -= added;
@@ -1487,7 +1490,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
             Artifacts.compoundCapMinutes(vaultLevel);
         final payout = share < cap ? share : cap;
         if (payout.isFinite && payout >= 1) {
-          number += BigInt.from(payout.floor());
+          number += wholeBigInt(payout);
           _updateHighestNumber();
           changed = true;
         }
@@ -1578,7 +1581,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (cascadeLvl > 0) {
       idleRate *= math.pow(2.0, cascadeLvl);
     }
-    return idleRate;
+    // Past ~1.8e308 the product overflows to Infinity, which would poison
+    // the idle accumulator (Infinity - Infinity is NaN) and stop idle gain.
+    return idleRate.isFinite ? idleRate : double.maxFinite;
   }
 
   /// Raw (uncapped) multiplier from the network's current loss. Exposed so
@@ -1680,8 +1685,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       if (upgrade.id == dimensionalTapId) {
         // Prestige-synergy: each level adds 500 × prestigeMultiplier to click power
-        final bonus = (prestigeMultiplier * upgrade.level * 500).floor();
-        clickPower += BigInt.from(bonus);
+        clickPower +=
+            wholeBigInt(prestigeMultiplier * upgrade.level * 500);
         continue;
       }
 
@@ -1923,7 +1928,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     final previousHighest = highestNumber;
-    final gained = BigInt.from(gain.floor());
+    final gained = wholeBigInt(gain);
     number += gained;
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
@@ -2048,7 +2053,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
     final level = _temporalCollapseLevel;
     // Instant burst: level × 60 seconds of current idle production
-    final burst = BigInt.from((totalIdleRate * 60 * level).floor());
+    final burst = wholeBigInt(totalIdleRate * 60 * level);
     number += burst;
     _updateHighestNumber();
 
@@ -2144,7 +2149,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _temporalCollapseCoolingDown = false;
         break;
       case ShopEffect.quickResume:
-        final claim = BigInt.from((totalIdleRate * 3600).floor());
+        final claim = wholeBigInt(totalIdleRate * 3600);
         if (claim <= BigInt.zero) return ShopPurchaseResult.noIdleToClaim;
         number += claim;
         _updateHighestNumber();
