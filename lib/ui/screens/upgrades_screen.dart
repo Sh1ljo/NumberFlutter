@@ -9,6 +9,7 @@ import '../../utils/number_formatter.dart';
 import '../widgets/profile_editor_dialog.dart';
 import '../widgets/one_shot_highlight.dart';
 import 'leaderboard_screen.dart';
+import '../widgets/rolling_number_text.dart';
 import 'player_stats_screen.dart';
 
 class UpgradesScreen extends StatefulWidget {
@@ -110,8 +111,8 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   Expanded(
                     child: Selector<GameState, BigInt>(
                       selector: (_, gs) => gs.number,
-                      builder: (context, number, _) => Text(
-                        NumberFormatter.format(number, fixedDecimals: true),
+                      builder: (context, number, _) => RollingNumberText(
+                        value: number,
                         style:
                             theme.textTheme.titleLarge?.copyWith(fontSize: 24),
                         overflow: TextOverflow.ellipsis,

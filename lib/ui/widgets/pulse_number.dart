@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../utils/number_formatter.dart';
+import 'rolling_number_text.dart';
 
 class PulseNumber extends StatefulWidget {
   final BigInt value;
@@ -54,8 +54,8 @@ class PulseNumberState extends State<PulseNumber> with SingleTickerProviderState
         // instead of letting the counter wrap onto a second line.
         child: FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(
-            NumberFormatter.format(widget.value, fixedDecimals: true),
+          child: RollingNumberText(
+            value: widget.value,
             style: Theme.of(context).textTheme.displayLarge,
             maxLines: 1,
             softWrap: false,

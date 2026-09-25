@@ -15,6 +15,7 @@ import 'auth_screen.dart';
 import 'player_stats_screen.dart';
 import 'profile_screen.dart';
 import 'leaderboard_screen.dart';
+import '../widgets/rolling_number_text.dart';
 import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
@@ -236,9 +237,8 @@ class _MainGameScreenState extends State<MainGameScreen> {
                               Selector<GameState, BigInt>(
                                 selector: (_, state) => state.number,
                                 builder: (context, number, child) {
-                                  return Text(
-                                    NumberFormatter.format(number,
-                                        fixedDecimals: true),
+                                  return RollingNumberText(
+                                    value: number,
                                     style: theme.textTheme.titleLarge
                                         ?.copyWith(fontSize: 24),
                                   );

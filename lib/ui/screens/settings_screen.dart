@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../utils/number_formatter.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
 import '../../utils/network_error_utils.dart';
+import '../widgets/rolling_number_text.dart';
 import 'auth_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -157,8 +157,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(width: 8),
                   Selector<GameState, BigInt>(
                     selector: (_, gs) => gs.number,
-                    builder: (context, number, _) => Text(
-                      NumberFormatter.format(number, fixedDecimals: true),
+                    builder: (context, number, _) => RollingNumberText(
+                      value: number,
                       style:
                           theme.textTheme.titleLarge?.copyWith(fontSize: 24),
                     ),

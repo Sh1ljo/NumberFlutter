@@ -12,6 +12,7 @@ import 'widgets/prestige_gain_card.dart';
 import 'widgets/prestige_overlay.dart';
 import 'widgets/prestige_stat_block.dart';
 import '../nexus/nexus_screen.dart';
+import '../../widgets/rolling_number_text.dart';
 import 'artifacts_view.dart';
 
 class PrestigeScreen extends StatefulWidget {
@@ -271,8 +272,8 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       Expanded(
                         child: Selector<GameState, BigInt>(
                           selector: (_, gs) => gs.number,
-                          builder: (context, number, _) => Text(
-                            NumberFormatter.format(number, fixedDecimals: true),
+                          builder: (context, number, _) => RollingNumberText(
+                            value: number,
                             style: theme.textTheme.titleLarge
                                 ?.copyWith(fontSize: 24),
                             overflow: TextOverflow.ellipsis,

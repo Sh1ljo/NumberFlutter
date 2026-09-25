@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
-import '../../utils/number_formatter.dart';
 import 'profile_screen.dart';
 import 'leaderboard_screen.dart';
 import 'auth_screen.dart';
 import 'neural_network/neural_canvas.dart';
 import 'neural_network/neural_unlock_screen.dart';
+import '../widgets/rolling_number_text.dart';
 
 class NeuralNetworkScreen extends StatefulWidget {
   final GlobalKey? neuralNeuronKey;
@@ -93,8 +93,8 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                         Selector<GameState, BigInt>(
                           selector: (_, state) => state.number,
                           builder: (context, number, child) {
-                            return Text(
-                              NumberFormatter.format(number, fixedDecimals: true),
+                            return RollingNumberText(
+                              value: number,
                               style: theme.textTheme.titleLarge
                                   ?.copyWith(fontSize: 24),
                             );
