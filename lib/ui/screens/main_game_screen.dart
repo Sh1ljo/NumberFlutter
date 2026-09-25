@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
 import '../../logic/tutorial_step.dart';
+import '../../logic/trial/trial_controller.dart';
 import '../widgets/ambient_gradient_background.dart';
 import '../widgets/neural_spark.dart';
 import '../widgets/pulse_number.dart';
@@ -18,6 +19,8 @@ import 'profile_screen.dart';
 import 'leaderboard_screen.dart';
 import '../widgets/rolling_number_text.dart';
 import '../../utils/number_formatter.dart';
+import 'trial/trial_widgets.dart';
+
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
 
@@ -61,18 +64,32 @@ class _MainGameScreenState extends State<MainGameScreen> {
   /// Set once the `catchSpark` step has asked for its spark, so rebuilds
   /// don't keep pushing the spawn back.
   bool _tutorialSparkArmed = false;
+  StreamSubscription<Object?>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     // Defer so Provider is available (context.read is unsafe in initState).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scheduleNextSpark();
+      if (!mounted) return;
+      _scheduleNextSpark();
+      // Cheap local read; lets the Ranks button flag a new Trial week.
+      // Re-run on sign-in/out: the Trial save is per account, and at launch
+      // the account is usually restored after this first load.
+      final trial = context.read<TrialController>();
+      trial.ensureLoaded();
+      BackendService.settled.then((_) {
+        if (!mounted) return;
+        _authSubscription = BackendService.instance
+            .authStateChanges()
+            .listen((_) => trial.ensureLoaded());
+      });
     });
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _sparkSpawnTimer?.cancel();
     super.dispose();
   }
@@ -234,9 +251,25 @@ class _MainGameScreenState extends State<MainGameScreen> {
     );
   }
 
+  /// True when the Weekly Trial wants attention: a new week not entered yet,
+  /// or a Draft waiting. The Ranks button then shows a dot and opens on the
+  /// Weekly tab.
+  static bool _trialNeedsAttention(TrialController trial) =>
+      trial.isLoaded &&
+      !trial.isActive &&
+      (trial.run == null || trial.run!.pendingDrafts > 0);
+
   Future<void> _openLeaderboard() async {
+    final weekly = context.read<GameState>().tutorialCompleted &&
+        _trialNeedsAttention(context.read<TrialController>());
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
+      MaterialPageRoute<void>(
+        builder: (_) => LeaderboardScreen(
+          initialPeriod: weekly
+              ? LeaderboardPeriod.weekly
+              : LeaderboardPeriod.allTime,
+        ),
+      ),
     );
   }
 
@@ -299,10 +332,24 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                     AchievementsScreen.open(context),
                                 icon: const Icon(Icons.military_tech_outlined),
                               ),
-                              IconButton(
-                                tooltip: 'Ranks',
-                                onPressed: _openLeaderboard,
-                                icon: const Icon(Icons.emoji_events_outlined),
+                              Selector2<GameState, TrialController, bool>(
+                                // Not during onboarding: one thing at a time.
+                                selector: (_, g, t) =>
+                                    g.tutorialCompleted &&
+                                    _trialNeedsAttention(t),
+                                builder: (context, attention, _) => IconButton(
+                                  tooltip: attention
+                                      ? 'Ranks · Weekly Trial waiting'
+                                      : 'Ranks',
+                                  onPressed: _openLeaderboard,
+                                  icon: Badge(
+                                    isLabelVisible: attention,
+                                    smallSize: 8,
+                                    backgroundColor: TrialPalette.accent,
+                                    child: const Icon(
+                                        Icons.emoji_events_outlined),
+                                  ),
+                                ),
                               ),
                               IconButton(
                                 tooltip: 'Profile',
