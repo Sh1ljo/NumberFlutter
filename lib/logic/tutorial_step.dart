@@ -406,7 +406,7 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     requiredCategory: _clickCategory,
     title: 'OVERCLOCK',
     body:
-        'Click fast enough and trigger a power surge that doubles your click power! This is your reward for intense clicking.',
+        'Keep a fast clicking streak going to trigger a surge that doubles your idle income for 30 seconds. This is your reward for intense clicking!',
   ),
   TutorialStep.upgradesDone: TutorialStepSpec(
     scope: TutorialScope.upgrades,
