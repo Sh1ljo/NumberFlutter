@@ -407,7 +407,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_reinforced_tap',
       name: 'Reinforced Tap',
       description: 'Adds +5 base click power per level.',
-      baseCost: BigInt.from(400),
+      baseCost: BigInt.from(4000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(5),
@@ -417,7 +417,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Probability Strike',
       description:
           '5% chance for massive damage. Each level increases strike power.',
-      baseCost: BigInt.from(2500),
+      baseCost: BigInt.from(25000),
       costMultiplier: 1.72,
       effectType: clickCategory,
       effectValue: 0,
@@ -426,7 +426,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_kinetic_amplifier',
       name: 'Kinetic Amplifier',
       description: 'Adds +25 base click power per level.',
-      baseCost: BigInt.from(6000),
+      baseCost: BigInt.from(60000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(25),
@@ -435,7 +435,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: momentumId,
       name: 'Momentum',
       description: 'Each level improves combo growth, cap, and decay window.',
-      baseCost: BigInt.from(8000),
+      baseCost: BigInt.from(80000),
       costMultiplier: 1.68,
       effectType: clickCategory,
       effectValue: 0,
@@ -445,7 +445,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Kinetic Synergy',
       description:
           'Each level adds +1% of your idle N/s to manual click power.',
-      baseCost: BigInt.from(40000),
+      baseCost: BigInt.from(400000),
       costMultiplier: 1.75,
       effectType: clickCategory,
       effectValue: 0,
@@ -454,7 +454,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_resonant_touch',
       name: 'Resonant Touch',
       description: 'Adds +150 base click power per level.',
-      baseCost: BigInt.from(75000),
+      baseCost: BigInt.from(750000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(150),
@@ -464,7 +464,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Overclock',
       description:
           'Each level boosts overclock power and duration, and lowers trigger streak.',
-      baseCost: BigInt.from(125000),
+      baseCost: BigInt.from(1250000),
       costMultiplier: 1.82,
       effectType: clickCategory,
       effectValue: 0,
@@ -473,7 +473,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_quantum_fingertip',
       name: 'Quantum Fingertip',
       description: 'Adds +1,000 base click power per level.',
-      baseCost: BigInt.from(1000000),
+      baseCost: BigInt.from(10000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(1000),
@@ -482,7 +482,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_singularity_press',
       name: 'Singularity Press',
       description: 'Adds +7,500 base click power per level.',
-      baseCost: BigInt.from(15000000),
+      baseCost: BigInt.from(150000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(7500),
@@ -491,7 +491,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_subatomic_tap',
       name: 'Subatomic Tap',
       description: 'Adds +50,000 base click power per level.',
-      baseCost: BigInt.from(200000000),
+      baseCost: BigInt.from(2000000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(50000),
@@ -500,7 +500,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       id: 'click_quantum_forge',
       name: 'Quantum Forge',
       description: 'Adds +500,000 base click power per level.',
-      baseCost: BigInt.from(4000000000),
+      baseCost: BigInt.from(40000000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(500000),
@@ -510,7 +510,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Chronos Press',
       description:
           'Adds +5,000,000 base click power per level. Requires 2 prestiges.',
-      baseCost: BigInt.from(80000000000),
+      baseCost: BigInt.from(800000000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(5000000),
@@ -520,7 +520,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Hyperdimensional Strike',
       description:
           'Adds +50,000,000 base click power per level. Requires 4 prestiges.',
-      baseCost: BigInt.from(1600000000000),
+      baseCost: BigInt.from(16000000000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(50000000),
@@ -530,7 +530,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       name: 'Omni-Touch Engine',
       description:
           'Adds +1,000,000,000 base click power per level. Requires 7 prestiges.',
-      baseCost: BigInt.from(64000000000000),
+      baseCost: BigInt.from(640000000000000),
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(1000000000),
@@ -2719,6 +2719,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       total = total * (1.0 + active / cycle) + p.idle * 60 * collapseLevel / cycle;
     }
     return total;
+  }
+
+  /// Test hook for the pacing simulation: expected income at [rate] taps/s,
+  /// split into what idle pays and what tapping adds on top.
+  @visibleForTesting
+  ({double idle, double tapping}) debugExpectedIncome(double rate) {
+    final total = _expectedValuePerSecond(rate);
+    final idle = _steadyProduction().idle;
+    return (idle: idle, tapping: total - idle);
   }
 
   UpgradeRecommendation? _cachedRecommendation;
