@@ -6,7 +6,14 @@ import 'views/stabilized_view.dart';
 
 class NexusScreen extends StatelessWidget {
   final GlobalKey? optProtocolNodeKey;
-  const NexusScreen({super.key, this.optProtocolNodeKey});
+
+  /// Spotlight target for the Nexus chapter's STABILIZE step.
+  final GlobalKey? stabilizeButtonKey;
+  const NexusScreen({
+    super.key,
+    this.optProtocolNodeKey,
+    this.stabilizeButtonKey,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -19,8 +26,9 @@ class NexusScreen extends StatelessWidget {
       return StabilizedView(optProtocolNodeKey: optProtocolNodeKey);
     }
 
-    return prestigeCount == 0
-        ? const UnstabilizedView(prestigeCount: 0)
-        : UnstabilizedView(prestigeCount: prestigeCount);
+    return UnstabilizedView(
+      prestigeCount: prestigeCount,
+      stabilizeButtonKey: stabilizeButtonKey,
+    );
   }
 }

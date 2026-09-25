@@ -83,10 +83,11 @@ void main() {
     test('each tutorial has steps', () {
       for (final scope in [
         TutorialScope.main,
+        TutorialScope.prestige,
+        TutorialScope.artifacts,
         TutorialScope.nexus,
         TutorialScope.neural,
-        TutorialScope.upgrades,
-        TutorialScope.artifacts,
+        TutorialScope.tips,
       ]) {
         final steps = tutorialSpecs.entries
             .where((e) => e.value.scope == scope)
@@ -133,16 +134,14 @@ void main() {
       // spotlight — this is what requiredTab exists to prevent.
       const screenBoundTargets = {
         TutorialTarget.tapArea: TutorialTab.generators,
-        TutorialTarget.momentumBar: TutorialTab.generators,
         TutorialTarget.idleCategory: TutorialTab.upgrades,
+        TutorialTarget.advisorBanner: TutorialTab.upgrades,
         TutorialTarget.upgradeAutoClicker: TutorialTab.upgrades,
         TutorialTarget.upgradeClickPower: TutorialTab.upgrades,
-        TutorialTarget.upgradeProbabilityStrike: TutorialTab.upgrades,
-        TutorialTarget.upgradeMomentum: TutorialTab.upgrades,
-        TutorialTarget.upgradeKineticSynergy: TutorialTab.upgrades,
-        TutorialTarget.upgradeOverclock: TutorialTab.upgrades,
         TutorialTarget.prestigeMultiplier: TutorialTab.prestige,
         TutorialTarget.prestigeGainCard: TutorialTab.prestige,
+        TutorialTarget.prestigeInitiate: TutorialTab.prestige,
+        TutorialTarget.nexusStabilizeButton: TutorialTab.prestige,
         TutorialTarget.nexusOptProtocolNode: TutorialTab.prestige,
         TutorialTarget.neuralNeuron: TutorialTab.neural,
         TutorialTarget.neuralHud: TutorialTab.neural,
@@ -188,13 +187,7 @@ void main() {
 
     test('upgrade-row targets declare the category they live under', () {
       const idleRows = [TutorialTarget.upgradeAutoClicker];
-      const clickRows = [
-        TutorialTarget.upgradeClickPower,
-        TutorialTarget.upgradeProbabilityStrike,
-        TutorialTarget.upgradeMomentum,
-        TutorialTarget.upgradeKineticSynergy,
-        TutorialTarget.upgradeOverclock,
-      ];
+      const clickRows = [TutorialTarget.upgradeClickPower];
       for (final entry in tutorialSpecs.entries) {
         final target = entry.value.target;
         if (idleRows.contains(target)) {
@@ -219,9 +212,84 @@ void main() {
       }
     });
 
-    test('learnPrestige keeps its bespoke wording', () {
-      expect(specFor(TutorialStep.learnPrestige).continueHint,
+    test('the last card of chapter 1 says play starts', () {
+      expect(specFor(TutorialStep.roadAhead).continueHint,
           'TAP ANYWHERE TO START PLAYING');
+    });
+  });
+
+  group('chapters', () {
+    test('every step belongs to exactly one chapter, or is a single card',
+        () {
+      for (final step in TutorialStep.values) {
+        if (step == TutorialStep.done) continue;
+        final owners =
+            tutorialChapters.where((c) => c.steps.contains(step)).length;
+        final scope = specFor(step).scope;
+        if (scope == TutorialScope.tips) {
+          expect(owners, 0, reason: '${step.name} is a tip inside a chapter');
+        } else {
+          expect(owners, 1,
+              reason: '${step.name} is in $owners chapters, not exactly one');
+        }
+      }
+    });
+
+    test("a chapter's steps all share its scope", () {
+      for (final chapter in tutorialChapters) {
+        for (final step in chapter.steps) {
+          expect(specFor(step).scope, chapter.scope,
+              reason: '${step.name} is in chapter ${chapter.number}');
+        }
+      }
+    });
+
+    test('chapters are numbered in order', () {
+      for (var i = 0; i < tutorialChapters.length; i++) {
+        expect(tutorialChapters[i].number, i + 1);
+      }
+    });
+
+    test('every card gets a kicker: its chapter and position, or a label',
+        () {
+      expect(tutorialKickerFor(TutorialStep.welcome),
+          'CHAPTER 1 · FIRST STEPS · 1/12');
+      expect(tutorialKickerFor(TutorialStep.doPrestige),
+          'CHAPTER 2 · PRESTIGE · 6/6');
+      for (final step in TutorialStep.values) {
+        if (step == TutorialStep.done) continue;
+        expect(tutorialKickerFor(step), isNotNull,
+            reason: '${step.name} has no chapter and no kicker');
+      }
+    });
+
+    test('every upgrade tip is a single card', () {
+      for (final step in upgradeTipSteps.values) {
+        expect(specFor(step).scope, TutorialScope.tips);
+        expect(specFor(step).mode, TutorialMode.tapToContinue);
+      }
+    });
+  });
+
+  group('prestige sub-tabs', () {
+    test('a step that needs a Prestige sub-tab needs the Prestige tab', () {
+      for (final step in TutorialStep.values) {
+        final spec = specFor(step);
+        if (spec.requiredPrestigeSubTab != null) {
+          expect(spec.requiredTab, TutorialTab.prestige,
+              reason: '${step.name} wants a Prestige sub-tab elsewhere');
+        }
+      }
+    });
+  });
+
+  group('legacy step names', () {
+    test('no longer exist, so an old save can be recognised', () {
+      final names = TutorialStep.values.map((s) => s.name).toSet();
+      for (final legacy in legacyTutorialStepNames) {
+        expect(names, isNot(contains(legacy)),
+            reason: '$legacy is both current and legacy');
+      }
     });
   });
 }

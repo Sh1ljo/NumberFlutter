@@ -17,8 +17,11 @@ class StorageService {
   static const String _keyTutorialStep = 'tutorialStep';
   static const String _keyNexusTutorialSeen = 'nexusTutorialSeen';
   static const String _keyNeuralTutorialSeen = 'neuralTutorialSeen';
+  /// Written by older builds (the removed upgrade deep-dive). Still read so
+  /// an old save that finished it doesn't get those upgrades explained again.
   static const String _keyUpgradeTutorialSeen = 'upgradeTutorialSeen';
   static const String _keyArtifactTutorialSeen = 'artifactTutorialSeen';
+  static const String _keyTutorialBeatsSeen = 'tutorialBeatsSeen';
   static const String _keyNexusStabilized = 'nexusStabilized';
   static const String _keyNeuralNetwork = 'neural_network';
   static const String _keyTestEnvironmentEnabled = 'testEnvironmentEnabled';
@@ -73,8 +76,8 @@ class StorageService {
     required String tutorialStep,
     required bool nexusTutorialSeen,
     required bool neuralTutorialSeen,
-    required bool upgradeTutorialSeen,
     required bool artifactTutorialSeen,
+    List<String> tutorialBeatsSeen = const [],
     required bool nexusStabilized,
     String? neuralNetworkJson,
     bool testEnvironmentEnabled = false,
@@ -101,8 +104,9 @@ class StorageService {
     await _setString(prefs, _keyTutorialStep, tutorialStep);
     await _setBool(prefs, _keyNexusTutorialSeen, nexusTutorialSeen);
     await _setBool(prefs, _keyNeuralTutorialSeen, neuralTutorialSeen);
-    await _setBool(prefs, _keyUpgradeTutorialSeen, upgradeTutorialSeen);
     await _setBool(prefs, _keyArtifactTutorialSeen, artifactTutorialSeen);
+    await _setString(
+        prefs, _keyTutorialBeatsSeen, jsonEncode(tutorialBeatsSeen));
     await _setBool(prefs, _keyNexusStabilized, nexusStabilized);
     await _setBool(
         prefs, _keyTestEnvironmentEnabled, testEnvironmentEnabled);
@@ -162,6 +166,19 @@ class StorageService {
             .whereType<String>()
             .toList();
 
+    // Null when the save predates the key, so GameState can tell an old save
+    // (whose player already knows some of the game) from a fresh one.
+    final beatsRaw = prefs.getString(_keyTutorialBeatsSeen);
+    List<String>? tutorialBeatsSeen;
+    if (beatsRaw != null) {
+      try {
+        tutorialBeatsSeen =
+            (jsonDecode(beatsRaw) as List<dynamic>).whereType<String>().toList();
+      } catch (_) {
+        tutorialBeatsSeen = <String>[];
+      }
+    }
+
     final prestigeCurrencyDouble = double.tryParse(prestigeCurrencyStr);
     final prestigeCurrencyLegacy = BigInt.tryParse(prestigeCurrencyStr);
 
@@ -186,6 +203,7 @@ class StorageService {
       'neuralTutorialSeen': prefs.getBool(_keyNeuralTutorialSeen) ?? false,
       'upgradeTutorialSeen': prefs.getBool(_keyUpgradeTutorialSeen) ?? false,
       'artifactTutorialSeen': prefs.getBool(_keyArtifactTutorialSeen) ?? false,
+      'tutorialBeatsSeen': tutorialBeatsSeen,
       'nexusStabilized': prefs.getBool(_keyNexusStabilized) ?? false,
       'testEnvironmentEnabled': prefs.getBool(_keyTestEnvironmentEnabled) ?? false,
       'neuralNetwork': prefs.getString(_keyNeuralNetwork),
@@ -218,6 +236,7 @@ class StorageService {
     _keyNeuralTutorialSeen,
     _keyUpgradeTutorialSeen,
     _keyArtifactTutorialSeen,
+    _keyTutorialBeatsSeen,
     _keyNexusStabilized,
     _keyNeuralNetwork,
     _keyTestEnvironmentEnabled,
@@ -263,6 +282,7 @@ class StorageService {
     await prefs.remove(_keyNeuralTutorialSeen);
     await prefs.remove(_keyUpgradeTutorialSeen);
     await prefs.remove(_keyArtifactTutorialSeen);
+    await prefs.remove(_keyTutorialBeatsSeen);
     await prefs.remove(_keyNexusStabilized);
     await prefs.remove(_keyNeuralNetwork);
     await prefs.remove(_keyLifetimeClicks);

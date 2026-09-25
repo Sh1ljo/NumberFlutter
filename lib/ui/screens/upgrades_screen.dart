@@ -15,12 +15,16 @@ import 'player_stats_screen.dart';
 class UpgradesScreen extends StatefulWidget {
   final Map<String, GlobalKey>? upgradeRowKeys;
   final GlobalKey? idleCategoryKey;
+
+  /// Spotlight target for the advisor tip.
+  final GlobalKey? advisorBannerKey;
   final Set<String> highlightedUpgradeIds;
 
   const UpgradesScreen({
     super.key,
     this.upgradeRowKeys,
     this.idleCategoryKey,
+    this.advisorBannerKey,
     this.highlightedUpgradeIds = const {},
   });
 
@@ -231,7 +235,10 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
             ),
             const SizedBox(height: 4),
 
-            const _RecommendationCard(),
+            KeyedSubtree(
+              key: widget.advisorBannerKey,
+              child: const _RecommendationCard(),
+            ),
 
             Builder(builder: (context) {
               final filteredUpgrades = gameState.upgrades
@@ -301,7 +308,6 @@ typedef _UpgradeRowData = ({
   bool isMaxed,
   ({BigInt cost, int amount}) info,
   bool canAfford,
-  bool blockedByTutorial,
   bool recommended,
   int milestoneMultiplier,
   int minPrestige,
@@ -322,13 +328,11 @@ class _UpgradeRow extends StatelessWidget {
       final minPrestige = gs.minPrestigeForUpgrade(upgrade.id);
       final isLocked = gs.prestigeCount < minPrestige;
       final info = isLocked ? (cost: BigInt.zero, amount: 0) : gs.getPurchaseInfo(upgrade);
-      final blocked = gs.tutorialBlocksPurchase(upgrade.id);
       return (
         level: upgrade.level,
         isMaxed: upgrade.isMaxed,
         info: info,
-        canAfford: !isLocked && !blocked && info.amount > 0 && gs.number >= info.cost,
-        blockedByTutorial: blocked,
+        canAfford: !isLocked && info.amount > 0 && gs.number >= info.cost,
         recommended: !isLocked && gs.recommendedUpgrade?.upgradeId == upgrade.id,
         milestoneMultiplier: gs.upgradeMilestoneMultiplier(upgrade),
         minPrestige: minPrestige,
@@ -339,7 +343,6 @@ class _UpgradeRow extends StatelessWidget {
       upgrade: upgrade,
       highlighted: highlighted,
       canAfford: data.canAfford,
-      blockedByTutorial: data.blockedByTutorial,
       recommended: data.recommended,
       info: data.info,
       milestoneMultiplier: data.milestoneMultiplier,
@@ -428,7 +431,6 @@ class _UpgradeItem extends StatelessWidget {
   final Upgrade upgrade;
   final bool highlighted;
   final bool canAfford;
-  final bool blockedByTutorial;
   final bool recommended;
   final ({BigInt cost, int amount}) info;
   final int milestoneMultiplier;
@@ -439,7 +441,6 @@ class _UpgradeItem extends StatelessWidget {
     required this.upgrade,
     required this.highlighted,
     required this.canAfford,
-    required this.blockedByTutorial,
     required this.recommended,
     required this.info,
     required this.milestoneMultiplier,
@@ -599,7 +600,7 @@ class _UpgradeItem extends StatelessWidget {
                     minimumSize: const Size(0, 34),
                   ),
                   child: Text(
-                    blockedByTutorial ? 'LOCKED' : 'INSUFFICIENT',
+                    'INSUFFICIENT',
                     style: theme.textTheme.labelSmall?.copyWith(
                         color:
                             theme.colorScheme.primary.withValues(alpha: 0.5)),

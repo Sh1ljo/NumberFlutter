@@ -54,7 +54,6 @@ class _MainLayoutState extends State<MainLayout> {
   GameState? _gameState;
 
   final GlobalKey _tapAreaKey = GlobalKey();
-  final GlobalKey _momentumBarKey = GlobalKey();
   final GlobalKey _neuralNeuronKey = GlobalKey();
   final GlobalKey _neuralHudKey = GlobalKey();
   final List<GlobalKey> _navKeys = List.generate(5, (_) => GlobalKey());
@@ -74,15 +73,12 @@ class _MainLayoutState extends State<MainLayout> {
   final GlobalKey _prestigeGainCardKey = GlobalKey();
   final GlobalKey _nexusOptProtocolNodeKey = GlobalKey();
   final GlobalKey _idleCategoryKey = GlobalKey();
+  final GlobalKey _advisorBannerKey = GlobalKey();
+  final GlobalKey _nexusStabilizeKey = GlobalKey();
 
   late final List<Widget> _screens;
 
   /// Single place that maps a named tutorial target to its live GlobalKey.
-  ///
-  /// The overlay used to reach for `navKeys[1]` / `navKeys[3]` directly from a
-  /// 39-case switch, and `momentumBarKey` was declared and consumed but never
-  /// actually supplied — leaving `demonstrateMomentum` with no spotlight and
-  /// no way to advance except ~51 consecutive clicks.
   GlobalKey? _resolveTutorialTarget(TutorialTarget target) {
     switch (target) {
       case TutorialTarget.tapArea:
@@ -97,14 +93,18 @@ class _MainLayoutState extends State<MainLayout> {
         return _navKeys[TutorialTab.neural];
       case TutorialTarget.idleCategory:
         return _idleCategoryKey;
+      case TutorialTarget.advisorBanner:
+        return _advisorBannerKey;
+      case TutorialTarget.prestigeInitiate:
+        return _prestigeInitiateKey;
+      case TutorialTarget.nexusStabilizeButton:
+        return _nexusStabilizeKey;
       case TutorialTarget.prestigeMultiplier:
         return _prestigeMultiplierKey;
       case TutorialTarget.prestigeGainCard:
         return _prestigeGainCardKey;
       case TutorialTarget.nexusOptProtocolNode:
         return _nexusOptProtocolNodeKey;
-      case TutorialTarget.momentumBar:
-        return _momentumBarKey;
       case TutorialTarget.neuralNeuron:
         return _neuralNeuronKey;
       case TutorialTarget.neuralHud:
@@ -113,14 +113,6 @@ class _MainLayoutState extends State<MainLayout> {
         return _upgradeRowKeys[GameState.autoClickerId];
       case TutorialTarget.upgradeClickPower:
         return _upgradeRowKeys[GameState.clickPowerId];
-      case TutorialTarget.upgradeProbabilityStrike:
-        return _upgradeRowKeys[GameState.probabilityStrikeId];
-      case TutorialTarget.upgradeMomentum:
-        return _upgradeRowKeys[GameState.momentumId];
-      case TutorialTarget.upgradeKineticSynergy:
-        return _upgradeRowKeys[GameState.kineticSynergyId];
-      case TutorialTarget.upgradeOverclock:
-        return _upgradeRowKeys[GameState.overclockId];
     }
   }
 
@@ -128,16 +120,18 @@ class _MainLayoutState extends State<MainLayout> {
   void initState() {
     super.initState();
     _screens = [
-      MainGameScreen(
-        tapAreaKey: _tapAreaKey,
-        momentumBarKey: _momentumBarKey,
+      MainGameScreen(tapAreaKey: _tapAreaKey),
+      UpgradesScreen(
+        upgradeRowKeys: _upgradeRowKeys,
+        idleCategoryKey: _idleCategoryKey,
+        advisorBannerKey: _advisorBannerKey,
       ),
-      UpgradesScreen(upgradeRowKeys: _upgradeRowKeys, idleCategoryKey: _idleCategoryKey),
       PrestigeScreen(
         initiateButtonKey: _prestigeInitiateKey,
         prestigeMultiplierKey: _prestigeMultiplierKey,
         prestigeGainCardKey: _prestigeGainCardKey,
         nexusOptProtocolNodeKey: _nexusOptProtocolNodeKey,
+        nexusStabilizeKey: _nexusStabilizeKey,
       ),
       NeuralNetworkScreen(
         neuralNeuronKey: _neuralNeuronKey,
@@ -160,14 +154,16 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
-  /// True when nothing more important owns the screen: no tutorial (main,
-  /// Nexus or neural), no prestige animation, and no sheet, dialog or pushed
+  /// True when nothing more important owns the screen: no tutorial, no
+  /// prestige or Nexus-stabilize animation, and no sheet, dialog or pushed
   /// screen on top of the main layout. Every popup waits for this rather
   /// than being dropped, so it shows as soon as the player is free.
   bool get _screenIsFree {
     final gameState = _gameState;
     if (gameState == null || !mounted) return false;
-    if (gameState.isTutorialActive || gameState.isPrestigeAnimating) {
+    if (gameState.isTutorialActive ||
+        gameState.isPrestigeAnimating ||
+        gameState.isNexusStabilizing) {
       return false;
     }
     return ModalRoute.of(context)?.isCurrent != false;
@@ -227,11 +223,6 @@ class _MainLayoutState extends State<MainLayout> {
         canPrestige: gameState.number >= gameState.prestigeRequirement,
         prestigeCount: gameState.prestigeCount,
       );
-    }
-
-    // goodLuck is the wrap-up card and belongs on the main screen.
-    if (gameState.tutorialStep == TutorialStep.goodLuck && _currentIndex != 0) {
-      setState(() => _currentIndex = 0);
     }
 
     if (hasOfflineProgress && !_offlineDialogQueued) {
@@ -502,12 +493,8 @@ class _MainLayoutState extends State<MainLayout> {
       }
     }
 
-    // The main tutorial ends in a reset, so anything it unlocks is dropped.
-    if (!gameState.tutorialCompleted) {
-      drain();
-      return;
-    }
-    // Nexus / neural tutorials, the prestige animation and open sheets
+    // Tutorials (chapter 1 included — its progress is kept), the prestige
+    // animation and open sheets
     // (neuron sheet, artifact pick, dialogs) all take priority: hold the
     // queue and fold it into one notice once the player is free.
     if (!_screenIsFree) return;
@@ -683,6 +670,7 @@ class _MainLayoutState extends State<MainLayout> {
     _screens[1] = UpgradesScreen(
       upgradeRowKeys: _upgradeRowKeys,
       idleCategoryKey: _idleCategoryKey,
+      advisorBannerKey: _advisorBannerKey,
       highlightedUpgradeIds: upgradeIds.toSet(),
     );
     final changingTabs = _currentIndex != 1;

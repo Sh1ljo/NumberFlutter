@@ -193,7 +193,6 @@ void main() {
           tutorialStep: 'done',
           nexusTutorialSeen: false,
           neuralTutorialSeen: false,
-          upgradeTutorialSeen: false,
           artifactTutorialSeen: false,
           nexusStabilized: false,
         );

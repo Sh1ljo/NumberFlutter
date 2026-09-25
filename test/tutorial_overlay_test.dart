@@ -116,8 +116,9 @@ void main() {
       surfaceSize: size,
       provideTargets: provideTargets,
     ));
-    // Let the post-frame hole resolution and its retries settle.
-    await tester.pump(const Duration(milliseconds: 600));
+    // Let the post-frame hole resolution and its retries settle, and the
+    // card's short tap-to-continue delay run out.
+    await tester.pump(const Duration(milliseconds: 1600));
   }
 
   group('rendering', () {
@@ -185,11 +186,8 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('SKIP from an upgrade step ends the tutorial outright',
-        (tester) async {
-      // It used to drop the player at learnPrestige, so escaping took up to
-      // four presses.
-      gameState.debugSetTutorialStep(TutorialStep.momentumIntro);
+    testWidgets('SKIP on a tip ends it and remembers it', (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.tipMomentum);
       await pumpHarness(tester);
 
       await tester.tap(find.text('SKIP'));
@@ -199,6 +197,7 @@ void main() {
 
       expect(gameState.tutorialStep, TutorialStep.done);
       expect(gameState.isTutorialActive, isFalse);
+      expect(gameState.hasSeenTutorialBeat(TutorialStep.tipMomentum), isTrue);
     });
   });
 
@@ -208,9 +207,29 @@ void main() {
       await pumpHarness(tester);
 
       await tester.tapAt(const Offset(200, 400));
-      await tester.pump(const Duration(milliseconds: 100));
+      // Past the 350ms save each step schedules.
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(gameState.tutorialStep, TutorialStep.clickToFifty);
+    });
+
+    testWidgets(
+        'a card that just appeared ignores a tap, so fast tapping cannot '
+        'dismiss it unread', (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.done);
+      await pumpHarness(tester);
+
+      gameState.debugSetTutorialStep(TutorialStep.tipProbabilityStrike);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tapAt(const Offset(200, 400));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(gameState.tutorialStep, TutorialStep.tipProbabilityStrike);
+
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.tapAt(const Offset(200, 400));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(gameState.tutorialStep, TutorialStep.done);
     });
 
     testWidgets('a spotlight step does not advance on a dim tap',
@@ -232,7 +251,8 @@ void main() {
 
       // Inside the 40,300,150x80 target rect.
       await tester.tapAt(const Offset(60, 320));
-      await tester.pump(const Duration(milliseconds: 100));
+      // Past the 350ms save each step schedules.
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(gameState.tutorialStep, TutorialStep.prestigeGainHint);
     });
@@ -248,6 +268,39 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(gameState.tutorialStep, TutorialStep.prestigeMultiplierHint);
+    });
+  });
+
+  group('card content', () {
+    testWidgets('a chapter card shows where the player is in it',
+        (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.welcome);
+      await pumpHarness(tester);
+      expect(find.text('CHAPTER 1 · FIRST STEPS · 1/12'), findsOneWidget);
+    });
+
+    testWidgets('a tip shows its label', (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.tipOverclock);
+      await pumpHarness(tester);
+      expect(find.text('NEW UPGRADE'), findsOneWidget);
+    });
+
+    testWidgets('the road ahead shows every locked system, the last hidden',
+        (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.roadAhead);
+      await pumpHarness(tester);
+      expect(find.text('PRESTIGE'), findsOneWidget);
+      expect(find.text('ARTIFACTS'), findsOneWidget);
+      expect(find.text('THE NEXUS'), findsOneWidget);
+      expect(find.text('???'), findsOneWidget);
+      expect(find.text('TAP ANYWHERE TO START PLAYING'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the road ahead fits a small phone', (tester) async {
+      gameState.debugSetTutorialStep(TutorialStep.roadAhead);
+      await pumpHarness(tester, size: const Size(320, 568));
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -333,14 +386,15 @@ void main() {
           ),
         ),
       );
-      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 1600));
 
       // Visually the container spans (40,100) to (220,280) after the 3x
       // scale. The old code sized the hole from the untransformed 60x60
       // local size, so this tap — near the scaled target's real bottom-right
       // corner but well outside a 60x60 box — would have missed it.
       await tester.tapAt(const Offset(200, 260));
-      await tester.pump(const Duration(milliseconds: 100));
+      // Past the 350ms save each step schedules.
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(gameState.tutorialStep, TutorialStep.prestigeGainHint);
     });

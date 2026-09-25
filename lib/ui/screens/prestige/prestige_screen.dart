@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/game_state.dart';
 import '../../../logic/backend_service.dart';
+import '../../../logic/tutorial_step.dart';
 import '../../../utils/number_formatter.dart';
 import '../../widgets/profile_editor_dialog.dart';
 import '../leaderboard_screen.dart';
@@ -20,12 +21,14 @@ class PrestigeScreen extends StatefulWidget {
   final GlobalKey? prestigeMultiplierKey;
   final GlobalKey? prestigeGainCardKey;
   final GlobalKey? nexusOptProtocolNodeKey;
+  final GlobalKey? nexusStabilizeKey;
   const PrestigeScreen({
     super.key,
     this.initiateButtonKey,
     this.prestigeMultiplierKey,
     this.prestigeGainCardKey,
     this.nexusOptProtocolNodeKey,
+    this.nexusStabilizeKey,
   });
 
   @override
@@ -83,7 +86,13 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // Reopen on the tab the player left, which is also what GameState
+    // (and so the tutorial overlay) believes is on show.
+    _tabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: context.read<GameState>().prestigeSubTabIndex.clamp(0, 2),
+    );
     _tabController.addListener(_handleSubTabChanged);
     _controller = AnimationController(
       vsync: this,
@@ -125,6 +134,17 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   void _handleSubTabChanged() {
     if (_tabController.indexIsChanging) return;
     context.read<GameState>().setPrestigeSubTabIndex(_tabController.index);
+  }
+
+  /// A tutorial step whose target lives on another sub-tab brings the
+  /// player there, rather than spotlighting something that isn't on screen.
+  void _followTutorialSubTab(int? wanted) {
+    if (wanted == null || _tabController.index == wanted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _tabController.index != wanted) {
+        _tabController.animateTo(wanted);
+      }
+    });
   }
 
   void _initiatePrestige() {
@@ -250,6 +270,8 @@ class _PrestigeScreenState extends State<PrestigeScreen>
         gs.prestigeMultiplierAfterNext,
       );
     });
+    _followTutorialSubTab(context.select<GameState, int?>(
+        (gs) => specFor(gs.tutorialStep).requiredPrestigeSubTab));
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -469,6 +491,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       // ── Tab 1: Nexus ─────────────────────────────────────
                       NexusScreen(
                         optProtocolNodeKey: widget.nexusOptProtocolNodeKey,
+                        stabilizeButtonKey: widget.nexusStabilizeKey,
                       ),
 
                       // ── Tab 2: Artifacts ─────────────────────────────────

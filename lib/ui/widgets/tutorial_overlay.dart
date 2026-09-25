@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../logic/game_state.dart';
 import '../../logic/tutorial_step.dart';
+import '../../utils/number_formatter.dart';
 
 /// Resolves a [TutorialTarget] to the GlobalKey currently representing it.
 ///
@@ -47,6 +48,18 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   int _holeGeneration = 0;
   Timer? _retryTimer;
 
+  /// Tap-to-continue ignores taps for a moment after a card appears. Cards
+  /// can pop up mid-play (a tip when an upgrade becomes affordable, the
+  /// road ahead right after catching a spark), and a player still tapping
+  /// the field would otherwise dismiss one unread. The continue hint only
+  /// shows once taps count.
+  bool _tapArmed = true;
+  Timer? _armTimer;
+  static const Duration _armDelay = Duration(milliseconds: 900);
+
+  /// Longer for a card with something to look at besides its text.
+  static const Duration _armDelayWithVisual = Duration(milliseconds: 1500);
+
   /// Scrollable the current target lives in, listened to so the hole follows
   /// the target instead of being resolved once and then left behind.
   ScrollPosition? _trackedScroll;
@@ -56,6 +69,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _armTimer?.cancel();
     _detachScroll();
     super.dispose();
   }
@@ -196,6 +210,16 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         // Re-resolve the hole when anything that could move the target
         // changes. Still kicked from build, but it only schedules a
         // post-frame measurement and never calls setState synchronously.
+        if (step != _lastStep) {
+          _tapArmed = false;
+          _armTimer?.cancel();
+          _armTimer = Timer(
+            spec.visual != null ? _armDelayWithVisual : _armDelay,
+            () {
+              if (mounted) setState(() => _tapArmed = true);
+            },
+          );
+        }
         if (step != _lastStep ||
             category != _lastCategory ||
             tab != _lastTab ||
@@ -213,10 +237,13 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         // Wrong upgrade category: the spotlit row doesn't exist yet.
         final onWrongCategory =
             spec.requiredCategory != null && spec.requiredCategory != category;
+        // Wrong Prestige sub-tab: the Prestige screen is already switching.
+        final onWrongSubTab = spec.requiredPrestigeSubTab != null &&
+            spec.requiredPrestigeSubTab != subTab;
 
         final media = MediaQuery.of(context);
 
-        if (onWrongTab || onWrongCategory) {
+        if (onWrongTab || onWrongCategory || onWrongSubTab) {
           return _skipOnly(context, media, gameState);
         }
 
@@ -259,6 +286,8 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
             _CaptionCard(
               title: spec.title!,
               body: spec.body!,
+              kicker: tutorialKickerFor(gameState.tutorialStep),
+              extra: _visualFor(spec, gameState),
               hole: null,
               screenSize: media.size,
               padding: media.padding,
@@ -289,6 +318,8 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
             _CaptionCard(
               title: spec.title!,
               body: spec.body!,
+              kicker: tutorialKickerFor(gameState.tutorialStep),
+              extra: _visualFor(spec, gameState),
               hole: hole,
               screenSize: media.size,
               padding: media.padding,
@@ -311,8 +342,11 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     final size = media.size;
     final tapToContinue = spec.isTapToContinue;
     final tapInsideHole = spec.mode == TutorialMode.spotlightTapToContinue;
-    final onTap =
-        tapToContinue ? () => gameState.onTutorialTapToContinue() : null;
+    void continueIfArmed() {
+      if (_tapArmed) gameState.onTutorialTapToContinue();
+    }
+
+    final onTap = tapToContinue ? continueIfArmed : null;
 
     final children = <Widget>[];
 
@@ -329,10 +363,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       }
       children.add(_PulseOutline(rect: hole));
       if (tapInsideHole) {
-        children.add(_HoleTapLayer(
-          rect: hole,
-          onTap: () => gameState.onTutorialTapToContinue(),
-        ));
+        children.add(_HoleTapLayer(rect: hole, onTap: continueIfArmed));
       }
     } else if (tapToContinue) {
       // No target (or not resolved yet) but the step advances on any tap:
@@ -354,10 +385,13 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       children.add(_CaptionCard(
         title: spec.title!,
         body: spec.body!,
+        kicker: tutorialKickerFor(gameState.tutorialStep),
+        extra: _visualFor(spec, gameState),
         hole: hole,
         screenSize: size,
         padding: media.padding,
         centerOnScreen: hole == null,
+        hintVisible: _tapArmed,
         continueHint: tapToContinue
             ? (spec.continueHint ?? 'TAP ANYWHERE TO CONTINUE')
             : tapInsideHole
@@ -372,6 +406,15 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
       type: MaterialType.transparency,
       child: Stack(clipBehavior: Clip.none, children: children),
     );
+  }
+
+  Widget? _visualFor(TutorialStepSpec spec, GameState gameState) {
+    switch (spec.visual) {
+      case TutorialVisual.roadmap:
+        return _Roadmap(prestigeRequirement: gameState.prestigeRequirement);
+      case null:
+        return null;
+    }
   }
 
   /// SKIP and nothing else — used when the player has navigated away from the
@@ -526,21 +569,34 @@ class _DimBar extends StatelessWidget {
 class _CaptionCard extends StatelessWidget {
   final String title;
   final String body;
+
+  /// "CHAPTER 2 · PRESTIGE · 3/6", or a tip's label.
+  final String? kicker;
+
+  /// Drawn between the body and the continue hint (the roadmap).
+  final Widget? extra;
   final Rect? hole;
   final Size screenSize;
   final EdgeInsets padding;
   final bool centerOnScreen;
   final String? continueHint;
+
+  /// The hint's space is always reserved, so the card doesn't jump when it
+  /// fades in.
+  final bool hintVisible;
   final double? positionTop;
 
   const _CaptionCard({
     required this.title,
     required this.body,
+    this.kicker,
+    this.extra,
     required this.hole,
     required this.screenSize,
     required this.padding,
     this.centerOnScreen = false,
     this.continueHint,
+    this.hintVisible = true,
     this.positionTop,
   });
 
@@ -622,6 +678,18 @@ class _CaptionCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (kicker != null) ...[
+                    Text(
+                      kicker!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 1.6,
+                        color: theme.colorScheme.primary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
                   Text(
                     title,
                     style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
@@ -634,15 +702,23 @@ class _CaptionCard extends StatelessWidget {
                       height: 1.45,
                     ),
                   ),
+                  if (extra != null) ...[
+                    const SizedBox(height: 14),
+                    extra!,
+                  ],
                   if (continueHint != null) ...[
                     const SizedBox(height: 16),
-                    Text(
-                      continueHint!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        letterSpacing: 2,
-                        color: theme.colorScheme.outline,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
+                    AnimatedOpacity(
+                      opacity: hintVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 250),
+                      child: Text(
+                        continueHint!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          letterSpacing: 2,
+                          color: theme.colorScheme.outline,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -733,4 +809,85 @@ class _CardLayoutDelegate extends SingleChildLayoutDelegate {
       old.centerOnScreen != centerOnScreen ||
       old.positionTop != positionTop ||
       old.centeredLeft != centeredLeft;
+}
+
+/// Everything still ahead of a brand-new player, drawn locked. The last
+/// entry stays a mystery on purpose.
+class _Roadmap extends StatelessWidget {
+  final BigInt prestigeRequirement;
+
+  const _Roadmap({required this.prestigeRequirement});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = [
+      (
+        icon: Icons.auto_awesome,
+        name: 'PRESTIGE',
+        hint: 'Reach ${NumberFormatter.format(prestigeRequirement)}',
+      ),
+      (icon: Icons.diamond_outlined, name: 'ARTIFACTS', hint: '1st prestige'),
+      (icon: Icons.hub_outlined, name: 'THE NEXUS', hint: '3 prestiges'),
+      (icon: Icons.help_outline, name: '???', hint: 'Deep inside the Nexus'),
+    ];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (i, e) in entries.indexed) ...[
+          if (i > 0) const SizedBox(height: 6),
+          _RoadmapRow(icon: e.icon, name: e.name, hint: e.hint),
+        ],
+      ],
+    );
+  }
+}
+
+class _RoadmapRow extends StatelessWidget {
+  final IconData icon;
+  final String name;
+  final String hint;
+
+  const _RoadmapRow({
+    required this.icon,
+    required this.name,
+    required this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow.withValues(alpha: 0.6),
+        border: Border(left: BorderSide(color: cs.outlineVariant, width: 2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: cs.outline),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name,
+              style: theme.textTheme.labelSmall?.copyWith(
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              hint,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.labelSmall?.copyWith(color: cs.outline),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.lock_outline, size: 14, color: cs.outlineVariant),
+        ],
+      ),
+    );
+  }
 }

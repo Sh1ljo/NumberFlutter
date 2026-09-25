@@ -16,77 +16,46 @@ Upgrade _u(GameState gs, String id) => gs.upgrades.firstWhere((u) => u.id == id)
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('upgrade deep-dive budget', () {
-    late GameState gs;
-
-    setUp(() async {
-      SharedPreferences.setMockInitialValues({});
-      gs = GameState();
-      await gs.ready;
-      gs.debugSetTutorialStep(TutorialStep.buyClickPower);
-      gs.number = BigInt.from(40);
-      gs.buyUpgrade(GameState.clickPowerId);
-      expect(gs.tutorialStep, TutorialStep.upgradeIntro);
-    });
-
-    tearDown(() => gs.dispose());
-
-    test('is exactly Probability Strike + Momentum, not 100M', () {
-      final strike = _u(gs, GameState.probabilityStrikeId).currentCost;
-      final momentum = _u(gs, GameState.momentumId).currentCost;
-      expect(gs.number, strike + momentum);
-      expect(gs.number < BigInt.from(100000000), isTrue);
-    });
-
-    test('only the guided upgrade can be bought, one level at a time', () {
-      gs.setBuyAmount(10);
-      gs.debugSetTutorialStep(TutorialStep.buyProbabilityStrike);
-      gs.buyUpgrade('click_reinforced_tap');
-      expect(_u(gs, 'click_reinforced_tap').level, 0);
-
-      gs.buyUpgrade(GameState.probabilityStrikeId);
-      expect(_u(gs, GameState.probabilityStrikeId).level, 1);
-      // What is left is exactly the Momentum level the next step asks for.
-      expect(gs.number, _u(gs, GameState.momentumId).currentCost);
-    });
-
-    test('never reaches storage, and an app kill restarts it cleanly',
-        () async {
-      await _flushSaves();
-      final prefs = await SharedPreferences.getInstance();
-      final savedNumber = BigInt.parse(prefs.getString('number')!);
-      // 40 - 15 for the Click Power level: the real balance, no grant.
-      expect(savedNumber, BigInt.from(25));
-      expect(gs.highestNumber < BigInt.from(1000), isTrue);
-
-      gs.dispose();
-      gs = GameState();
-      await gs.ready;
-      expect(gs.tutorialStep, TutorialStep.upgradeIntro);
-      expect(gs.isUpgradeDeepDiveActive, isTrue);
-
-      gs.skipTutorial();
-      expect(gs.number, BigInt.from(25));
-      expect(_u(gs, GameState.probabilityStrikeId).level, 0);
-    });
-  });
-
   test('a legacy save with the 100M grant baked in is repaired on load',
       () async {
+    // Written mid upgrade deep-dive by a build that stored its borrowed
+    // budget. The deep-dive no longer exists; the grant must still go.
     SharedPreferences.setMockInitialValues({
       'number': '100000030',
       'highestNumber': '100000030',
-      'tutorialStep': TutorialStep.buyMomentum.name,
+      'tutorialStep': 'buyMomentum',
       'upgradeLevels': '{"click_power":1,"click_probability_strike":1}',
     });
     final gs = GameState();
     await gs.ready;
     addTearDown(gs.dispose);
 
-    gs.skipTutorial();
     expect(gs.number, BigInt.from(30));
     expect(gs.highestNumber, BigInt.from(30));
     expect(_u(gs, GameState.probabilityStrikeId).level, 0);
+    // That player was past everything chapter 1 teaches.
+    expect(gs.tutorialCompleted, isTrue);
+    expect(gs.tutorialStep, TutorialStep.done);
+  });
+
+  test('a chapter 1 purchase is kept: nothing is borrowed or taken back',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final gs = GameState();
+    await gs.ready;
+    addTearDown(gs.dispose);
+    gs.debugSetTutorialStep(TutorialStep.buyClickPower);
+    gs.onMainTabChanged(TutorialTab.upgrades);
+    gs.number = BigInt.from(40);
+
+    gs.buyUpgrade(GameState.clickPowerId);
+
+    expect(gs.tutorialStep, TutorialStep.navGeneratorsForSpark);
+    expect(gs.number, BigInt.from(25));
+    expect(_u(gs, GameState.clickPowerId).level, 1);
+    await _flushSaves();
+    final prefs = await SharedPreferences.getInstance();
+    expect(BigInt.parse(prefs.getString('number')!), BigInt.from(25));
   });
 
   group('gain preview', () {

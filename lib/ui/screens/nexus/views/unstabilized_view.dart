@@ -9,8 +9,12 @@ import 'stabilized_view.dart';
 
 class UnstabilizedView extends StatefulWidget {
   final int prestigeCount;
+  final GlobalKey? stabilizeButtonKey;
 
-  const UnstabilizedView({required this.prestigeCount});
+  const UnstabilizedView({
+    required this.prestigeCount,
+    this.stabilizeButtonKey,
+  });
 
   @override
   State<UnstabilizedView> createState() => _UnstabilizedViewState();
@@ -108,6 +112,7 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
     _spinBase = _ctrl.value * math.pi * 2;
     _ctrl.stop();
     setState(() => _isStabilizing = true);
+    context.read<GameState>().onNexusStabilizeStarted();
     _ambientCtrl.repeat();
     _stabilizeCtrl.forward().then((_) {
       if (mounted) {
@@ -259,6 +264,7 @@ class _UnstabilizedViewState extends State<UnstabilizedView>
                   if (widget.prestigeCount >= 3) ...[
                     const SizedBox(height: 32),
                     ElevatedButton(
+                      key: widget.stabilizeButtonKey,
                       onPressed: _stabilizeNexus,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: cs.primary,

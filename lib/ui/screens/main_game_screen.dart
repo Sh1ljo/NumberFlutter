@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
+import '../../logic/tutorial_step.dart';
 import '../widgets/ambient_gradient_background.dart';
 import '../widgets/neural_spark.dart';
 import '../widgets/pulse_number.dart';
@@ -20,10 +21,7 @@ import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
   final GlobalKey? tapAreaKey;
 
-  /// Spotlight target for the `demonstrateMomentum` tutorial step.
-  final GlobalKey? momentumBarKey;
-
-  const MainGameScreen({super.key, this.tapAreaKey, this.momentumBarKey});
+  const MainGameScreen({super.key, this.tapAreaKey});
 
   @override
   State<MainGameScreen> createState() => _MainGameScreenState();
@@ -46,6 +44,14 @@ class _MainGameScreenState extends State<MainGameScreen> {
   Key _sparkKey = UniqueKey();
   static const Duration _sparkLifetime = Duration(milliseconds: 2600);
 
+  /// The tutorial's spark lingers, so a first-timer has time to find it.
+  static const Duration _tutorialSparkLifetime = Duration(seconds: 6);
+  Duration _currentSparkLifetime = _sparkLifetime;
+
+  /// Set once the `catchSpark` step has asked for its spark, so rebuilds
+  /// don't keep pushing the spawn back.
+  bool _tutorialSparkArmed = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,8 +67,18 @@ class _MainGameScreenState extends State<MainGameScreen> {
     super.dispose();
   }
 
+  bool get _tutorialWantsSpark =>
+      context.read<GameState>().tutorialStep == TutorialStep.catchSpark;
+
   void _scheduleNextSpark() {
     _sparkSpawnTimer?.cancel();
+    if (_tutorialWantsSpark) {
+      // The tutorial is waiting on a catch: don't make the player wait
+      // 10-20s, and put a fresh one up soon after a miss.
+      _sparkSpawnTimer =
+          Timer(const Duration(milliseconds: 700), _trySpawnSpark);
+      return;
+    }
     // Randomized so the spawn never feels like a metronome. Spark Magnet
     // shortens the delay window by 25%.
     final factor =
@@ -103,15 +119,19 @@ class _MainGameScreenState extends State<MainGameScreen> {
       return;
     }
 
+    final tutorial = _tutorialWantsSpark;
     final usableWidth = rect.width - margin * 2;
-    final usableHeight = rect.height - margin * 2;
+    // The tutorial's card floats over the top of the field; keep its spark
+    // in the lower half so the card never hides it.
+    final topOffset = tutorial ? rect.height * 0.5 : margin;
+    final usableHeight = math.max(0.0, rect.height - topOffset - margin);
     final center = rect.center;
     Offset position;
     var attempts = 0;
     do {
       position = Offset(
         rect.left + margin + _sparkRng.nextDouble() * usableWidth,
-        rect.top + margin + _sparkRng.nextDouble() * usableHeight,
+        rect.top + topOffset + _sparkRng.nextDouble() * usableHeight,
       );
       attempts++;
       // Steer away from dead-center so it doesn't spawn right on the number.
@@ -120,6 +140,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
     setState(() {
       _sparkPosition = position;
       _sparkKey = UniqueKey();
+      _currentSparkLifetime = tutorial ? _tutorialSparkLifetime : _sparkLifetime;
     });
   }
 
@@ -213,6 +234,17 @@ class _MainGameScreenState extends State<MainGameScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final wantsTutorialSpark = context.select<GameState, bool>(
+        (gs) => gs.tutorialStep == TutorialStep.catchSpark);
+    if (!wantsTutorialSpark) {
+      _tutorialSparkArmed = false;
+    } else if (!_tutorialSparkArmed && _sparkPosition == null) {
+      _tutorialSparkArmed = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _sparkPosition == null) _scheduleNextSpark();
+      });
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -290,7 +322,6 @@ class _MainGameScreenState extends State<MainGameScreen> {
                       if (!data.show) return const SizedBox.shrink();
                       return RepaintBoundary(
                         child: Padding(
-                          key: widget.momentumBarKey,
                           padding:
                               const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 6.0),
                           child: _MomentumProgressBar(
@@ -439,7 +470,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
               top: _sparkPosition!.dy - (NeuralSpark.diameter + 20) / 2,
               child: NeuralSpark(
                 key: _sparkKey,
-                lifetime: _sparkLifetime,
+                lifetime: _currentSparkLifetime,
                 onCaught: _onSparkCaught,
                 onExpire: _onSparkExpired,
               ),

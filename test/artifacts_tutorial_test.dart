@@ -44,6 +44,10 @@ void main() {
     gs.onTutorialTapToContinue();
     expect(gs.tutorialStep, TutorialStep.artifactsEmpower);
 
+    // Ends on a teaser for the Nexus, two prestiges away.
+    gs.onTutorialTapToContinue();
+    expect(gs.tutorialStep, TutorialStep.nexusWhisper);
+
     gs.onTutorialTapToContinue();
     expect(gs.tutorialStep, TutorialStep.done);
     expect(gs.artifactTutorialSeen, isTrue);
@@ -78,6 +82,8 @@ void main() {
     gs.number = gs.prestigeRequirement;
     await gs.prestige();
     gs.setPrestigeAnimating(false);
-    expect(gs.tutorialStep, TutorialStep.done);
+    // Prestige 2 brings the Nexus teaser instead.
+    expect(gs.tutorialStep, isNot(TutorialStep.artifactsIntro));
+    expect(gs.tutorialStep, TutorialStep.nexusSignal);
   });
 }

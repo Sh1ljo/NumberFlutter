@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'achievements_screen.dart';
+import 'guide_screen.dart';
 
 class MoreMenuScreen extends StatelessWidget {
   final Function(int) onMenuItemSelected;
@@ -37,6 +38,19 @@ class MoreMenuScreen extends StatelessWidget {
                   navigator.pop();
                   navigator.push(MaterialPageRoute<void>(
                       builder: (_) => const AchievementsScreen()));
+                },
+                theme: theme,
+              ),
+              const SizedBox(height: 12),
+              _MenuItem(
+                title: 'Guide',
+                description: 'How everything works — and what is still ahead',
+                icon: Icons.menu_book_outlined,
+                onTap: () {
+                  final navigator = Navigator.of(context);
+                  navigator.pop();
+                  navigator.push(MaterialPageRoute<void>(
+                      builder: (_) => const GuideScreen()));
                 },
                 theme: theme,
               ),

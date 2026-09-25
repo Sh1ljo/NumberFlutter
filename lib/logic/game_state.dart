@@ -281,37 +281,42 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   TutorialStep _tutorialStep = TutorialStep.welcome;
   bool _tutorialCompleted = false;
   bool _tutorialNeedsCloudSync = false;
-  // Secondary tutorials run after the main onboarding ends. They reuse the
-  // same overlay and step machine but each has its own "seen" flag so they
-  // fire exactly once and don't roundtrip through cloud profile sync.
+  // Later chapters run after chapter 1 ends. They reuse the same overlay and
+  // step machine but each has its own "seen" flag so they fire exactly once
+  // and don't roundtrip through cloud profile sync.
   bool _nexusTutorialSeen = false;
   bool _neuralTutorialSeen = false;
-  bool _upgradeTutorialSeen = false;
   bool _artifactTutorialSeen = false;
+
+  /// One-shot chapters, tips and teasers already shown (or skipped), keyed
+  /// by their first step.
+  final Set<TutorialStep> _seenBeats = {};
+
   /// Milestones reached just before the most recent prestige, captured at
   /// prestige() time and consumed once the reveal animation finishes. Null
   /// when no prestige is pending a post-animation tutorial check.
   int? _artifactMilestonesBeforePrestige;
   VoidCallback? _onTutorialResetCallback;
 
-  /// Pre-deep-dive progress, restored by [_completeUpgradeTutorial].
-  BigInt? _upgradeTutorialNumberSnapshot;
-  Map<String, int>? _upgradeTutorialLevelSnapshot;
+  /// MainLayout tab on show, as reported through [onMainTabChanged]. Lets a
+  /// "tap PRESTIGE below" step be skipped when the player is already there.
+  int _mainTab = TutorialTab.generators;
 
   TutorialStep get tutorialStep => _tutorialStep;
   bool get tutorialCompleted => _tutorialCompleted;
   bool get isTutorialActive => _tutorialStep != TutorialStep.done;
   bool get nexusTutorialSeen => _nexusTutorialSeen;
   bool get neuralTutorialSeen => _neuralTutorialSeen;
-  bool get upgradeTutorialSeen => _upgradeTutorialSeen;
   bool get artifactTutorialSeen => _artifactTutorialSeen;
+  bool hasSeenTutorialBeat(TutorialStep step) => _seenBeats.contains(step);
 
   /// Test-only: jump straight to a step so the overlay's rendering for it can
   /// be exercised. Does not touch persistence.
   @visibleForTesting
   void debugSetTutorialStep(TutorialStep step) {
     _tutorialStep = step;
-    _tutorialCompleted = step == TutorialStep.done;
+    // Only chapter 1 runs before the onboarding counts as finished.
+    _tutorialCompleted = specFor(step).scope != TutorialScope.main;
     notifyListeners();
   }
 
@@ -330,7 +335,13 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   void setPrestigeAnimating(bool value) {
     isPrestigeAnimating = value;
-    if (!value) _maybeStartArtifactsTutorial();
+    // Prestige only fires partway through its reveal; the "DO IT" spotlight
+    // must not sit dimmed over the animation until then.
+    if (value && specFor(_tutorialStep).scope == TutorialScope.prestige) {
+      _seenBeats.add(TutorialStep.prestigeReady);
+      _tutorialStep = TutorialStep.done;
+    }
+    if (!value) _maybeStartPostPrestigeTutorial();
     notifyListeners();
   }
 
@@ -342,13 +353,48 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _saveState();
   }
 
+  /// When the STABILIZE animation started, or null. Transient.
+  DateTime? _nexusStabilizeStartedAt;
+
+  /// Longer than the stabilize animation. If its screen is left mid-way the
+  /// animation never reports back, so this can't be left set forever.
+  static const Duration _nexusStabilizeGrace = Duration(seconds: 10);
+
+  /// True while the stabilize animation plays. Popups and tutorial cards
+  /// hold off rather than land on top of it.
+  bool get isNexusStabilizing {
+    final started = _nexusStabilizeStartedAt;
+    return started != null &&
+        DateTime.now().difference(started) < _nexusStabilizeGrace;
+  }
+
   void stabilizeNexus() {
     _nexusStabilized = true;
-    if (!_nexusTutorialSeen && _tutorialStep == TutorialStep.done) {
+    _nexusStabilizeStartedAt = null;
+    _seenBeats.add(TutorialStep.nexusAwakens);
+    // A tip that popped up during the stabilize animation gives way: it is
+    // not marked seen, so it simply comes back later. The Nexus chapter
+    // only ever gets this one chance.
+    if (!_nexusTutorialSeen &&
+        (_tutorialStep == TutorialStep.done ||
+            specFor(_tutorialStep).scope == TutorialScope.tips)) {
       _tutorialStep = TutorialStep.nexusIntro;
     }
     notifyListeners();
     _scheduleStateSave();
+  }
+
+  /// The STABILIZE button was pressed. Its animation runs for several
+  /// seconds before [stabilizeNexus]; the spotlight steps out of the way so
+  /// the player actually gets to watch it.
+  void onNexusStabilizeStarted() {
+    _nexusStabilizeStartedAt = DateTime.now();
+    if (_tutorialStep == TutorialStep.nexusAwakens ||
+        _tutorialStep == TutorialStep.navPrestigeForNexus ||
+        _tutorialStep == TutorialStep.nexusStabilize) {
+      _tutorialStep = TutorialStep.done;
+      notifyListeners();
+    }
   }
 
   Timer? _ticker;
@@ -789,9 +835,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         ),
       ];
     }
+    if (nodeId == 'neural_genesis') {
+      // Nothing left to tease once the network is awake.
+      _seenBeats
+        ..add(TutorialStep.neuralWhisper)
+        ..add(TutorialStep.neuralGenesisReady);
+    }
     if (nodeId == 'neural_genesis' &&
         !_neuralTutorialSeen &&
-        _tutorialStep == TutorialStep.done) {
+        (_tutorialStep == TutorialStep.done ||
+            specFor(_tutorialStep).scope == TutorialScope.tips)) {
       // Exactly what the three guided actions cost. This used to be a flat
       // 100M, most of which the tutorial never asked the player to spend.
       number += neuralTutorialGrant;
@@ -801,6 +854,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _tutorialStep == TutorialStep.nexusResearchOptProtocol) {
       _tutorialStep = TutorialStep.nexusGoal;
     }
+    _maybeStartNexusTeaser(node);
     _checkAchievements();
     notifyListeners();
     _saveState();
@@ -1002,16 +1056,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Clicks made while `triggerProbabilityStrike` is the active step.
-  int _tutorialStrikeClicks = 0;
-
-  /// After this many clicks the tutorial forces a strike.
-  ///
-  /// The step is gated on a 5% roll, so the expected wait is ~20 clicks but
-  /// the tail is unbounded — and the step renders no SKIP-bearing dim, so an
-  /// unlucky player could sit there indefinitely.
-  static const int tutorialStrikePityClicks = 25;
-
   /// Set by [branchNeuron] during the neural tutorial, flushed by
   /// [onNeuronSheetDismissed] once the detail sheet is gone.
   bool _pendingNeuralAccuracyStep = false;
@@ -1029,11 +1073,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       _scheduleStateSave();
     }
-  }
-
-  bool get _tutorialForcesStrike {
-    if (_tutorialStep != TutorialStep.triggerProbabilityStrike) return false;
-    return _tutorialStrikeClicks >= tutorialStrikePityClicks;
   }
 
   // ── end Neural Network ────────────────────────────────────────────────
@@ -1204,14 +1243,110 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _saveState();
   }
 
-  /// Resolve a persisted step by name, falling back to the start of the
-  /// tutorial for anything unrecognised (older save, renamed enum value).
-  static TutorialStep _tutorialStepFromName(String? name) {
-    if (name == null || name.isEmpty) return TutorialStep.welcome;
+  /// Resolve a persisted step by name; null for anything unrecognised.
+  static TutorialStep? _tutorialStepFromName(String? name) {
+    if (name == null || name.isEmpty) return null;
     for (final step in TutorialStep.values) {
       if (step.name == name) return step;
     }
-    return TutorialStep.welcome;
+    return null;
+  }
+
+  /// Restores tutorial progress from a loaded save. Runs after the rest of
+  /// the save is in place, since the backfill reads prestige count, the
+  /// Nexus and the network.
+  void _restoreTutorialState(Map<String, dynamic> data) {
+    _tutorialCompleted = (data['tutorialCompleted'] as bool?) ?? false;
+    _nexusTutorialSeen = (data['nexusTutorialSeen'] as bool?) ?? false;
+    _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
+    _artifactTutorialSeen = (data['artifactTutorialSeen'] as bool?) ?? false;
+
+    final savedBeats = data['tutorialBeatsSeen'] as List<String>?;
+    _seenBeats.clear();
+    for (final name in savedBeats ?? const <String>[]) {
+      final step = _tutorialStepFromName(name);
+      if (step != null) _seenBeats.add(step);
+    }
+
+    final stepName = data['tutorialStep'] as String?;
+    final saved = _tutorialStepFromName(stepName);
+    final legacyStep = legacyTutorialStepNames.contains(stepName);
+    if (_tutorialCompleted) {
+      // Resume a later chapter the app was killed in the middle of — they
+      // fire on one-time events, so dropping one here would lose it for
+      // good. Chapter 1 steps cannot apply once it is finished.
+      _tutorialStep = saved != null && specFor(saved).scope != TutorialScope.main
+          ? saved
+          : TutorialStep.done;
+    } else if (saved != null && specFor(saved).scope == TutorialScope.main) {
+      // Mid chapter 1: resume exactly where the player left off.
+      _tutorialStep = saved;
+    } else if (saved != null || legacyStep) {
+      // An older build's onboarding ran past its first minute (upgrade
+      // deep-dive, prestige cards) before calling itself complete. That
+      // player has done everything chapter 1 teaches.
+      if (legacyStep &&
+          prestigeCount == 0 &&
+          number >= _legacyUpgradeTutorialGrant &&
+          stepName != 'learnPrestige' &&
+          stepName != 'goodLuck') {
+        // Builds before the deep-dive snapshot baked its 100M grant into
+        // the save. It only ever ran minutes into a new game, so a balance
+        // that large is the grant — take it back.
+        number -= _legacyUpgradeTutorialGrant;
+        highestNumber = number;
+        _upgradeById(probabilityStrikeId)?.level = 0;
+        _upgradeById(momentumId)?.level = 0;
+        _recalculateDerivedStatsFromUpgrades();
+      }
+      _tutorialCompleted = true;
+      _tutorialNeedsCloudSync = true;
+      _tutorialStep = TutorialStep.done;
+    } else {
+      _tutorialStep = TutorialStep.welcome;
+    }
+
+    if (savedBeats == null && _tutorialCompleted) {
+      _backfillSeenBeats(
+        legacyDeepDiveSeen:
+            (data['upgradeTutorialSeen'] as bool?) == true || legacyStep,
+      );
+    }
+  }
+
+  /// The flat grant very old builds added to `number` for the upgrade
+  /// deep-dive. Only used to repair saves written by those builds.
+  static final BigInt _legacyUpgradeTutorialGrant = BigInt.from(100000000);
+
+  /// Marks every tip and teaser the player is already past as seen. Used
+  /// for progress that arrives without a record of which cards were shown —
+  /// a save from before they existed, or a cloud restore on a new device —
+  /// so a veteran isn't walked through things they already know.
+  void _backfillSeenBeats({bool legacyDeepDiveSeen = false}) {
+    if (legacyDeepDiveSeen || prestigeCount >= 1) {
+      _seenBeats.addAll(const [
+        TutorialStep.tipAdvisor,
+        TutorialStep.tipProbabilityStrike,
+        TutorialStep.tipMomentum,
+        TutorialStep.tipKineticSynergy,
+        TutorialStep.tipOverclock,
+      ]);
+    }
+    if (prestigeCount >= 1) _seenBeats.add(TutorialStep.prestigeReady);
+    if (prestigeCount >= 2) _seenBeats.add(TutorialStep.nexusSignal);
+    if (_nexusStabilized) _seenBeats.add(TutorialStep.nexusAwakens);
+    if (prestigeCount >= minPrestigeForUpgrade(temporalCollapseId)) {
+      _seenBeats.add(TutorialStep.tipTemporalCollapse);
+    }
+    if (neuralNetworkUnlocked) {
+      _seenBeats
+        ..add(TutorialStep.neuralWhisper)
+        ..add(TutorialStep.neuralGenesisReady);
+    }
+    if (prestigeCount >= deepLayerPrestigeGates.first) {
+      _seenBeats.add(TutorialStep.tipDeepLayers);
+    }
+    if (neuralNetwork.epochs > 0) _seenBeats.add(TutorialStep.tipEpoch);
   }
 
   Future<void> _init() async {
@@ -1279,22 +1414,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         node.level = (nexusLevelMap[node.id] ?? 0).clamp(0, node.maxLevel);
       }
 
-      _tutorialCompleted = (data['tutorialCompleted'] as bool?) ?? false;
-      if (_tutorialCompleted) {
-        _tutorialStep = TutorialStep.done;
-      } else {
-        // Resume exactly where the player left off. The step used to be the
-        // one piece of tutorial state never saved, so any app kill restarted
-        // the main tutorial from `welcome` — and permanently lost the nexus
-        // and neural tutorials, since both fire on one-time events.
-        _tutorialStep = _tutorialStepFromName(data['tutorialStep'] as String?);
-      }
-      _nexusTutorialSeen = (data['nexusTutorialSeen'] as bool?) ?? false;
-      _neuralTutorialSeen = (data['neuralTutorialSeen'] as bool?) ?? false;
-      _upgradeTutorialSeen = (data['upgradeTutorialSeen'] as bool?) ?? false;
-      _artifactTutorialSeen = (data['artifactTutorialSeen'] as bool?) ?? false;
-      _resumeInterruptedUpgradeTutorial();
-
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
       lifetimeClicks = (data['lifetimeClicks'] as int?) ?? 0;
@@ -1330,6 +1449,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
           neuralNetwork = NeuralNetwork.initial();
         }
       }
+
+      _restoreTutorialState(data);
 
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
@@ -1445,6 +1566,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       if (_tickArtifacts()) hasStateChange = true;
+      // Twice a second is plenty for a card that waits on a balance.
+      if (timer.tick % 5 == 0 && _checkTutorialTriggers()) {
+        hasStateChange = true;
+      }
       if (timer.tick % 10 == 0 && _checkAchievements()) {
         hasStateChange = true;
       }
@@ -1886,13 +2011,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _activateOverclock();
     }
 
-    if (_tutorialStep == TutorialStep.triggerProbabilityStrike) {
-      _tutorialStrikeClicks++;
-    }
     final bool probabilityStrikeTriggered =
         _isUpgradeActive(probabilityStrikeId) &&
-            (_rng.nextDouble() < _probabilityStrikeChance ||
-                _tutorialForcesStrike);
+            _rng.nextDouble() < _probabilityStrikeChance;
 
     final baseClickGain = clickPower.toDouble() *
         prestigeMultiplier *
@@ -1932,14 +2053,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     number += gained;
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
-    if (probabilityStrikeTriggered &&
-        _tutorialStep == TutorialStep.triggerProbabilityStrike) {
-      _tutorialStrikeClicks = 0;
-      _tutorialStep = TutorialStep.navUpgradesForMomentum;
-    }
-    if (_tutorialStep == TutorialStep.demonstrateMomentum && _momentumProgress >= 1.0) {
-      _tutorialStep = TutorialStep.navUpgradesForSpecial;
-    }
+    _checkTutorialTriggers();
     final personalBestReached = highestNumber > previousHighest;
 
     // The number always changes on a click, so this always notifies;
@@ -1992,6 +2106,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _neuralSparkBoostTimer?.cancel();
     _neuralSparkBoostMultiplier = multiplier;
     _unlockAchievement(Achievements.sparkCatcher);
+    if (_tutorialStep == TutorialStep.catchSpark) {
+      _tutorialStep = TutorialStep.roadAhead;
+      _scheduleStateSave();
+    }
     notifyListeners();
 
     _neuralSparkBoostTimer = Timer(duration, () {
@@ -2260,11 +2378,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     int toBuy;
-    if (isUpgradeDeepDiveActive) {
-      // The deep-dive budget covers exactly one level of each guided
-      // upgrade; a 10X or NEXT selection would price it out of reach.
-      toBuy = 1;
-    } else if (buyAmount == -1) {
+    if (buyAmount == -1) {
       toBuy = 999999;
     } else if (buyAmount == -2) {
       final nextMilestone = upgradeMilestoneThresholds
@@ -2288,7 +2402,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       toBuy = math.min(toBuy, remainingLevels);
     }
 
-    final isMaxMode = buyAmount == -1 && !isUpgradeDeepDiveActive;
+    final isMaxMode = buyAmount == -1;
     int bought = 0;
     BigInt totalCost = BigInt.zero;
     BigInt remainingNumber = number;
@@ -2393,8 +2507,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _canBuy(Upgrade upgrade) =>
       !upgrade.isMaxed &&
-      prestigeCount >= minPrestigeForUpgrade(upgrade.id) &&
-      !tutorialBlocksPurchase(upgrade.id);
+      prestigeCount >= minPrestigeForUpgrade(upgrade.id);
 
   void buyUpgrade(String id) {
     final upgrade = upgrades.firstWhere((u) => u.id == id);
@@ -2736,10 +2849,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   static const int _recommendationRefreshMs = 1000;
 
   /// The advisor hides while onboarding is steering purchases.
-  bool get _tutorialSteersPurchases {
-    final scope = specFor(_tutorialStep).scope;
-    return scope == TutorialScope.main || scope == TutorialScope.upgrades;
-  }
+  bool get _tutorialSteersPurchases =>
+      specFor(_tutorialStep).scope == TutorialScope.main;
 
   /// The single best purchase right now, and how many levels of it.
   ///
@@ -2954,7 +3065,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    _completeTutorialOnPrestige();
+    // However the player got here, the prestige chapter has done its job.
+    _seenBeats.add(TutorialStep.prestigeReady);
+    if (specFor(_tutorialStep).scope == TutorialScope.prestige) {
+      _tutorialStep = TutorialStep.done;
+    }
     _checkAchievements();
     _startTicker();
     notifyListeners();
@@ -3029,24 +3144,20 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _overclockCoreElapsed = 0.0;
     _compoundVaultElapsed = 0.0;
     neuralNetwork = NeuralNetwork.initial();
-    _upgradeTutorialNumberSnapshot = null;
-    _upgradeTutorialLevelSnapshot = null;
     if (!preserveTutorial) {
       _tutorialCompleted = false;
       _tutorialStep = TutorialStep.welcome;
       _tutorialNeedsCloudSync = false;
       _nexusTutorialSeen = false;
       _neuralTutorialSeen = false;
-      _upgradeTutorialSeen = false;
       _artifactTutorialSeen = false;
+      _seenBeats.clear();
+      _mainTab = TutorialTab.generators;
     }
     _recalculateDerivedStatsFromUpgrades();
   }
 
   void _updateHighestNumber() {
-    // The deep-dive balance is borrowed: it must not set a personal best,
-    // unlock a number achievement or announce upgrades as affordable.
-    if (isUpgradeDeepDiveActive) return;
     if (number > highestNumber) {
       highestNumber = number;
     }
@@ -3054,10 +3165,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   PlayerProgress _buildLocalProgress(String userId) {
-    // During the upgrade deep-dive these are the pre-tutorial values, so the
-    // borrowed budget can't reach the cloud or the leaderboard.
-    final upgradedLevels = _persistableUpgradeLevels;
-    final number = _persistableNumber;
+    final upgradedLevels = <String, int>{
+      for (final upgrade in upgrades) upgrade.id: upgrade.level,
+    };
     final nexusLevelMap = <String, int>{
       for (final node in researchNodes) node.id: node.level,
     };
@@ -3093,11 +3203,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _applyCloudProgress(PlayerProgress progress) {
-    // The cloud copy is real progress and supersedes the deep-dive snapshot;
-    // the deep-dive restarts on top of it below.
-    final restartDeepDive = isUpgradeDeepDiveActive;
-    _upgradeTutorialNumberSnapshot = null;
-    _upgradeTutorialLevelSnapshot = null;
     number = progress.number;
     clickPower = progress.clickPower > BigInt.zero
         ? progress.clickPower
@@ -3176,9 +3281,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _neuralSparkBoostTimer?.cancel();
     _clearShopTimedBoosts();
 
-    if (restartDeepDive && _isUpgradeTutorialStep(_tutorialStep)) {
-      _startUpgradeTutorial();
-    }
+    // The cloud copy carries no record of which tutorial cards were shown;
+    // don't walk a returning player through what they are already past.
+    if (_tutorialCompleted) _backfillSeenBeats();
   }
 
   /// Starts watching device connectivity so the game can retry the cloud
@@ -3256,21 +3361,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void _queueNexusReadyNotice(int oldCount, int newCount) {
     if (!_nexusStabilized && oldCount < 3 && newCount >= 3) {
       _pendingUnlockNotices.add(nexusReadyNoticeId);
-    }
-  }
-
-  /// Starts the (once-ever) Artifacts tutorial once the prestige reveal
-  /// animation finishes, if that prestige just crossed the first artifact
-  /// milestone. Mirrors how the Nexus/Neural sub-tutorials fire off a real
-  /// gameplay event, but deferred past the animation so the card doesn't pop
-  /// up over it — see the capture site in [prestige].
-  void _maybeStartArtifactsTutorial() {
-    final before = _artifactMilestonesBeforePrestige;
-    _artifactMilestonesBeforePrestige = null;
-    if (before == null) return;
-    if (_artifactTutorialSeen || _tutorialStep != TutorialStep.done) return;
-    if (before == 0 && ArtifactState.milestonesReached(prestigeCount) > 0) {
-      _tutorialStep = TutorialStep.artifactsIntro;
     }
   }
 
@@ -3368,13 +3458,15 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _writeState({required bool skipCloudUpload}) async {
     _updateHighestNumber();
     await _storageService.saveGame(
-      number: _persistableNumber,
+      number: number,
       clickPower: clickPower,
       autoClickRate: autoClickRate,
       prestigeCurrency: prestigeCurrency,
       prestigeMultiplier: prestigeMultiplier,
       prestigeCount: prestigeCount,
-      upgradeLevels: _persistableUpgradeLevels,
+      upgradeLevels: {
+        for (final upgrade in upgrades) upgrade.id: upgrade.level,
+      },
       highestNumber: highestNumber,
       nexusLevels: {
         for (final node in researchNodes) node.id: node.level,
@@ -3383,8 +3475,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       tutorialStep: _tutorialStep.name,
       nexusTutorialSeen: _nexusTutorialSeen,
       neuralTutorialSeen: _neuralTutorialSeen,
-      upgradeTutorialSeen: _upgradeTutorialSeen,
       artifactTutorialSeen: _artifactTutorialSeen,
+      tutorialBeatsSeen: [for (final step in _seenBeats) step.name]..sort(),
       nexusStabilized: _nexusStabilized,
       neuralNetworkJson: neuralNetwork.toJsonString(),
       testEnvironmentEnabled: _testEnvironmentEnabled,
@@ -3486,11 +3578,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_tutorialCompleted) return;
-    // Ending the tutorial from another device mid-deep-dive must still hand
-    // back the borrowed budget.
-    _restoreUpgradeTutorialSnapshot();
     _tutorialCompleted = true;
     _tutorialStep = TutorialStep.done;
+    // Finished on another device: skip whatever this progress is past.
+    _backfillSeenBeats();
     notifyListeners();
     _scheduleStateSave();
   }
@@ -3522,251 +3613,128 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// Moves to [step]. A "tap X below" step is passed straight through when
+  /// the player is already on X: the nav bar ignores a tap on the current
+  /// tab, so the step could otherwise never advance.
+  void _enterStep(TutorialStep step) {
+    _tutorialStep = step;
+    final spec = specFor(step);
+    if (spec.mode == TutorialMode.passthroughHint) {
+      final next = _stepAfterTab(step, _mainTab);
+      if (next != null) _tutorialStep = next;
+    }
+    _applyStepSideEffects(_tutorialStep);
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  /// Puts the Upgrades screen on the category a step's target lives under.
+  void _applyStepSideEffects(TutorialStep step) {
+    final category = specFor(step).requiredCategory;
+    if (category != null && step != TutorialStep.buyAutoClicker) {
+      selectedUpgradeCategory = category;
+    }
+  }
+
+  /// Where a nav step leads once the player is on [tab], or null if [tab]
+  /// isn't the one it asks for.
+  static TutorialStep? _stepAfterTab(TutorialStep step, int tab) {
+    switch (step) {
+      case TutorialStep.navUpgrades:
+        return tab == TutorialTab.upgrades ? TutorialStep.selectIdle : null;
+      case TutorialStep.navGenerators:
+        return tab == TutorialTab.generators ? TutorialStep.watchIdle : null;
+      case TutorialStep.navUpgradesForClick:
+        return tab == TutorialTab.upgrades ? TutorialStep.buyClickPower : null;
+      case TutorialStep.navGeneratorsForSpark:
+        return tab == TutorialTab.generators ? TutorialStep.catchSpark : null;
+      case TutorialStep.navPrestige:
+        return tab == TutorialTab.prestige
+            ? TutorialStep.learnPrestigeDetails
+            : null;
+      case TutorialStep.navPrestigeForNexus:
+        return tab == TutorialTab.prestige ? TutorialStep.nexusStabilize : null;
+      case TutorialStep.navNeural:
+        return tab == TutorialTab.neural ? TutorialStep.neuralIntro : null;
+      default:
+        return null;
+    }
+  }
+
   void onTutorialTapToContinue() {
-    if (_tutorialStep == TutorialStep.welcome) {
-      _tutorialStep = TutorialStep.clickToFifty;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.learnPrestige) {
-      _tutorialStep = TutorialStep.navPrestige;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.learnPrestigeDetails) {
-      _tutorialStep = TutorialStep.prestigeMultiplierHint;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.prestigeMultiplierHint) {
-      _tutorialStep = TutorialStep.prestigeGainHint;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.prestigeGainHint) {
-      _tutorialStep = TutorialStep.goodLuck;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.goodLuck) {
-      unawaited(completeTutorialAndReset());
-    } else if (_tutorialStep == TutorialStep.nexusIntro) {
-      _tutorialStep = TutorialStep.nexusUpgrades;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.nexusUpgrades) {
-      _tutorialStep = TutorialStep.nexusResearchOptProtocol;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.nexusGoal) {
-      _completeNexusTutorial();
-    } else if (_tutorialStep == TutorialStep.neuralUnlocked) {
-      _tutorialStep = TutorialStep.navNeural;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.neuralIntro) {
-      _tutorialStep = TutorialStep.neuralTapNeuron;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.neuralViewAccuracy) {
-      _tutorialStep = TutorialStep.neuralAccuracyLimit;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.neuralAccuracyLimit) {
-      _completeNeuralTutorial();
-    } else if (_tutorialStep == TutorialStep.upgradeIntro) {
-      _tutorialStep = TutorialStep.probabilityStrikeIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.probabilityStrikeIntro) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.buyProbabilityStrike;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyProbabilityStrike) {
-      _tutorialStep = TutorialStep.navGeneratorsForStrike;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navGeneratorsForStrike) {
-      _tutorialStep = TutorialStep.triggerProbabilityStrike;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.triggerProbabilityStrike) {
-      _tutorialStep = TutorialStep.momentumIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.momentumIntro) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.buyMomentum;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyMomentum) {
-      _tutorialStep = TutorialStep.demonstrateMomentum;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.demonstrateMomentum) {
-      _tutorialStep = TutorialStep.navUpgradesForSpecial;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navUpgradesForSpecial) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.kineticSynergyIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.kineticSynergyIntro) {
-      _tutorialStep = TutorialStep.overclockIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.overclockIntro) {
-      _tutorialStep = TutorialStep.upgradesDone;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.upgradesDone) {
-      _completeUpgradeTutorial();
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.artifactsIntro) {
-      _tutorialStep = TutorialStep.artifactsEmpower;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.artifactsEmpower) {
-      _completeArtifactsTutorial();
+    switch (_tutorialStep) {
+      case TutorialStep.welcome:
+        _enterStep(TutorialStep.clickToFifty);
+      case TutorialStep.roadAhead:
+        _finishFirstChapter(reward: true);
+      case TutorialStep.prestigeReady:
+        _enterStep(TutorialStep.navPrestige);
+      case TutorialStep.learnPrestigeDetails:
+        _enterStep(TutorialStep.prestigeMultiplierHint);
+      case TutorialStep.prestigeMultiplierHint:
+        _enterStep(TutorialStep.prestigeGainHint);
+      case TutorialStep.prestigeGainHint:
+        _enterStep(TutorialStep.doPrestige);
+      case TutorialStep.artifactsIntro:
+        _enterStep(TutorialStep.artifactsEmpower);
+      case TutorialStep.artifactsEmpower:
+        // The Nexus teaser only makes sense while it is still ahead.
+        if (_nexusStabilized || prestigeCount >= nexusPrestigeRequirement) {
+          _completeArtifactsTutorial();
+        } else {
+          _enterStep(TutorialStep.nexusWhisper);
+        }
+      case TutorialStep.nexusWhisper:
+        _completeArtifactsTutorial();
+      case TutorialStep.nexusAwakens:
+        _enterStep(TutorialStep.navPrestigeForNexus);
+      case TutorialStep.nexusIntro:
+        _enterStep(TutorialStep.nexusUpgrades);
+      case TutorialStep.nexusUpgrades:
+        _enterStep(TutorialStep.nexusResearchOptProtocol);
+      case TutorialStep.nexusGoal:
+        _completeNexusTutorial();
+      case TutorialStep.neuralUnlocked:
+        _enterStep(TutorialStep.navNeural);
+      case TutorialStep.neuralIntro:
+        _enterStep(TutorialStep.neuralTapNeuron);
+      case TutorialStep.neuralViewAccuracy:
+        _enterStep(TutorialStep.neuralAccuracyLimit);
+      case TutorialStep.neuralAccuracyLimit:
+        _completeNeuralTutorial();
+      default:
+        if (specFor(_tutorialStep).scope == TutorialScope.tips) {
+          _finishBeat(_tutorialStep);
+        }
     }
   }
 
-  bool _isNexusTutorialStep(TutorialStep step) {
-    return step == TutorialStep.nexusIntro ||
-        step == TutorialStep.nexusUpgrades ||
-        step == TutorialStep.nexusResearchOptProtocol ||
-        step == TutorialStep.nexusGoal;
+  /// Prestiges needed before the Nexus can be stabilized.
+  static const int nexusPrestigeRequirement = 3;
+
+  /// Ends chapter 1. Finishing it (rather than skipping) earns a Spark
+  /// Surge, which doubles as the player's first look at a shop boost.
+  void _finishFirstChapter({required bool reward}) {
+    _tutorialCompleted = true;
+    _tutorialStep = TutorialStep.done;
+    _tutorialNeedsCloudSync = true;
+    if (reward) _activateShopSparkSurge();
+    notifyListeners();
+    _scheduleStateSave();
+    unawaited(syncTutorialCompletedToProfileIfNeeded());
   }
 
-  bool _isArtifactsTutorialStep(TutorialStep step) {
-    return step == TutorialStep.artifactsIntro ||
-        step == TutorialStep.artifactsEmpower;
-  }
-
-  bool _isNeuralTutorialStep(TutorialStep step) {
-    return step == TutorialStep.neuralUnlocked ||
-        step == TutorialStep.navNeural ||
-        step == TutorialStep.neuralIntro ||
-        step == TutorialStep.neuralTapNeuron ||
-        step == TutorialStep.neuralUpgradeGradient ||
-        step == TutorialStep.neuralChangeActivation ||
-        step == TutorialStep.neuralBranchNeuron ||
-        step == TutorialStep.neuralViewAccuracy ||
-        step == TutorialStep.neuralAccuracyLimit;
-  }
-
-  bool _isUpgradeTutorialStep(TutorialStep step) {
-    return step == TutorialStep.upgradeIntro ||
-        step == TutorialStep.probabilityStrikeIntro ||
-        step == TutorialStep.buyProbabilityStrike ||
-        step == TutorialStep.navGeneratorsForStrike ||
-        step == TutorialStep.triggerProbabilityStrike ||
-        step == TutorialStep.navUpgradesForMomentum ||
-        step == TutorialStep.momentumIntro ||
-        step == TutorialStep.buyMomentum ||
-        step == TutorialStep.navGeneratorsForMomentum ||
-        step == TutorialStep.demonstrateMomentum ||
-        step == TutorialStep.navUpgradesForSpecial ||
-        step == TutorialStep.kineticSynergyIntro ||
-        step == TutorialStep.overclockIntro ||
-        step == TutorialStep.upgradesDone;
-  }
-
-  /// The flat grant older builds added to `number` for the deep-dive. Only
-  /// used to repair saves written by those builds.
-  static final BigInt _legacyUpgradeTutorialGrant = BigInt.from(100000000);
-
-  /// True while the upgrade deep-dive is running on borrowed numbers.
-  bool get isUpgradeDeepDiveActive => _upgradeTutorialNumberSnapshot != null;
-
-  /// Exactly what the deep-dive asks the player to buy: one level each of
-  /// Probability Strike and Momentum, at their current price.
-  ///
-  /// It used to be a flat 100M — the whole first prestige requirement.
-  /// Anything left over was free money, and because the snapshot lived only
-  /// in memory, killing the app mid-deep-dive kept all of it.
-  BigInt get upgradeTutorialGrant {
-    BigInt nextCost(String id) {
-      final u = _upgradeById(id);
-      if (u == null || u.isMaxed) return BigInt.zero;
-      return _costOfLevels(u, u.level, 1);
-    }
-
-    return nextCost(probabilityStrikeId) + nextCost(momentumId);
-  }
-
-  /// The one purchase the current deep-dive step asks for, if any.
-  String? get _upgradeTutorialPurchaseTarget {
-    if (_tutorialStep == TutorialStep.buyProbabilityStrike) {
-      return probabilityStrikeId;
-    }
-    if (_tutorialStep == TutorialStep.buyMomentum) return momentumId;
-    return null;
-  }
-
-  /// Whether the tutorial currently forbids buying [id]. During the
-  /// deep-dive the budget is exact, so any other purchase would strand the
-  /// player one upgrade short.
-  bool tutorialBlocksPurchase(String id) {
-    if (!isUpgradeDeepDiveActive) return false;
-    return _upgradeTutorialPurchaseTarget != id;
-  }
-
-  /// Upgrade levels as they should be persisted: during the deep-dive that
-  /// is the pre-tutorial snapshot, never the borrowed levels.
-  Map<String, int> get _persistableUpgradeLevels =>
-      _upgradeTutorialLevelSnapshot ??
-      {for (final upgrade in upgrades) upgrade.id: upgrade.level};
-
-  BigInt get _persistableNumber => _upgradeTutorialNumberSnapshot ?? number;
-
-  void _startUpgradeTutorial() {
-    // Only show the upgrade tutorial once during the main tutorial.
-    if (_upgradeTutorialSeen) {
-      _tutorialStep = TutorialStep.learnPrestige;
-      return;
-    }
-
-    // Snapshot what the player actually had, so finishing (or skipping) the
-    // sub-tutorial restores it rather than zeroing everything. Saves and
-    // cloud uploads write this snapshot for as long as the deep-dive runs,
-    // so the borrowed budget never reaches storage.
-    _upgradeTutorialNumberSnapshot = number;
-    _upgradeTutorialLevelSnapshot = {
-      for (final u in upgrades) u.id: u.level,
-    };
-
-    // The balance is replaced, not topped up: exactly enough for the two
-    // guided purchases and nothing else.
-    number = upgradeTutorialGrant;
-    _tutorialStep = TutorialStep.upgradeIntro;
-  }
-
-  /// Puts back the pre-deep-dive number and levels, without moving the step.
-  void _restoreUpgradeTutorialSnapshot() {
-    final numberSnapshot = _upgradeTutorialNumberSnapshot;
-    final levelSnapshot = _upgradeTutorialLevelSnapshot;
-    if (numberSnapshot != null) {
-      number = numberSnapshot;
-    }
-    if (levelSnapshot != null) {
-      for (final u in upgrades) {
-        final restored = levelSnapshot[u.id] ?? 0;
-        u.level = u.maxLevel == -1 ? restored : restored.clamp(0, u.maxLevel);
-      }
-    }
-    _upgradeTutorialNumberSnapshot = null;
-    _upgradeTutorialLevelSnapshot = null;
-    _recalculateDerivedStatsFromUpgrades();
-  }
-
-  void _completeUpgradeTutorial() {
-    // Restore the pre-tutorial snapshot: the grant and anything bought with
-    // it goes away, but progress the player earned themselves survives.
-    _restoreUpgradeTutorialSnapshot();
-    // Set only now that the sub-tutorial has actually finished. Setting it at
-    // the start meant an app kill mid-deep-dive short-circuited straight to
-    // learnPrestige on relaunch, and the grant was never clawed back.
-    _upgradeTutorialSeen = true;
-    _tutorialStep = TutorialStep.learnPrestige;
-  }
-
-  /// Called on load. The save holds the real, pre-deep-dive progress (see
-  /// [_persistableNumber]), so a deep-dive interrupted by an app kill simply
-  /// starts over from its first card with a fresh budget.
-  void _resumeInterruptedUpgradeTutorial() {
-    if (!_isUpgradeTutorialStep(_tutorialStep)) return;
-    // Saves from older builds baked the 100M grant into `number`. The
-    // deep-dive only ever runs in the first minutes of a brand-new game, so
-    // a real balance anywhere near that is impossible — take it back.
-    if (prestigeCount == 0 && number >= _legacyUpgradeTutorialGrant) {
-      number -= _legacyUpgradeTutorialGrant;
-      highestNumber = number;
-      _upgradeById(probabilityStrikeId)?.level = 0;
-      _upgradeById(momentumId)?.level = 0;
-      _recalculateDerivedStatsFromUpgrades();
-    }
-    _upgradeTutorialSeen = false;
-    _startUpgradeTutorial();
+  /// Ends a one-shot chapter, tip or teaser keyed by [beat].
+  void _finishBeat(TutorialStep beat) {
+    _seenBeats.add(beat);
+    _tutorialStep = TutorialStep.done;
+    notifyListeners();
+    _scheduleStateSave();
   }
 
   void _completeNexusTutorial() {
     _nexusTutorialSeen = true;
+    _seenBeats.add(TutorialStep.nexusAwakens);
     _tutorialStep = TutorialStep.done;
     notifyListeners();
     _scheduleStateSave();
@@ -3786,103 +3754,60 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleStateSave();
   }
 
+  /// Ends whatever is on screen, and only that: skipping chapter 1 does not
+  /// opt out of the chapters that explain systems the player hasn't met.
   void skipTutorial() {
-    if (_isNexusTutorialStep(_tutorialStep)) {
-      _completeNexusTutorial();
-      return;
+    final step = _tutorialStep;
+    switch (specFor(step).scope) {
+      case TutorialScope.main:
+        _finishFirstChapter(reward: false);
+      case TutorialScope.prestige:
+        _finishBeat(TutorialStep.prestigeReady);
+      case TutorialScope.artifacts:
+        _completeArtifactsTutorial();
+      case TutorialScope.nexus:
+        _completeNexusTutorial();
+      case TutorialScope.neural:
+        _completeNeuralTutorial();
+      case TutorialScope.tips:
+        _finishBeat(step);
+      case TutorialScope.none:
+        return;
     }
-    if (_isNeuralTutorialStep(_tutorialStep)) {
-      _completeNeuralTutorial();
-      return;
-    }
-    if (_isArtifactsTutorialStep(_tutorialStep)) {
-      _completeArtifactsTutorial();
-      return;
-    }
-    if (_isUpgradeTutorialStep(_tutorialStep)) {
-      // Restore the snapshot, then leave the tutorial entirely. This used to
-      // drop the player at learnPrestige, so SKIP needed up to four presses
-      // to actually escape.
-      _completeUpgradeTutorial();
-      _tutorialCompleted = true;
-      _tutorialStep = TutorialStep.done;
-      _tutorialNeedsCloudSync = true;
-      notifyListeners();
-      _scheduleStateSave();
-      unawaited(syncTutorialCompletedToProfileIfNeeded());
-      return;
-    }
-    _tutorialCompleted = true;
-    _tutorialStep = TutorialStep.done;
-    _tutorialNeedsCloudSync = true;
-    notifyListeners();
-    _scheduleStateSave();
-    unawaited(syncTutorialCompletedToProfileIfNeeded());
   }
 
   void onMainTabChanged(int index) {
-    if (_tutorialStep == TutorialStep.navUpgrades && index == 1) {
-      _tutorialStep = TutorialStep.selectIdle;
+    _mainTab = index;
+    final next = _stepAfterTab(_tutorialStep, index);
+    if (next != null) {
+      _tutorialStep = next;
+      _applyStepSideEffects(next);
       notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navGenerators && index == 0) {
-      _tutorialStep = TutorialStep.watchIdle;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navUpgradesForClick &&
-        index == 1) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.buyClickPower;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navPrestige && index == 2) {
-      _tutorialStep = TutorialStep.learnPrestigeDetails;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navNeural && index == 3) {
-      _tutorialStep = TutorialStep.neuralIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navGeneratorsForStrike &&
-        index == 0) {
-      _tutorialStep = TutorialStep.triggerProbabilityStrike;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navUpgradesForMomentum &&
-        index == 1) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.momentumIntro;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navGeneratorsForMomentum &&
-        index == 0) {
-      _tutorialStep = TutorialStep.demonstrateMomentum;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.navUpgradesForSpecial &&
-        index == 1) {
-      selectedUpgradeCategory = clickCategory;
-      _tutorialStep = TutorialStep.kineticSynergyIntro;
-      notifyListeners();
+      _scheduleStateSave();
+      return;
+    }
+    // First visit to UPGRADES after chapter 1: introduce the advisor, as
+    // long as it has something to point at.
+    if (index == TutorialTab.upgrades &&
+        _tutorialStep == TutorialStep.done &&
+        _tutorialCompleted &&
+        !_seenBeats.contains(TutorialStep.tipAdvisor) &&
+        recommendedUpgrade != null) {
+      _enterStep(TutorialStep.tipAdvisor);
     }
     // No `else` for other tabs on purpose: the overlay reads
     // TutorialStepSpec.requiredTab and shows only SKIP when the player is
     // somewhere the current step doesn't apply, rather than pointing a
     // spotlight at a nav item while a different screen is on show.
-    //
-    // (A `goodLuck && index == 0` branch used to live here that assigned the
-    // step to itself — dead code.)
   }
 
   void _advanceTutorialOnPurchase(String upgradeId) {
     if (_tutorialStep == TutorialStep.buyAutoClicker &&
         upgradeId == autoClickerId) {
-      _tutorialStep = TutorialStep.navGenerators;
-      notifyListeners();
+      _enterStep(TutorialStep.navGenerators);
     } else if (_tutorialStep == TutorialStep.buyClickPower &&
         upgradeId == clickPowerId) {
-      _startUpgradeTutorial();
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyProbabilityStrike &&
-        upgradeId == probabilityStrikeId) {
-      _tutorialStep = TutorialStep.navGeneratorsForStrike;
-      notifyListeners();
-    } else if (_tutorialStep == TutorialStep.buyMomentum &&
-        upgradeId == momentumId) {
-      _tutorialStep = TutorialStep.navGeneratorsForMomentum;
-      notifyListeners();
+      _enterStep(TutorialStep.navGeneratorsForSpark);
     }
   }
 
@@ -3900,27 +3825,110 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   void _advanceTutorialOnNumberReached() {
     if (_tutorialStep == TutorialStep.clickToFifty &&
         number >= tutorialFirstClickTarget) {
-      _tutorialStep = TutorialStep.navUpgrades;
-      notifyListeners();
+      _enterStep(TutorialStep.navUpgrades);
     } else if (_tutorialStep == TutorialStep.watchIdle &&
         number >= tutorialIdleWatchTarget) {
-      _tutorialStep = TutorialStep.navUpgradesForClick;
-      notifyListeners();
+      _enterStep(TutorialStep.navUpgradesForClick);
     }
   }
 
-  Future<void> completeTutorialAndReset() async {
-    _tutorialCompleted = true;
-    _tutorialStep = TutorialStep.done;
-    _tutorialNeedsCloudSync = true;
-    notifyListeners();
-    _onTutorialResetCallback?.call();
-    await hardReset(preserveTutorial: true);
-    unawaited(syncTutorialCompletedToProfileIfNeeded());
+  /// Starts a chapter, tip or teaser whose moment has come. Called twice a
+  /// second from the ticker and after every tap; returns whether the step
+  /// changed.
+  bool _checkTutorialTriggers() {
+    // The prestige chapter needs the requirement met. If the player spent
+    // their way back under it, stand down; it starts again next time.
+    if (specFor(_tutorialStep).scope == TutorialScope.prestige &&
+        prestigeCount == 0 &&
+        number < prestigeRequirement) {
+      _tutorialStep = TutorialStep.done;
+      return true;
+    }
+    if (_tutorialStep != TutorialStep.done ||
+        !_tutorialCompleted ||
+        isPrestigeAnimating ||
+        isNexusStabilizing) {
+      return false;
+    }
+    final next = _nextTriggeredBeat();
+    if (next == null) return false;
+    _enterStep(next);
+    return true;
   }
 
-  void _completeTutorialOnPrestige() {
-    // Prestige no longer ends the tutorial — kept as no-op for safety.
+  TutorialStep? _nextTriggeredBeat() {
+    if (prestigeCount == 0 &&
+        !_seenBeats.contains(TutorialStep.prestigeReady) &&
+        number >= prestigeRequirement) {
+      return TutorialStep.prestigeReady;
+    }
+    for (final entry in upgradeTipSteps.entries) {
+      final tip = entry.value;
+      if (_seenBeats.contains(tip)) continue;
+      final upgrade = _upgradeById(entry.key);
+      if (upgrade == null) continue;
+      if (upgrade.level > 0) {
+        // Bought without ever seeing the card: nothing left to announce.
+        _seenBeats.add(tip);
+        continue;
+      }
+      if (prestigeCount < minPrestigeForUpgrade(upgrade.id)) continue;
+      if (number >= _costOfLevels(upgrade, 0, 1)) return tip;
+    }
+    if (!_seenBeats.contains(TutorialStep.tipEpoch) && canStartEpoch) {
+      return TutorialStep.tipEpoch;
+    }
+    return null;
+  }
+
+  /// Starts the chapter or teaser a prestige just earned, once its reveal
+  /// animation has finished (see the capture site in [prestige]) so the
+  /// card doesn't pop up over it.
+  void _maybeStartPostPrestigeTutorial() {
+    final before = _artifactMilestonesBeforePrestige;
+    _artifactMilestonesBeforePrestige = null;
+    if (before == null) return;
+    if (_tutorialStep != TutorialStep.done || !_tutorialCompleted) return;
+
+    TutorialStep? next;
+    if (!_artifactTutorialSeen &&
+        before == 0 &&
+        ArtifactState.milestonesReached(prestigeCount) > 0) {
+      next = TutorialStep.artifactsIntro;
+    } else if (!_nexusStabilized &&
+        prestigeCount >= nexusPrestigeRequirement &&
+        !_seenBeats.contains(TutorialStep.nexusAwakens)) {
+      next = TutorialStep.nexusAwakens;
+    } else if (!_nexusStabilized &&
+        prestigeCount == nexusPrestigeRequirement - 1 &&
+        !_seenBeats.contains(TutorialStep.nexusSignal)) {
+      next = TutorialStep.nexusSignal;
+    } else if (neuralNetworkUnlocked &&
+        prestigeCount >= deepLayerPrestigeGates.first &&
+        !_seenBeats.contains(TutorialStep.tipDeepLayers)) {
+      next = TutorialStep.tipDeepLayers;
+    }
+    if (next != null) _enterStep(next);
+  }
+
+  /// Teasers on the long walk down the Nexus tree to Neural Genesis.
+  void _maybeStartNexusTeaser(ResearchNode purchased) {
+    if (neuralNetworkUnlocked) return;
+    if (_tutorialStep != TutorialStep.done || !_tutorialCompleted) return;
+    final genesis =
+        researchNodes.where((n) => n.id == 'neural_genesis').firstOrNull;
+    if (genesis != null &&
+        genesis.level == 0 &&
+        genesis.prereqsMet(researchNodes) &&
+        !_seenBeats.contains(TutorialStep.neuralGenesisReady)) {
+      _seenBeats.add(TutorialStep.neuralWhisper);
+      _enterStep(TutorialStep.neuralGenesisReady);
+      return;
+    }
+    if (purchased.tier == 3 &&
+        !_seenBeats.contains(TutorialStep.neuralWhisper)) {
+      _enterStep(TutorialStep.neuralWhisper);
+    }
   }
 
   @override
