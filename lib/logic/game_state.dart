@@ -2751,7 +2751,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get _advisorClickRate {
     final measured = recentClickRate;
     if (measured < 0.5 && autoClickRate <= 0) return 4.0;
-    return measured;
+    // A burst of fast tapping isn't a sustained pace: players rest, and idle
+    // income never does. Cap and discount it so click upgrades don't crowd
+    // out idle ones just because the last minute was busy.
+    return math.min(measured * 0.7, 3.0);
   }
 
   /// Average momentum multiplier over a ~2 minute tapping burst: the combo

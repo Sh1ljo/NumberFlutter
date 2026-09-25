@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:number_flutter/data/achievement_data.dart';
 import 'package:number_flutter/data/artifact_data.dart';
 import 'package:number_flutter/logic/game_state.dart';
 import 'package:number_flutter/ui/screens/achievements_screen.dart';
@@ -42,6 +43,32 @@ void main() {
 
     await tester.scrollUntilVisible(find.textContaining('SECRET ·'), 300);
     expect(find.text('???'), findsWidgets);
+  });
+
+  testWidgets('opening from a notice scrolls to and highlights the achievement',
+      (tester) async {
+    // The last achievement in the list sits well below the fold.
+    final target = Achievements.all.lastWhere((a) => !a.hidden);
+
+    await tester.pumpWidget(_host(
+      gs,
+      Builder(
+        builder: (context) => TextButton(
+          onPressed: () =>
+              AchievementsScreen.open(context, highlightIds: {target.id}),
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    final tile = find.text(target.title.toUpperCase());
+    expect(tile, findsOneWidget);
+    final screen = tester.getRect(find.byType(CustomScrollView));
+    expect(screen.contains(tester.getCenter(tile)), isTrue,
+        reason: 'the highlighted tile should have been scrolled into view');
   });
 
   testWidgets('artifacts tab shows an offer, then the owned card',

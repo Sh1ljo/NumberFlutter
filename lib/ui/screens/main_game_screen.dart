@@ -259,26 +259,24 @@ class _MainGameScreenState extends State<MainGameScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 24.0, vertical: 16.0),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.toll,
-                                  color: theme.colorScheme.primary),
-                              const SizedBox(width: 8),
-                              Selector<GameState, BigInt>(
-                                selector: (_, state) => state.number,
-                                builder: (context, number, child) {
-                                  return RollingNumberText(
-                                    value: number,
-                                    style: theme.textTheme.titleLarge
-                                        ?.copyWith(fontSize: 24),
-                                  );
-                                },
-                              ),
-                            ],
+                          Icon(Icons.toll, color: theme.colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Selector<GameState, BigInt>(
+                              selector: (_, state) => state.number,
+                              builder: (context, number, child) {
+                                return RollingNumberText(
+                                  value: number,
+                                  style: theme.textTheme.titleLarge
+                                      ?.copyWith(fontSize: 24),
+                                  overflow: TextOverflow.ellipsis,
+                                );
+                              },
+                            ),
                           ),
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
                                 tooltip: 'Stats',
@@ -395,16 +393,13 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                 builder: (context, multiplier, child) {
                                   return Padding(
                                     padding: const EdgeInsets.only(top: 4),
-                                    child: GestureDetector(
-                                      onTap: _openStatsScreen,
-                                      child: Text(
-                                        'TOTAL MULTIPLIER  x${multiplier.toStringAsFixed(2)}',
-                                        style:
-                                            theme.textTheme.labelSmall?.copyWith(
-                                          letterSpacing: 1.2,
-                                          color: theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.45),
-                                        ),
+                                    child: Text(
+                                      'TOTAL MULTIPLIER  x${multiplier.toStringAsFixed(2)}',
+                                      style:
+                                          theme.textTheme.labelSmall?.copyWith(
+                                        letterSpacing: 1.2,
+                                        color: theme.colorScheme.onSurface
+                                            .withValues(alpha: 0.45),
                                       ),
                                     ),
                                   );

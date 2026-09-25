@@ -719,24 +719,11 @@ class _BestBadge extends StatelessWidget {
   }
 }
 
-/// The advisor's pick, pinned above the list: which upgrade, how many
-/// levels, what it adds and how fast it pays for itself. Tapping the card
-/// jumps to the right category; BUY purchases exactly the recommended
-/// amount, whatever the 1X/10X/MAX toggle says.
+/// The advisor's pick above the list, on one line: which upgrade, how many
+/// levels, and a button to buy exactly that amount (or the wait until it is
+/// affordable). Tapping the label switches to the upgrade's tab.
 class _RecommendationCard extends StatelessWidget {
   const _RecommendationCard();
-
-  static String? _milestoneNote(GameState gs, Upgrade upgrade, int amount) {
-    final from = upgrade.level;
-    final to = from + amount;
-    final crossed = GameState.upgradeMilestoneThresholds
-        .where((t) => t > from && t <= to)
-        .toList();
-    if (crossed.isEmpty) return null;
-    final multiplier = gs.upgradeMilestoneMultiplierForLevel(to) ~/
-        gs.upgradeMilestoneMultiplierForLevel(from);
-    return 'hits Lv ${crossed.last} milestone (×$multiplier)';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -747,16 +734,7 @@ class _RecommendationCard extends StatelessWidget {
     final theme = Theme.of(context);
     final gs = context.read<GameState>();
     final upgrade = gs.upgrades.firstWhere((u) => u.id == rec.upgradeId);
-    final milestone = _milestoneNote(gs, upgrade, rec.amount);
-    final categoryLabel =
-        rec.category == GameState.idleCategory ? 'IDLE' : 'CLICK';
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.65);
-
-    final facts = <String>[
-      '+${NumberFormatter.formatGain(rec.gainPerSecond)}/s income',
-      'pays back in ${NumberFormatter.formatDuration(rec.paybackSeconds)}',
-      if (milestone != null) milestone,
-    ];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
@@ -767,119 +745,56 @@ class _RecommendationCard extends StatelessWidget {
               color: theme.colorScheme.primary.withValues(alpha: 0.7)),
           borderRadius: BorderRadius.circular(2),
         ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => gs.setSelectedUpgradeCategory(rec.category),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.auto_awesome,
-                        size: 14, color: theme.colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      'RECOMMENDED',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        letterSpacing: 1.2,
+                Icon(Icons.auto_awesome,
+                    size: 14, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: upgrade.name),
+                      TextSpan(
+                        text: '  ×${rec.amount}',
+                        style: TextStyle(color: theme.colorScheme.primary),
                       ),
-                    ),
-                    const Spacer(),
-                    Text(categoryLabel,
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: muted)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(children: [
-                          TextSpan(text: upgrade.name),
-                          TextSpan(
-                            text: '  ×${rec.amount}',
-                            style: TextStyle(color: theme.colorScheme.primary),
-                          ),
-                        ]),
-                        style:
-                            theme.textTheme.titleMedium?.copyWith(fontSize: 17),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Selector<GameState, bool>(
-                      selector: (_, gs) => gs.number >= rec.cost,
-                      builder: (context, affordable, _) => affordable
-                          ? ElevatedButton(
-                              onPressed: () => gs.buyUpgradeLevels(
-                                  rec.upgradeId, rec.amount),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: theme.colorScheme.primary,
-                                foregroundColor: theme.colorScheme.onPrimary,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(2)),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 8),
-                                minimumSize: const Size(0, 34),
-                              ),
-                              child: Text(
-                                'BUY ${NumberFormatter.format(rec.cost)}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.onPrimary),
-                              ),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(NumberFormatter.format(rec.cost),
-                                    style: theme.textTheme.titleMedium
-                                        ?.copyWith(fontSize: 15)),
-                                Text(
-                                  'in ~${NumberFormatter.formatDuration(rec.secondsToAfford)}',
-                                  style: theme.textTheme.labelSmall
-                                      ?.copyWith(color: muted),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  facts.join(' · '),
-                  style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                ),
-                if (rec.assumedClickRate >= 0.5)
-                  Text(
-                    'Based on your pace of ~${rec.assumedClickRate.toStringAsFixed(1)} taps/s',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                      fontSize: 11,
-                    ),
+                    ]),
+                    style: theme.textTheme.titleMedium?.copyWith(fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                Selector<GameState, double>(
-                  selector: (_, gs) => gs.number >= rec.cost
-                      ? 1.0
-                      : _calculateAffordabilityProgress(gs.number, rec.cost),
-                  builder: (context, progress, _) => progress >= 1.0
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              minHeight: 2,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.12),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  theme.colorScheme.primary),
-                            ),
+                ),
+                const SizedBox(width: 8),
+                Selector<GameState, bool>(
+                  selector: (_, gs) => gs.number >= rec.cost,
+                  builder: (context, affordable, _) => affordable
+                      ? ElevatedButton(
+                          onPressed: () =>
+                              gs.buyUpgradeLevels(rec.upgradeId, rec.amount),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(2)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            minimumSize: const Size(0, 30),
                           ),
+                          child: Text(
+                            'BUY ${NumberFormatter.format(rec.cost)}',
+                            style: theme.textTheme.labelSmall
+                                ?.copyWith(color: theme.colorScheme.onPrimary),
+                          ),
+                        )
+                      : Text(
+                          '${NumberFormatter.format(rec.cost)} · ~${NumberFormatter.formatDuration(rec.secondsToAfford)}',
+                          style:
+                              theme.textTheme.labelSmall?.copyWith(color: muted),
                         ),
                 ),
               ],
