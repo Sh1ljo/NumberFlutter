@@ -476,6 +476,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       costMultiplier: 1.15,
       effectType: clickCategory,
       effectValue: BigInt.from(1000),
+    ),
     Upgrade(
       id: 'click_singularity_press',
       name: 'Singularity Press',
