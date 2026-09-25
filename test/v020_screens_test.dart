@@ -7,6 +7,7 @@ import 'package:number_flutter/data/artifact_data.dart';
 import 'package:number_flutter/logic/game_state.dart';
 import 'package:number_flutter/ui/screens/achievements_screen.dart';
 import 'package:number_flutter/ui/screens/prestige/artifacts_view.dart';
+import 'package:number_flutter/ui/screens/prestige/prestige_screen.dart';
 
 Widget _host(GameState gs, Widget child) => ChangeNotifierProvider.value(
       value: gs,
@@ -90,5 +91,28 @@ void main() {
     expect(find.text('CHOOSE AN ARTIFACT'), findsNothing);
     expect(gs.pendingArtifactChoices, 1,
         reason: 'the Prestige 5 milestone is still waiting');
+  });
+
+  testWidgets('prestige tab strip fits the artifact badge on a 320dp screen',
+      (tester) async {
+    gs.prestigeCount = 1;
+    expect(gs.pendingArtifactChoices, 1,
+        reason: 'the ARTIFACTS badge has to be lit for this to mean anything');
+
+    // A 320dp bar splits into three 106.7px tabs; with the default
+    // kTabLabelPadding that left ~75px for the ~90px "ARTIFACTS" + dot row,
+    // so the strip reported a RenderFlex overflow until the pick was made.
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_host(gs, const PrestigeScreen()));
+    await tester.pump();
+
+    expect(find.text('NEXUS'), findsOneWidget);
+    expect(find.text('ARTIFACTS'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // Flush the debounced save the prestige-count setter scheduled.
+    await tester.pump(const Duration(seconds: 1));
   });
 }

@@ -7,14 +7,21 @@ import '../../models/upgrade.dart';
 import '../../models/upgrade_recommendation.dart';
 import '../../utils/number_formatter.dart';
 import '../widgets/profile_editor_dialog.dart';
+import '../widgets/one_shot_highlight.dart';
 import 'leaderboard_screen.dart';
 import 'player_stats_screen.dart';
 
 class UpgradesScreen extends StatefulWidget {
   final Map<String, GlobalKey>? upgradeRowKeys;
   final GlobalKey? idleCategoryKey;
+  final Set<String> highlightedUpgradeIds;
 
-  const UpgradesScreen({super.key, this.upgradeRowKeys, this.idleCategoryKey});
+  const UpgradesScreen({
+    super.key,
+    this.upgradeRowKeys,
+    this.idleCategoryKey,
+    this.highlightedUpgradeIds = const {},
+  });
 
   @override
   State<UpgradesScreen> createState() => _UpgradesScreenState();
@@ -250,7 +257,11 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                     itemCount: filteredUpgrades.length,
                     itemBuilder: (context, index) {
                       final upgrade = filteredUpgrades[index];
-                      final row = _UpgradeRow(upgrade: upgrade);
+                      final row = _UpgradeRow(
+                        upgrade: upgrade,
+                        highlighted: widget.highlightedUpgradeIds
+                            .contains(upgrade.id),
+                      );
                       final gk = widget.upgradeRowKeys?[upgrade.id];
                       if (gk != null) {
                         return KeyedSubtree(key: gk, child: row);
@@ -300,8 +311,9 @@ typedef _UpgradeRowData = ({
 /// rebuilt (and their costs recomputed) wholesale on every ticker notify.
 class _UpgradeRow extends StatelessWidget {
   final Upgrade upgrade;
+  final bool highlighted;
 
-  const _UpgradeRow({required this.upgrade});
+  const _UpgradeRow({required this.upgrade, required this.highlighted});
 
   @override
   Widget build(BuildContext context) {
@@ -324,6 +336,7 @@ class _UpgradeRow extends StatelessWidget {
     });
     return _UpgradeItem(
       upgrade: upgrade,
+      highlighted: highlighted,
       canAfford: data.canAfford,
       blockedByTutorial: data.blockedByTutorial,
       recommended: data.recommended,
@@ -412,6 +425,7 @@ class _UpgradeGainLine extends StatelessWidget {
 
 class _UpgradeItem extends StatelessWidget {
   final Upgrade upgrade;
+  final bool highlighted;
   final bool canAfford;
   final bool blockedByTutorial;
   final bool recommended;
@@ -422,6 +436,7 @@ class _UpgradeItem extends StatelessWidget {
 
   const _UpgradeItem({
     required this.upgrade,
+    required this.highlighted,
     required this.canAfford,
     required this.blockedByTutorial,
     required this.recommended,
@@ -499,16 +514,18 @@ class _UpgradeItem extends StatelessWidget {
       );
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8.0),
-      // "No-line rule" handled by surface transition
-      decoration: BoxDecoration(
-        border: Border(
-            bottom: BorderSide(
-                color: theme.colorScheme.surfaceContainerLow, width: 2)),
-      ),
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Column(
+    return OneShotHighlight(
+      highlight: highlighted,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8.0),
+        // "No-line rule" handled by surface transition
+        decoration: BoxDecoration(
+          border: Border(
+              bottom: BorderSide(
+                  color: theme.colorScheme.surfaceContainerLow, width: 2)),
+        ),
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -662,6 +679,7 @@ class _UpgradeItem extends StatelessWidget {
             ),
           ],
         ],
+        ),
       ),
     );
   }

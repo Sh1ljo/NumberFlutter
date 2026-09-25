@@ -574,23 +574,29 @@ class _MainLayoutState extends State<MainLayout> {
     } else if (achievementIds.isEmpty) {
       label = 'NEW UPGRADES';
       message = '${upgradeIds.length} new upgrades available';
-      onTap = _goToUpgradesTab;
+      onTap = () => _revealUpgrades(upgradeIds);
     } else if (upgradeIds.isEmpty && achievementIds.length == 1) {
       label = 'ACHIEVEMENT · +1%';
       message = Achievements.byId(achievementIds.first)?.title ??
           'Achievement unlocked';
-      onTap = () => AchievementsScreen.open(context);
+      onTap = () => AchievementsScreen.open(
+            context,
+            highlightIds: achievementIds.toSet(),
+          );
     } else if (upgradeIds.isEmpty) {
       label = 'ACHIEVEMENTS · +${achievementIds.length}%';
       message = '${achievementIds.length} achievements unlocked';
-      onTap = () => AchievementsScreen.open(context);
+      onTap = () => AchievementsScreen.open(
+            context,
+            highlightIds: achievementIds.toSet(),
+          );
     } else {
       label = 'NEW UNLOCKS';
       message = '${upgradeIds.length} '
           '${upgradeIds.length == 1 ? 'upgrade' : 'upgrades'} · '
           '${achievementIds.length} '
           '${achievementIds.length == 1 ? 'achievement' : 'achievements'}';
-      onTap = _goToUpgradesTab;
+      onTap = () => _revealUpgrades(upgradeIds);
     }
 
     _unlockNoticeVisible = true;
@@ -664,9 +670,40 @@ class _MainLayoutState extends State<MainLayout> {
   /// Switches to the Upgrades tab, selects the right click/idle category, and
   /// scrolls the given upgrade row to the middle of the viewport.
   void _revealUpgrade(String upgradeId, String category) {
-    context.read<GameState>().setSelectedUpgradeCategory(category);
-    _goToUpgradesTab();
-    _scrollToUpgradeRow(upgradeId);
+    _revealUpgrades([upgradeId], preferredCategory: category);
+  }
+
+  void _revealUpgrades(
+    List<String> upgradeIds, {
+    String? preferredCategory,
+  }) {
+    final gameState = context.read<GameState>();
+    final upgrades = gameState.upgrades
+        .where((upgrade) => upgradeIds.contains(upgrade.id))
+        .toList();
+    if (upgrades.isEmpty) {
+      _goToUpgradesTab();
+      return;
+    }
+
+    final firstUpgrade = upgrades.first;
+    gameState.setSelectedUpgradeCategory(
+      preferredCategory ?? firstUpgrade.effectType,
+    );
+    for (final upgrade in upgrades) {
+      _upgradeRowKeys.putIfAbsent(upgrade.id, () => GlobalKey());
+    }
+    _screens[1] = UpgradesScreen(
+      upgradeRowKeys: _upgradeRowKeys,
+      idleCategoryKey: _idleCategoryKey,
+      highlightedUpgradeIds: upgradeIds.toSet(),
+    );
+    final changingTabs = _currentIndex != 1;
+    setState(() => _currentIndex = 1);
+    if (changingTabs) gameState.onMainTabChanged(1);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToUpgradeRow(firstUpgrade.id);
+    });
   }
 
   void _goToUpgradesTab() {

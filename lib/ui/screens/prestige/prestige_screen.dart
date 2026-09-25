@@ -315,49 +315,24 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                   indicatorSize: TabBarIndicatorSize.tab,
                   indicatorWeight: 2,
                   dividerColor: Colors.transparent,
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 8),
                   tabs: [
-                    const Tab(text: 'PRESTIGE'),
+                    const Tab(child: _PrestigeTabLabel(label: 'PRESTIGE')),
                     Tab(
                       child: Selector<GameState, bool>(
                         selector: (_, gs) => gs.nexusReadyToStabilize,
-                        builder: (context, ready, _) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('NEXUS'),
-                            if (ready) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
+                        builder: (context, ready, _) => _PrestigeTabLabel(
+                          label: 'NEXUS',
+                          showBadge: ready,
                         ),
                       ),
                     ),
                     Tab(
                       child: Selector<GameState, int>(
                         selector: (_, gs) => gs.pendingArtifactChoices,
-                        builder: (context, pending, _) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('ARTIFACTS'),
-                            if (pending > 0) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
+                        builder: (context, pending, _) => _PrestigeTabLabel(
+                          label: 'ARTIFACTS',
+                          showBadge: pending > 0,
                         ),
                       ),
                     ),
@@ -514,6 +489,46 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                 multiplierAfterPrestige: _pendingPrestigeMultiplier,
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Label of one Prestige screen tab: uppercase text plus an optional badge dot.
+///
+/// Each tab only gets a third of the bar's width minus `labelPadding`, which
+/// leaves "ARTIFACTS" + dot barely any room at 360dp — the raw `Row` reported
+/// a RenderFlex overflow on the right every time the artifact badge showed up
+/// (i.e. right after a milestone prestige). `FittedBox` shrinks the row into
+/// the tab instead, so larger text scales or narrower screens degrade by a
+/// sub-pixel scale rather than an overflow strip.
+class _PrestigeTabLabel extends StatelessWidget {
+  const _PrestigeTabLabel({required this.label, this.showBadge = false});
+
+  final String label;
+  final bool showBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (showBadge) ...[
+            const SizedBox(width: 6),
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
         ],
       ),
     );

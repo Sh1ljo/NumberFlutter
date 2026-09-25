@@ -4,13 +4,48 @@ import 'package:provider/provider.dart';
 import '../../data/achievement_data.dart';
 import '../../logic/game_state.dart';
 import '../../models/achievement.dart';
+import '../widgets/one_shot_highlight.dart';
 
-class AchievementsScreen extends StatelessWidget {
-  const AchievementsScreen({super.key});
+class AchievementsScreen extends StatefulWidget {
+  const AchievementsScreen({super.key, this.highlightIds = const {}});
 
-  static Future<void> open(BuildContext context) => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const AchievementsScreen()),
+  final Set<String> highlightIds;
+
+  static Future<void> open(
+    BuildContext context, {
+    Set<String> highlightIds = const {},
+  }) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AchievementsScreen(highlightIds: highlightIds),
+        ),
       );
+
+  @override
+  State<AchievementsScreen> createState() => _AchievementsScreenState();
+}
+
+class _AchievementsScreenState extends State<AchievementsScreen> {
+  late final Map<String, GlobalKey> _highlightKeys = {
+    for (final id in widget.highlightIds) id: GlobalKey(),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.highlightIds.isEmpty) return;
+      final context = _highlightKeys[widget.highlightIds.first]?.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: 0.4,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +61,9 @@ class AchievementsScreen extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
+          // Keep the achievement tiles cached so a notice can scroll directly
+          // to and highlight an entry lower in the list on first frame.
+          cacheExtent: 10000,
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
@@ -111,10 +149,16 @@ class AchievementsScreen extends StatelessWidget {
         sliver: SliverList.separated(
           itemCount: defs.length,
           separatorBuilder: (_, __) => const SizedBox(height: 6),
-          itemBuilder: (context, i) => _AchievementTile(
-            def: defs[i],
-            unlocked: unlockedIds.contains(defs[i].id),
-          ),
+          itemBuilder: (context, i) {
+            final def = defs[i];
+            final tile = _AchievementTile(
+              def: def,
+              unlocked: unlockedIds.contains(def.id),
+              highlighted: widget.highlightIds.contains(def.id),
+            );
+            final key = _highlightKeys[def.id];
+            return key == null ? tile : KeyedSubtree(key: key, child: tile);
+          },
         ),
       ),
     ];
@@ -122,57 +166,69 @@ class AchievementsScreen extends StatelessWidget {
 }
 
 class _AchievementTile extends StatelessWidget {
-  const _AchievementTile({required this.def, required this.unlocked});
+  const _AchievementTile({
+    required this.def,
+    required this.unlocked,
+    required this.highlighted,
+  });
 
   final AchievementDef def;
   final bool unlocked;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final concealed = def.hidden && !unlocked;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow.withValues(alpha: unlocked ? 0.7 : 0.35),
-        border: Border(
-          left: BorderSide(
-            color: unlocked ? cs.primary : cs.outlineVariant,
-            width: 2,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            unlocked ? Icons.emoji_events : Icons.lock_outline,
-            size: 20,
-            color: unlocked ? cs.primary : cs.outlineVariant,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  concealed ? '???' : def.title.toUpperCase(),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: unlocked ? cs.onSurface : cs.outline,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  concealed ? 'A secret. Keep playing.' : def.description,
-                  style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
-                ),
-              ],
+    return OneShotHighlight(
+      highlight: highlighted,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color:
+              cs.surfaceContainerLow.withValues(alpha: unlocked ? 0.7 : 0.35),
+          border: Border(
+            left: BorderSide(
+              color: unlocked ? cs.primary : cs.outlineVariant,
+              width: 2,
             ),
           ),
-          if (unlocked)
-            Text('+1%',
-                style: theme.textTheme.labelSmall?.copyWith(color: cs.primary)),
-        ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              unlocked ? Icons.emoji_events : Icons.lock_outline,
+              size: 20,
+              color: unlocked ? cs.primary : cs.outlineVariant,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    concealed ? '???' : def.title.toUpperCase(),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: unlocked ? cs.onSurface : cs.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    concealed ? 'A secret. Keep playing.' : def.description,
+                    style:
+                        theme.textTheme.bodySmall?.copyWith(color: cs.outline),
+                  ),
+                ],
+              ),
+            ),
+            if (unlocked)
+              Text(
+                '+1%',
+                style: theme.textTheme.labelSmall?.copyWith(color: cs.primary),
+              ),
+          ],
+        ),
       ),
     );
   }
