@@ -4,13 +4,16 @@ import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../config/app_config.dart';
 import '../firebase_options.dart';
+import '../models/leaderboard.dart';
 import '../models/player_progress.dart';
+import '../models/trials.dart';
 import '../models/user_profile.dart';
 import 'leaderboard_ranking.dart';
 
@@ -60,8 +63,7 @@ class BackendService {
 
   static const Duration _leaderboardCacheTtl = Duration(minutes: 3);
 
-  final Map<String, ({DateTime at, List<Map<String, dynamic>> rows})>
-      _leaderboardCache = {};
+  final Map<String, LeaderboardPage> _leaderboardCache = {};
 
   /// Name/location of the signed-in player, copied onto their leaderboard
   /// row on every progress upload so the leaderboard never needs a join.
@@ -385,6 +387,15 @@ class BackendService {
       'highest_number_numeric': highest.toString(),
       'highest_number_log10': highestNumberSortKey(highest),
       'neural_lowest_loss': progress.neuralLowestLoss,
+      'lifetime_earned_numeric': progress.lifetimeEarned.toString(),
+      'lifetime_earned_log10': highestNumberSortKey(progress.lifetimeEarned),
+      'prestige_count': progress.prestigeCount,
+      'achievements_count': progress.achievements.length,
+      'lifetime_clicks': progress.lifetimeClicks,
+      ...TrialState.leaderboardFields(
+        TrialState.parse(progress.trialsJson),
+        progress.trialCounters,
+      ),
       'updated_at': progress.updatedAt.toUtc().toIso8601String(),
       if (profile?.displayName?.isNotEmpty ?? false)
         'display_name': profile!.displayName,
@@ -405,86 +416,161 @@ class BackendService {
     await batch.commit();
   }
 
-  /// Returns rows shaped like the old Postgres `get_leaderboard` RPC:
-  /// rank, user_id, display_name, country, city, highest_number_numeric,
-  /// neural_lowest_loss, updated_at.
+  /// Fetches the top [limit] players for [metric], plus where the signed-in
+  /// player stands. [periodId] is required for the Trial boards
+  /// ([LeaderboardMetric.periodField]); [country]/[city] narrow the scope.
   ///
-  /// Results are cached for a few minutes: every row is a Firestore read,
-  /// and the free plan allows 50k reads a day.
-  Future<List<Map<String, dynamic>>> fetchLeaderboard({
-    int limit = 50,
+  /// Pages are cached for a few minutes: every row is a Firestore read, and
+  /// the free plan allows 50k reads a day. [force] skips the cache.
+  Future<LeaderboardPage> fetchLeaderboardPage({
+    required LeaderboardMetric metric,
+    String? periodId,
     String? country,
     String? city,
-    // 'number' (default) ranks DESC by highest number.
-    // 'loss'             ranks ASC by neural_lowest_loss (lower = better).
-    String metric = 'number',
+    int limit = 100,
+    bool force = false,
   }) async {
-    if (!_initialized) return <Map<String, dynamic>>[];
+    if (!_initialized) return LeaderboardPage.empty;
     final normalizedCountry = country?.trim() ?? '';
     final normalizedCity = city?.trim() ?? '';
-    final byLoss = metric == 'loss';
+    final userId = currentUserId;
 
-    final cacheKey =
-        '${byLoss ? 'loss' : 'number'}|$normalizedCountry|$normalizedCity|$limit';
+    final cacheKey = [
+      userId,
+      metric.name,
+      periodId,
+      normalizedCountry,
+      normalizedCity,
+      limit,
+    ].join('|');
     final cached = _leaderboardCache[cacheKey];
-    if (cached != null &&
-        DateTime.now().difference(cached.at) < _leaderboardCacheTtl) {
-      return cached.rows;
+    if (!force &&
+        cached != null &&
+        DateTime.now().difference(cached.fetchedAt) < _leaderboardCacheTtl) {
+      return cached;
     }
 
-    Query<Map<String, dynamic>> query = _leaderboard;
+    // Filters go in the same order as firestore.indexes.json.
+    Query<Map<String, dynamic>> filtered = _leaderboard;
+    final periodField = metric.periodField;
+    if (periodField != null) {
+      filtered = filtered.where(periodField, isEqualTo: periodId ?? '');
+    }
     if (normalizedCountry.isNotEmpty) {
-      query = query.where('country', isEqualTo: normalizedCountry);
+      filtered = filtered.where('country', isEqualTo: normalizedCountry);
     }
     if (normalizedCity.isNotEmpty) {
-      query = query.where('city', isEqualTo: normalizedCity);
+      filtered = filtered.where('city', isEqualTo: normalizedCity);
     }
-    query = byLoss
-        ? query.orderBy('neural_lowest_loss')
-        : query.orderBy('highest_number_log10', descending: true);
+    final ordered =
+        filtered.orderBy(metric.sortField, descending: metric.descending);
 
-    final snapshot = await query.limit(limit).get();
-    final rows = [
-      for (final doc in snapshot.docs)
-        {
-          'user_id': doc.id,
-          'display_name': _nonEmpty(doc.data()['display_name']) ?? 'Player',
-          'country': _nonEmpty(doc.data()['country']),
-          'city': _nonEmpty(doc.data()['city']),
-          'highest_number_numeric':
-              doc.data()['highest_number_numeric'] as String? ?? '0',
-          'neural_lowest_loss':
-              (doc.data()['neural_lowest_loss'] as num?)?.toDouble() ?? 1.0,
-          'updated_at': doc.data()['updated_at'],
-        },
-    ];
+    final results = await Future.wait<Object?>([
+      ordered.limit(limit).get(),
+      _countOrNull(ordered),
+      if (userId != null) _ownRowOrNull(userId),
+    ]);
+    final snapshot = results[0] as QuerySnapshot<Map<String, dynamic>>;
+    final total = results[1] as int?;
+    final ownDoc = userId != null
+        ? results[2] as DocumentSnapshot<Map<String, dynamic>>?
+        : null;
 
-    final List<Map<String, dynamic>> ranked;
-    if (byLoss) {
-      ranked = withDenseRank(rows, (row) => row['neural_lowest_loss']);
-    } else {
-      // The sort key can tie numbers that only differ past ~15 digits;
-      // re-sort the fetched page exactly before ranking.
-      BigInt numberOf(Map<String, dynamic> row) =>
-          BigInt.tryParse(row['highest_number_numeric'] as String) ??
-          BigInt.zero;
-      rows.sort((a, b) => numberOf(b).compareTo(numberOf(a)));
-      ranked = withDenseRank(rows, (row) => row['highest_number_numeric']);
+    final entries = rankEntries(
+      [
+        for (final doc in snapshot.docs)
+          LeaderboardEntry.fromDatabase(doc.id, doc.data()),
+      ],
+      metric,
+    );
+
+    LeaderboardEntry? me;
+    int? myRank;
+    final ownData = ownDoc?.data();
+    final ownKey = ownData?[metric.sortField];
+    final ownInPeriod =
+        periodField == null || ownData?[periodField] == (periodId ?? '');
+    if (ownData != null && ownKey is num && ownInPeriod) {
+      final listed = entries.where((e) => e.userId == userId).firstOrNull;
+      if (listed != null) {
+        me = listed;
+        myRank = listed.rank;
+      } else {
+        me = LeaderboardEntry.fromDatabase(userId!, ownData);
+        // Off the page: count the players strictly ahead instead.
+        final ahead = await _countOrNull(
+          metric.descending
+              ? filtered
+                  .where(metric.sortField, isGreaterThan: ownKey)
+                  .orderBy(metric.sortField, descending: true)
+              : filtered
+                  .where(metric.sortField, isLessThan: ownKey)
+                  .orderBy(metric.sortField),
+        );
+        if (ahead != null) myRank = ahead + 1;
+      }
     }
 
-    _leaderboardCache[cacheKey] = (at: DateTime.now(), rows: ranked);
+    final page = LeaderboardPage(
+      entries: entries,
+      fetchedAt: DateTime.now(),
+      me: me,
+      myRank: myRank,
+      totalRanked: total,
+    );
+    _leaderboardCache[cacheKey] = page;
+    return page;
+  }
+
+  /// Sorts [entries] exactly and gives them dense ranks. The stored sort
+  /// keys can tie numbers that only differ past ~15 digits.
+  @visibleForTesting
+  static List<LeaderboardEntry> rankEntries(
+    List<LeaderboardEntry> entries,
+    LeaderboardMetric metric,
+  ) {
+    final sorted = [...entries]..sort((a, b) {
+        final byValue = a.valueFor(metric).compareTo(b.valueFor(metric));
+        return metric.descending ? -byValue : byValue;
+      });
+    final ranked = <LeaderboardEntry>[];
+    var rank = 0;
+    Object? previous;
+    for (var i = 0; i < sorted.length; i++) {
+      final value = sorted[i].valueFor(metric);
+      if (i == 0 || value != previous) rank++;
+      previous = value;
+      ranked.add(sorted[i].withRank(rank));
+    }
     return ranked;
+  }
+
+  /// Aggregation counts cost one read per 1000 matches. They are extras
+  /// (rank, total), so a failure just leaves them out.
+  Future<int?> _countOrNull(Query<Map<String, dynamic>> query) async {
+    try {
+      final snapshot = await query.count().get();
+      return snapshot.count;
+    } catch (error) {
+      debugPrint('Leaderboard count failed: $error');
+      return null;
+    }
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _ownRowOrNull(
+      String userId) async {
+    try {
+      return await _leaderboard.doc(userId).get();
+    } catch (error) {
+      debugPrint('Own leaderboard row failed: $error');
+      return null;
+    }
   }
 
   static String? _clip(String? value, int maxLength) =>
       (value == null || value.length <= maxLength)
           ? value
           : value.substring(0, maxLength);
-
-  static String? _nonEmpty(Object? value) {
-    final text = (value as String?)?.trim();
-    return (text == null || text.isEmpty) ? null : text;
-  }
 
   Future<void> archiveSession({
     required String userId,

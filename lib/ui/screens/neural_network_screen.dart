@@ -3,11 +3,11 @@ import 'package:provider/provider.dart';
 import '../../logic/game_state.dart';
 import '../../logic/backend_service.dart';
 import 'profile_screen.dart';
-import 'leaderboard_screen.dart';
 import 'auth_screen.dart';
 import 'neural_network/neural_canvas.dart';
 import 'neural_network/neural_unlock_screen.dart';
 import '../widgets/rolling_number_text.dart';
+import '../widgets/leaderboard_button.dart';
 
 class NeuralNetworkScreen extends StatefulWidget {
   final GlobalKey? neuralNeuronKey;
@@ -61,12 +61,6 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
     }
   }
 
-  Future<void> _openLeaderboard() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -104,11 +98,7 @@ class _NeuralNetworkScreenState extends State<NeuralNetworkScreen> {
                     ),
                     Row(
                       children: [
-                        IconButton(
-                          tooltip: 'Ranks',
-                          onPressed: _openLeaderboard,
-                          icon: const Icon(Icons.emoji_events_outlined),
-                        ),
+                        const LeaderboardButton(tooltip: 'Ranks'),
                         IconButton(
                           tooltip: 'Profile',
                           onPressed: _openProfileEditor,

@@ -8,9 +8,9 @@ import '../../models/upgrade_recommendation.dart';
 import '../../utils/number_formatter.dart';
 import '../widgets/profile_editor_dialog.dart';
 import '../widgets/one_shot_highlight.dart';
-import 'leaderboard_screen.dart';
 import '../widgets/rolling_number_text.dart';
 import 'player_stats_screen.dart';
+import '../widgets/leaderboard_button.dart';
 
 class UpgradesScreen extends StatefulWidget {
   final Map<String, GlobalKey>? upgradeRowKeys;
@@ -45,12 +45,6 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
   Future<void> _openStatsScreen() async {
     Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
-  }
-
-  Future<void> _openLeaderboardScreen() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
-    );
   }
 
   Future<void> _openProfileEditor() async {
@@ -125,11 +119,7 @@ class _UpgradesScreenState extends State<UpgradesScreen> {
                   ),
                   Row(
                     children: [
-                      IconButton(
-                        tooltip: 'Leaderboard',
-                        onPressed: _openLeaderboardScreen,
-                        icon: const Icon(Icons.emoji_events_outlined),
-                      ),
+                      const LeaderboardButton(),
                       IconButton(
                         tooltip: 'Profile',
                         onPressed: _openProfileEditor,

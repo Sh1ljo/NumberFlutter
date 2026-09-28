@@ -6,7 +6,7 @@ import '../../../logic/backend_service.dart';
 import '../../../logic/tutorial_step.dart';
 import '../../../utils/number_formatter.dart';
 import '../../widgets/profile_editor_dialog.dart';
-import '../leaderboard_screen.dart';
+import '../../widgets/leaderboard_button.dart';
 import '../player_stats_screen.dart';
 import 'prestige_constants.dart';
 import 'widgets/prestige_gain_card.dart';
@@ -47,12 +47,6 @@ class _PrestigeScreenState extends State<PrestigeScreen>
   Future<void> _openStatsScreen() async {
     Navigator.of(context)
         .push(MaterialPageRoute<void>(builder: (_) => const PlayerStatsScreen()));
-  }
-
-  Future<void> _openLeaderboardScreen() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
-    );
   }
 
   Future<void> _openProfileEditor() async {
@@ -304,11 +298,7 @@ class _PrestigeScreenState extends State<PrestigeScreen>
                       ),
                       Row(
                         children: [
-                          IconButton(
-                            tooltip: 'Leaderboard',
-                            onPressed: _openLeaderboardScreen,
-                            icon: const Icon(Icons.emoji_events_outlined),
-                          ),
+                          const LeaderboardButton(),
                           IconButton(
                             tooltip: 'Profile',
                             onPressed: _openProfileEditor,

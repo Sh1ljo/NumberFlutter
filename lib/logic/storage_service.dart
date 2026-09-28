@@ -29,6 +29,10 @@ class StorageService {
   static const String _keyAchievements = 'achievements_unlocked';
   static const String _keyArtifacts = 'artifacts';
   static const String _keyShop = 'shop';
+  static const String _keyLifetimeEarned = 'lifetime_earned';
+  static const String _keyLifetimeUpgradeLevels = 'lifetime_upgrade_levels';
+  static const String _keyLifetimeSparks = 'lifetime_sparks';
+  static const String _keyTrials = 'trials';
 
   SharedPreferences? _prefs;
 
@@ -85,6 +89,10 @@ class StorageService {
     List<String> achievements = const [],
     String? artifactsJson,
     String? shopJson,
+    BigInt? lifetimeEarned,
+    int lifetimeUpgradeLevels = 0,
+    int lifetimeSparks = 0,
+    String? trialsJson,
   }) async {
     final prefs = await _instance();
     await _setString(prefs, _keyNumber, number.toString());
@@ -120,6 +128,13 @@ class StorageService {
     }
     if (shopJson != null) {
       await _setString(prefs, _keyShop, shopJson);
+    }
+    await _setString(prefs, _keyLifetimeEarned,
+        (lifetimeEarned ?? BigInt.zero).toString());
+    await _setInt(prefs, _keyLifetimeUpgradeLevels, lifetimeUpgradeLevels);
+    await _setInt(prefs, _keyLifetimeSparks, lifetimeSparks);
+    if (trialsJson != null) {
+      await _setString(prefs, _keyTrials, trialsJson);
     }
     await _setInt(
         prefs, _keyLastPlayed, DateTime.now().millisecondsSinceEpoch);
@@ -211,6 +226,12 @@ class StorageService {
       'achievements': achievements,
       'artifacts': prefs.getString(_keyArtifacts),
       'shop': prefs.getString(_keyShop),
+      // Null when the save predates the counter.
+      'lifetimeEarned':
+          BigInt.tryParse(prefs.getString(_keyLifetimeEarned) ?? ''),
+      'lifetimeUpgradeLevels': prefs.getInt(_keyLifetimeUpgradeLevels) ?? 0,
+      'lifetimeSparks': prefs.getInt(_keyLifetimeSparks) ?? 0,
+      'trials': prefs.getString(_keyTrials),
       'lastPlayed': lastPlayedMs != null
           ? DateTime.fromMillisecondsSinceEpoch(lastPlayedMs)
           : null,
@@ -244,6 +265,10 @@ class StorageService {
     _keyAchievements,
     _keyArtifacts,
     _keyShop,
+    _keyLifetimeEarned,
+    _keyLifetimeUpgradeLevels,
+    _keyLifetimeSparks,
+    _keyTrials,
   ];
 
   /// Copies the stored save, as-is, into one JSON blob under
@@ -289,5 +314,9 @@ class StorageService {
     await prefs.remove(_keyAchievements);
     await prefs.remove(_keyArtifacts);
     await prefs.remove(_keyShop);
+    await prefs.remove(_keyLifetimeEarned);
+    await prefs.remove(_keyLifetimeUpgradeLevels);
+    await prefs.remove(_keyLifetimeSparks);
+    await prefs.remove(_keyTrials);
   }
 }

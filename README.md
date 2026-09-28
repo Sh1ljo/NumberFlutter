@@ -14,7 +14,7 @@ The backend is Firebase: **Auth** for accounts and **Firestore** for profiles, c
    firebase deploy --only firestore:rules,firestore:indexes
    ```
 
-   Rules live in `firestore.rules`, and the composite indexes for the country and city leaderboards are in `firestore.indexes.json`.
+   Rules live in `firestore.rules`, and the composite indexes for the country, city and weekly/monthly Trial leaderboards are in `firestore.indexes.json`. Re-run this whenever either file changes: until the indexes are built, the boards that need them show an error (the debug log prints Firestore's link to create the missing index).
 
 ### Data model
 
@@ -26,6 +26,12 @@ The backend is Firebase: **Auth** for accounts and **Firestore** for profiles, c
 | `leaderboard` | uid | any signed-in player | public ranking row, written alongside every cloud save |
 
 Firestore can't sort huge numbers stored as text, so each leaderboard row also stores `highest_number_log10`, which sorts in the same order (see `lib/logic/leaderboard_ranking.dart`). The app computes ranks and caches leaderboard results for 3 minutes to save reads.
+
+Each row also carries `lifetime_earned_*`, `prestige_count`, `lifetime_clicks` and `achievements_count` for the other all-time boards, plus `week_*` / `month_*` fields for the Trials. The own-rank line and the "N ranked" total use Firestore `count()` aggregations (one read per 1000 matching rows).
+
+### Trials
+
+Weekly and monthly Trials live in `lib/models/trials.dart`. With no server to hand out challenges, each period's goal types are derived from its id (`2026-W40`, `2026-09`, UTC), so every player gets the same set; targets and prestige-point rewards are scaled from the player's progress when the period starts, and progress is measured against lifetime counters snapshotted at that moment. The trial state syncs inside `player_progress` alongside the prestige points its claims paid, and the period score (number earned since the period began) is published to the leaderboard row. Like the rest of the leaderboard, these scores are client-reported.
 
 ### Google Sign-In on Android (native, no browser)
 

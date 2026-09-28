@@ -10,6 +10,7 @@ import '../data/achievement_data.dart';
 import '../data/artifact_data.dart';
 import '../models/artifact.dart';
 import '../models/neural_network.dart';
+import '../models/trials.dart';
 import '../models/upgrade_recommendation.dart';
 import '../models/shop_product.dart';
 import '../data/shop_catalog.dart';
@@ -215,6 +216,69 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (unlocked) _scheduleStateSave();
     return unlocked;
+  }
+
+  // ── Trials ─────────────────────────────────────────────────────────────
+  /// Lifetime counters the weekly/monthly Trials measure. Persisted and
+  /// never reset by prestige.
+  BigInt lifetimeEarned = BigInt.zero;
+  int lifetimeUpgradeLevels = 0;
+  int lifetimeSparks = 0;
+  TrialState trials = TrialState();
+
+  TrialCounters get trialCounters => TrialCounters(
+        earned: lifetimeEarned,
+        taps: lifetimeClicks,
+        prestiges: prestigeCount,
+        upgrades: lifetimeUpgradeLevels,
+        sparks: lifetimeSparks,
+      );
+
+  bool get hasClaimableTrialReward => trials.hasClaimable(trialCounters);
+
+  /// Counts production toward [lifetimeEarned]. Called wherever the number
+  /// grows from play, but not for grants, carries or test helpers.
+  void _creditEarned(BigInt amount) {
+    if (amount > BigInt.zero) lifetimeEarned += amount;
+  }
+
+  /// Starts new trials once the UTC week or month has turned over.
+  bool _rollTrials() => trials.roll(
+        now: clock().toUtc(),
+        counters: trialCounters,
+        prestigeCount: prestigeCount,
+        prestigeRequirement: prestigeRequirement,
+        prestigeReward: nextPrestigeReward,
+      );
+
+  /// Pays out a finished objective. Returns the PP granted, or null when
+  /// there is nothing to claim.
+  double? claimTrialObjective(TrialCadence cadence, String objectiveId) {
+    final run = trials.runFor(cadence);
+    final objective = run?.objectiveById(objectiveId);
+    if (run == null ||
+        objective == null ||
+        run.isClaimed(objective.id) ||
+        !run.isComplete(objective, trialCounters)) {
+      return null;
+    }
+    run.claimed.add(objective.id);
+    return _grantTrialReward(objective.reward);
+  }
+
+  /// Pays out the bonus for finishing every objective of a trial.
+  double? claimTrialSweep(TrialCadence cadence) {
+    final run = trials.runFor(cadence);
+    if (run == null || !run.canClaimSweep(trialCounters)) return null;
+    run.claimed.add(TrialRun.sweepKey);
+    return _grantTrialReward(run.sweepReward);
+  }
+
+  double _grantTrialReward(double amount) {
+    prestigeCurrency += amount;
+    notifyListeners();
+    _saveState();
+    return amount;
   }
 
   // ── Artifacts ──────────────────────────────────────────────────────────
@@ -1417,6 +1481,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _nexusStabilized = (data['nexusStabilized'] as bool?) ?? false;
 
       lifetimeClicks = (data['lifetimeClicks'] as int?) ?? 0;
+      // Saves from before the counter existed start at their highest
+      // number: a lower bound on what they had already earned.
+      lifetimeEarned = (data['lifetimeEarned'] as BigInt?) ?? highestNumber;
+      lifetimeUpgradeLevels = (data['lifetimeUpgradeLevels'] as int?) ?? 0;
+      lifetimeSparks = (data['lifetimeSparks'] as int?) ?? 0;
+      trials = TrialState.parse(data['trials'] as String?);
       _unlockedAchievements
         ..clear()
         ..addAll((data['achievements'] as List<String>?) ?? const []);
@@ -1454,6 +1524,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
 
       final lastPlayed = data['lastPlayed'] as DateTime?;
       _lastSavedAt = lastPlayed;
+      // Before offline gains, so time away counts toward a new period.
+      _rollTrials();
       _calculateOfflineProgress(lastPlayed);
 
       _startTicker();
@@ -1493,6 +1565,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         final offlineGains = totalIdleRate * credited * offlineGainMultiplier;
         offlineGainsThisSession = wholeBigInt(offlineGains);
         number += offlineGainsThisSession;
+        _creditEarned(offlineGainsThisSession);
         _updateHighestNumber();
         if (offlineGains.isFinite) {
           _idleAccumulator += offlineGains - offlineGains.floorToDouble();
@@ -1538,7 +1611,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _idleAccumulator += effectiveRate / 10; // 10 ticks per second
         if (_idleAccumulator >= 1.0) {
           final added = _idleAccumulator.floorToDouble();
-          number += wholeBigInt(added);
+          final addedWhole = wholeBigInt(added);
+          number += addedWhole;
+          _creditEarned(addedWhole);
           _updateHighestNumber();
           _advanceTutorialOnNumberReached();
           _idleAccumulator -= added;
@@ -1571,6 +1646,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         hasStateChange = true;
       }
       if (timer.tick % 10 == 0 && _checkAchievements()) {
+        hasStateChange = true;
+      }
+      if (timer.tick % 10 == 0 && _rollTrials()) {
         hasStateChange = true;
       }
 
@@ -1615,7 +1693,9 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
             Artifacts.compoundCapMinutes(vaultLevel);
         final payout = share < cap ? share : cap;
         if (payout.isFinite && payout >= 1) {
-          number += wholeBigInt(payout);
+          final paid = wholeBigInt(payout);
+          number += paid;
+          _creditEarned(paid);
           _updateHighestNumber();
           changed = true;
         }
@@ -2051,6 +2131,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final previousHighest = highestNumber;
     final gained = wholeBigInt(gain);
     number += gained;
+    _creditEarned(gained);
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
     _checkTutorialTriggers();
@@ -2105,6 +2186,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }) {
     _neuralSparkBoostTimer?.cancel();
     _neuralSparkBoostMultiplier = multiplier;
+    lifetimeSparks++;
     _unlockAchievement(Achievements.sparkCatcher);
     if (_tutorialStep == TutorialStep.catchSpark) {
       _tutorialStep = TutorialStep.roadAhead;
@@ -2173,6 +2255,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // Instant burst: level × 60 seconds of current idle production
     final burst = wholeBigInt(totalIdleRate * 60 * level);
     number += burst;
+    _creditEarned(burst);
     _updateHighestNumber();
 
     // Doubles production for the duration via _temporalCollapseFactor.
@@ -2270,6 +2353,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         final claim = wholeBigInt(totalIdleRate * 3600);
         if (claim <= BigInt.zero) return ShopPurchaseResult.noIdleToClaim;
         number += claim;
+        _creditEarned(claim);
         _updateHighestNumber();
         break;
       case ShopEffect.clickPrimer:
@@ -2536,6 +2620,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (number < cost) return false;
     number -= cost;
     upgrade.level += amount;
+    lifetimeUpgradeLevels += amount;
     _recalculateDerivedStatsFromUpgrades();
     _recommendationComputedAtMs = 0;
     _advanceTutorialOnPurchase(upgrade.id);
@@ -3139,6 +3224,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _affordabilityNotified.clear();
     _pendingUnlockNotices.clear();
     lifetimeClicks = 0;
+    lifetimeEarned = BigInt.zero;
+    lifetimeUpgradeLevels = 0;
+    lifetimeSparks = 0;
+    trials = TrialState();
     _unlockedAchievements.clear();
     _pendingAchievementNotices.clear();
     artifactState = ArtifactState();
@@ -3199,6 +3288,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       achievements: _unlockedAchievements.toList()..sort(),
       lifetimeClicks: lifetimeClicks,
       artifactsJson: jsonEncode(artifactState.toJson()),
+      lifetimeEarned: lifetimeEarned,
+      lifetimeUpgradeLevels: lifetimeUpgradeLevels,
+      lifetimeSparks: lifetimeSparks,
+      trialsJson: trials.toJsonString(),
       updatedAt: _loadFailed
           ? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
           : (_lastSavedAt?.toUtc() ?? now),
@@ -3247,6 +3340,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (progress.lifetimeClicks > lifetimeClicks) {
       lifetimeClicks = progress.lifetimeClicks;
     }
+    if (progress.lifetimeEarned > lifetimeEarned) {
+      lifetimeEarned = progress.lifetimeEarned;
+    }
+    lifetimeUpgradeLevels =
+        math.max(lifetimeUpgradeLevels, progress.lifetimeUpgradeLevels);
+    lifetimeSparks = math.max(lifetimeSparks, progress.lifetimeSparks);
+    // Trial claims ride with the prestige points they paid into.
+    if (progress.trialsJson != null) {
+      trials = TrialState.parse(progress.trialsJson);
+    }
     final remoteArtifacts = progress.artifactsJson;
     if (remoteArtifacts != null) {
       try {
@@ -3287,6 +3390,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // The cloud copy carries no record of which tutorial cards were shown;
     // don't walk a returning player through what they are already past.
     if (_tutorialCompleted) _backfillSeenBeats();
+    _rollTrials();
   }
 
   /// Starts watching device connectivity so the game can retry the cloud
@@ -3487,6 +3591,10 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       achievements: _unlockedAchievements.toList()..sort(),
       artifactsJson: jsonEncode(artifactState.toJson()),
       shopJson: jsonEncode(shopInventory.toJson()),
+      lifetimeEarned: lifetimeEarned,
+      lifetimeUpgradeLevels: lifetimeUpgradeLevels,
+      lifetimeSparks: lifetimeSparks,
+      trialsJson: trials.toJsonString(),
     );
     _lastSavedAt = DateTime.now();
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../models/player_progress.dart';
@@ -77,6 +79,14 @@ class SyncService {
     final mergedClicks = local.lifetimeClicks > remote.lifetimeClicks
         ? local.lifetimeClicks
         : remote.lifetimeClicks;
+    // Same for the counters the Trials measure. The trial state itself
+    // rides with the winner, like the prestige points its claims paid.
+    final mergedEarned = local.lifetimeEarned > remote.lifetimeEarned
+        ? local.lifetimeEarned
+        : remote.lifetimeEarned;
+    final mergedUpgradeLevels =
+        math.max(local.lifetimeUpgradeLevels, remote.lifetimeUpgradeLevels);
+    final mergedSparks = math.max(local.lifetimeSparks, remote.lifetimeSparks);
 
     SyncResult buildResult(PlayerProgress base, SyncWinner winner) {
       // Always carry the lifetime-best lowestLoss across both sides — it's a
@@ -87,6 +97,9 @@ class SyncService {
           neuralLowestLoss: mergedLowestLoss,
           achievements: mergedAchievements,
           lifetimeClicks: mergedClicks,
+          lifetimeEarned: mergedEarned,
+          lifetimeUpgradeLevels: mergedUpgradeLevels,
+          lifetimeSparks: mergedSparks,
         ),
         winner: winner,
       );

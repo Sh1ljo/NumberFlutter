@@ -15,7 +15,7 @@ import 'achievements_screen.dart';
 import 'auth_screen.dart';
 import 'player_stats_screen.dart';
 import 'profile_screen.dart';
-import 'leaderboard_screen.dart';
+import '../widgets/leaderboard_button.dart';
 import '../widgets/rolling_number_text.dart';
 import '../../utils/number_formatter.dart';
 class MainGameScreen extends StatefulWidget {
@@ -224,12 +224,6 @@ class _MainGameScreenState extends State<MainGameScreen> {
     );
   }
 
-  Future<void> _openLeaderboard() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const LeaderboardScreen()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -289,11 +283,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                     AchievementsScreen.open(context),
                                 icon: const Icon(Icons.military_tech_outlined),
                               ),
-                              IconButton(
-                                tooltip: 'Ranks',
-                                onPressed: _openLeaderboard,
-                                icon: const Icon(Icons.emoji_events_outlined),
-                              ),
+                              const LeaderboardButton(tooltip: 'Ranks'),
                               IconButton(
                                 tooltip: 'Profile',
                                 onPressed: _openProfileEditor,

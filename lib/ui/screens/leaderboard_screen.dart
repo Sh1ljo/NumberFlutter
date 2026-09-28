@@ -1,134 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../logic/backend_service.dart';
-import '../widgets/system_loading_indicator.dart';
+import '../../logic/game_state.dart';
+import '../../models/leaderboard.dart';
+import '../../models/trials.dart';
 import '../../models/user_profile.dart';
-import '../../utils/number_formatter.dart';
-import '../../utils/network_error_utils.dart';
-import 'auth_screen.dart';
+import '../widgets/fade_slide_route.dart';
+import 'leaderboard/ranking_board.dart';
+import 'leaderboard/trial_panel.dart';
 
+/// All-time rankings plus the weekly and monthly Trials, each with its own
+/// standings.
 class LeaderboardScreen extends StatefulWidget {
-  const LeaderboardScreen({super.key});
+  const LeaderboardScreen({super.key, this.initialTab = 0});
+
+  /// 0 all-time, 1 weekly trial, 2 monthly trial.
+  final int initialTab;
+
+  static Future<void> open(BuildContext context, {int initialTab = 0}) =>
+      Navigator.of(context).push(
+        FadeSlideRoute<void>(
+          builder: (_) => LeaderboardScreen(initialTab: initialTab),
+        ),
+      );
 
   @override
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  int _refreshEpoch = 0;
-  LeaderboardScope _scope = LeaderboardScope.global;
-  LeaderboardMetric _metric = LeaderboardMetric.number;
+class _LeaderboardScreenState extends State<LeaderboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(
+    length: 3,
+    vsync: this,
+    initialIndex: widget.initialTab.clamp(0, 2),
+  );
 
-  /// The fetch for the current user/metric/scope/refresh. It used to be
-  /// created inside build(), so any rebuild of the auth StreamBuilder (a
-  /// token refresh, a keyboard or MediaQuery change) started a new network
-  /// fetch.
-  String? _rowsKey;
-  Future<_LeaderboardData>? _rowsFuture;
+  /// Loaded once per signed-in user; the boards need it for local scopes.
+  String? _profileUserId;
+  Future<UserProfile?>? _profileFuture;
 
-  String _rowsKeyFor(String userId) =>
-      '${userId}_${_metric.name}_${_scope.name}_$_refreshEpoch';
-
-  Future<_LeaderboardData> _rowsFor(String key) {
-    if (key != _rowsKey || _rowsFuture == null) {
-      _rowsKey = key;
-      _rowsFuture = _fetchRows();
+  Future<UserProfile?> _profileFor(String userId) {
+    if (_profileUserId != userId || _profileFuture == null) {
+      _profileUserId = userId;
+      _profileFuture = BackendService.instance
+          .fetchOrCreateProfile(userId: userId)
+          .then<UserProfile?>((p) => p)
+          .catchError((Object error) {
+        debugPrint('Leaderboard profile load failed: $error');
+        return null;
+      });
     }
-    return _rowsFuture!;
+    return _profileFuture!;
   }
 
-  String _formatLeaderboardNumber(dynamic value) {
-    final raw = value?.toString() ?? '0';
-    final parsed = BigInt.tryParse(raw);
-    if (parsed == null) return raw;
-    return NumberFormatter.format(parsed);
-  }
-
-  /// Renders a `neural_lowest_loss` value as an "Accuracy: 99.21%" string for
-  /// the loss leaderboard. Lower loss = higher accuracy = better.
-  String _formatAccuracy(dynamic value) {
-    final raw = (value as num?)?.toDouble();
-    if (raw == null) return 'Accuracy: —';
-    final accuracy = (1.0 - raw).clamp(0.0, 1.0) * 100.0;
-    return 'Accuracy: ${accuracy.toStringAsFixed(2)}%';
-  }
-
-  Future<UserProfile?> _fetchProfile() async {
-    final s = BackendService.instance;
-    final userId = s.currentUserId;
-    if (userId == null) return null;
-    return s.fetchOrCreateProfile(userId: userId);
-  }
-
-  Future<_LeaderboardData> _fetchRows() async {
-    final s = BackendService.instance;
-    if (!s.isInitialized || !s.isSignedIn) {
-      return const _LeaderboardData(
-          profile: null, rows: <Map<String, dynamic>>[]);
-    }
-    final profile = await _fetchProfile();
-    String? country;
-    String? city;
-    if (_scope == LeaderboardScope.country) {
-      country = profile?.country;
-    } else if (_scope == LeaderboardScope.city) {
-      country = profile?.country;
-      city = profile?.city;
-    }
-    if (_scope == LeaderboardScope.country && (country?.isEmpty ?? true)) {
-      return _LeaderboardData(
-          profile: profile, rows: const <Map<String, dynamic>>[]);
-    }
-    if (_scope == LeaderboardScope.city &&
-        ((country?.isEmpty ?? true) || (city?.isEmpty ?? true))) {
-      return _LeaderboardData(
-          profile: profile, rows: const <Map<String, dynamic>>[]);
-    }
-    final rows = await s.fetchLeaderboard(
-      limit: 100,
-      country: country,
-      city: city,
-      metric: _metric == LeaderboardMetric.loss ? 'loss' : 'number',
-    );
-    return _LeaderboardData(profile: profile, rows: rows);
-  }
-
-  String _titleForScope() {
-    final suffix = _metric == LeaderboardMetric.loss ? 'ACCURACY' : 'RANKS';
-    switch (_scope) {
-      case LeaderboardScope.global:
-        return 'GLOBAL $suffix';
-      case LeaderboardScope.country:
-        return 'COUNTRY $suffix';
-      case LeaderboardScope.city:
-        return 'CITY $suffix';
-    }
-  }
-
-  String _subtitleForScope(UserProfile? profile) {
-    final byMetric = _metric == LeaderboardMetric.loss
-        ? 'best neural network accuracy'
-        : 'highest number';
-    switch (_scope) {
-      case LeaderboardScope.global:
-        return 'Top players worldwide by $byMetric';
-      case LeaderboardScope.country:
-        final country = profile?.country;
-        if (country == null || country.isEmpty) {
-          return 'Set your country in profile to see local rankings';
-        }
-        return 'Top players in $country by $byMetric';
-      case LeaderboardScope.city:
-        final country = profile?.country;
-        final city = profile?.city;
-        if (country == null ||
-            city == null ||
-            country.isEmpty ||
-            city.isEmpty) {
-          return 'Set both country and city in profile to see city rankings';
-        }
-        return 'Top players in $city, $country by $byMetric';
-    }
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   @override
@@ -136,30 +66,30 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final theme = Theme.of(context);
     final backend = BackendService.instance;
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      // Solid, not transparent: a see-through page showed the previous
+      // screen through it mid-transition and then snapped to black.
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
+        bottom: false,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              padding: const EdgeInsets.fromLTRB(12, 12, 20, 8),
               child: Row(
                 children: [
                   IconButton(
                     tooltip: 'Back',
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.arrow_back),
                   ),
-                  const SizedBox(width: 8),
-                  // Wrap in Expanded + FittedBox so titles like
-                  // "GLOBAL ACCURACY" (longer than the old "GLOBAL RANKS")
-                  // shrink to fit on narrow screens instead of overflowing.
+                  const SizedBox(width: 4),
                   Expanded(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        _titleForScope(),
+                        'LEADERBOARD',
                         maxLines: 1,
                         style: theme.textTheme.displayLarge
                             ?.copyWith(fontSize: 32),
@@ -169,293 +99,40 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ],
               ),
             ),
+            TabBar(
+              controller: _tabs,
+              labelStyle: theme.textTheme.labelSmall?.copyWith(
+                letterSpacing: 2.0,
+                fontWeight: FontWeight.w700,
+              ),
+              unselectedLabelStyle:
+                  theme.textTheme.labelSmall?.copyWith(letterSpacing: 2.0),
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: theme.colorScheme.outline,
+              indicatorColor: theme.colorScheme.primary,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorWeight: 2,
+              dividerColor: Colors.transparent,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+              tabs: const [
+                Tab(child: _TabLabel(label: 'ALL-TIME')),
+                Tab(child: _TrialTabLabel(cadence: TrialCadence.weekly)),
+                Tab(child: _TrialTabLabel(cadence: TrialCadence.monthly)),
+              ],
+            ),
             Container(height: 2, color: theme.colorScheme.surfaceContainerLow),
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 20),
-                    Expanded(
-                      child: !backend.isConfigured || !backend.isInitialized
-                          ? Center(
-                              child: Text(
-                                'Leaderboard is unavailable right now (could not reach the cloud). You can still play offline from other tabs.',
-                                style: theme.textTheme.bodyLarge,
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : StreamBuilder(
-                        stream: backend.authStateChanges(),
-                        builder: (context, _) {
-                          final userId = backend.currentUserId;
-                          if (userId == null) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'Sign in to view global rankings',
-                                    style: theme.textTheme.titleLarge,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'Your local progress is unchanged. Create an account to compete on leaderboards.',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.outline,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 28),
-                                  ElevatedButton.icon(
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => const AuthScreen(),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.login),
-                                    label: const Text('SIGN IN OR SIGN UP'),
-                                    style: ElevatedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 32,
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          final rowsKey = _rowsKeyFor(userId);
-                          return FutureBuilder<_LeaderboardData>(
-                            key: ValueKey<String>(rowsKey),
-                            future: _rowsFor(rowsKey),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState !=
-                                  ConnectionState.done) {
-                                return const Center(
-                                  child: SystemLoadingIndicator(),
-                                );
-                              }
-                              if (snapshot.hasError) {
-                                final message = cloudErrorMessage(
-                                  snapshot.error,
-                                  offlineMessage:
-                                      'No internet connection. Leaderboard is unavailable offline.',
-                                  fallbackMessage:
-                                      'Could not load leaderboard.',
-                                );
-                                return Center(
-                                  child: Text(
-                                    message,
-                                    style: theme.textTheme.bodyLarge,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                );
-                              }
-                              final data = snapshot.data ??
-                                  const _LeaderboardData(
-                                    profile: null,
-                                    rows: <Map<String, dynamic>>[],
-                                  );
-                              final rows = data.rows;
-                              final profile = data.profile;
-
-                              final hasCountry =
-                                  (profile?.country?.isNotEmpty ?? false);
-                              final hasCity =
-                                  (profile?.city?.isNotEmpty ?? false);
-
-                              final missingScopeLocation =
-                                  (_scope == LeaderboardScope.country &&
-                                          !hasCountry) ||
-                                      (_scope == LeaderboardScope.city &&
-                                          (!hasCountry || !hasCity));
-
-                              return RefreshIndicator(
-                                onRefresh: () async {
-                                  final refreshed = _fetchRows();
-                                  await refreshed;
-                                  if (!mounted) return;
-                                  // Show the rows just fetched rather than
-                                  // fetching them a second time.
-                                  setState(() {
-                                    _refreshEpoch++;
-                                    _rowsKey =
-                                        _rowsKeyFor(userId);
-                                    _rowsFuture = refreshed;
-                                  });
-                                },
-                                child: ListView(
-                                  children: [
-                                    Text(
-                                      _subtitleForScope(profile),
-                                      style: theme.textTheme.labelSmall,
-                                    ),
-                                    const SizedBox(height: 14),
-                                    // Metric selector — pick what the
-                                    // leaderboard ranks by. Sits above the
-                                    // scope chips so the player picks
-                                    // metric first, then scope.
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        ChoiceChip(
-                                          label: const Text('Number'),
-                                          selected: _metric ==
-                                              LeaderboardMetric.number,
-                                          onSelected: (_) {
-                                            setState(() {
-                                              _metric =
-                                                  LeaderboardMetric.number;
-                                            });
-                                          },
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('Loss'),
-                                          selected: _metric ==
-                                              LeaderboardMetric.loss,
-                                          onSelected: (_) {
-                                            setState(() {
-                                              _metric =
-                                                  LeaderboardMetric.loss;
-                                            });
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        ChoiceChip(
-                                          label: const Text('Global'),
-                                          selected:
-                                              _scope == LeaderboardScope.global,
-                                          onSelected: (_) {
-                                            setState(() {
-                                              _scope = LeaderboardScope.global;
-                                            });
-                                          },
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('Country'),
-                                          selected: _scope ==
-                                              LeaderboardScope.country,
-                                          onSelected: hasCountry
-                                              ? (_) {
-                                                  setState(() {
-                                                    _scope = LeaderboardScope
-                                                        .country;
-                                                  });
-                                                }
-                                              : null,
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('City'),
-                                          selected:
-                                              _scope == LeaderboardScope.city,
-                                          onSelected: hasCountry && hasCity
-                                              ? (_) {
-                                                  setState(() {
-                                                    _scope =
-                                                        LeaderboardScope.city;
-                                                  });
-                                                }
-                                              : null,
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 18),
-                                    if (rows.isEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 20),
-                                        child: Text(
-                                          missingScopeLocation
-                                              ? 'Update your profile to view this local leaderboard.'
-                                              : 'No scores yet. Be the first to rank.',
-                                          style: theme.textTheme.bodyLarge,
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      )
-                                    else
-                                      ...List<Widget>.generate(rows.length,
-                                          (index) {
-                                        final row = rows[index];
-                                        final rank = row['rank']?.toString() ??
-                                            '${index + 1}';
-                                        final displayName =
-                                            row['display_name']?.toString() ??
-                                                'Player';
-                                        // Pick the column to display based on
-                                        // the active metric. Loss metric shows
-                                        // "Accuracy: 99.21%"; number metric
-                                        // shows the formatted highest number.
-                                        final value = _metric ==
-                                                LeaderboardMetric.loss
-                                            ? _formatAccuracy(
-                                                row['neural_lowest_loss'])
-                                            : _formatLeaderboardNumber(
-                                                row['highest_number_numeric']);
-                                        final country =
-                                            row['country']?.toString();
-                                        final city = row['city']?.toString();
-                                        final location = [city, country]
-                                            .where((v) =>
-                                                v != null &&
-                                                v.trim().isNotEmpty)
-                                            .join(', ');
-                                        return Column(
-                                          children: [
-                                            ListTile(
-                                              dense: true,
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 0,
-                                                vertical: 4,
-                                              ),
-                                              leading: Text(
-                                                '#$rank',
-                                                style:
-                                                    theme.textTheme.titleLarge,
-                                              ),
-                                              title: Text(
-                                                displayName,
-                                                style:
-                                                    theme.textTheme.bodyLarge,
-                                              ),
-                                              subtitle: Text(
-                                                location.isEmpty
-                                                    ? value
-                                                    : '$value\n$location',
-                                                style:
-                                                    theme.textTheme.labelSmall,
-                                              ),
-                                            ),
-                                            Divider(
-                                              color: theme.colorScheme
-                                                  .surfaceContainerLow,
-                                              height: 1,
-                                            ),
-                                          ],
-                                        );
-                                      }),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+              child: StreamBuilder<Object?>(
+                stream: backend.authStateChanges(),
+                builder: (context, _) {
+                  final userId = backend.currentUserId;
+                  if (userId == null) return _tabViews(null, null);
+                  return FutureBuilder<UserProfile?>(
+                    future: _profileFor(userId),
+                    builder: (context, snapshot) =>
+                        _tabViews(userId, snapshot.data),
+                  );
+                },
               ),
             ),
           ],
@@ -463,15 +140,91 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ),
     );
   }
+
+  Widget _tabViews(String? userId, UserProfile? profile) {
+    final now = DateTime.now();
+    return TabBarView(
+      controller: _tabs,
+      children: [
+        RankingBoard(
+          metrics: LeaderboardMetric.allTime,
+          userId: userId,
+          profile: profile,
+        ),
+        RankingBoard(
+          metrics: const [LeaderboardMetric.weekly],
+          periodId: TrialPeriods.weekId(now),
+          userId: userId,
+          profile: profile,
+          header: const TrialPanel(cadence: TrialCadence.weekly),
+          emptyHint: 'Earn anything this week to join the standings. '
+              'They refresh every few minutes.',
+        ),
+        RankingBoard(
+          metrics: const [LeaderboardMetric.monthly],
+          periodId: TrialPeriods.monthId(now),
+          userId: userId,
+          profile: profile,
+          header: const TrialPanel(cadence: TrialCadence.monthly),
+          emptyHint: 'Earn anything this month to join the standings. '
+              'They refresh every few minutes.',
+        ),
+      ],
+    );
+  }
 }
 
-enum LeaderboardScope { global, country, city }
+class _TabLabel extends StatelessWidget {
+  const _TabLabel({required this.label, this.showBadge = false});
 
-enum LeaderboardMetric { number, loss }
+  final String label;
+  final bool showBadge;
 
-class _LeaderboardData {
-  const _LeaderboardData({required this.profile, required this.rows});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            child: showBadge
+                ? Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-  final UserProfile? profile;
-  final List<Map<String, dynamic>> rows;
+/// Tab label with a dot while that trial has a reward to claim.
+class _TrialTabLabel extends StatelessWidget {
+  const _TrialTabLabel({required this.cadence});
+
+  final TrialCadence cadence;
+
+  @override
+  Widget build(BuildContext context) {
+    final claimable = context.select<GameState, bool>(
+      (gs) => gs.trials.runFor(cadence)?.hasClaimable(gs.trialCounters) ?? false,
+    );
+    return _TabLabel(
+      label: cadence == TrialCadence.weekly ? 'WEEKLY' : 'MONTHLY',
+      showBadge: claimable,
+    );
+  }
 }

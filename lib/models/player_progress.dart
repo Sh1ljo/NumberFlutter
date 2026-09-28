@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'trials.dart';
+
 class PlayerProgress {
   final String userId;
   final BigInt number;
@@ -20,9 +22,18 @@ class PlayerProgress {
   final List<String> achievements;
   final int lifetimeClicks;
   final String? artifactsJson;
+
+  /// Lifetime counters the Trials measure (see [TrialCounters]).
+  final BigInt lifetimeEarned;
+  final int lifetimeUpgradeLevels;
+  final int lifetimeSparks;
+
+  /// [TrialState] JSON. Travels with the rest of the snapshot, like the
+  /// prestige points its claims paid into.
+  final String? trialsJson;
   final DateTime updatedAt;
 
-  const PlayerProgress({
+  PlayerProgress({
     required this.userId,
     required this.number,
     required this.clickPower,
@@ -40,8 +51,20 @@ class PlayerProgress {
     this.achievements = const [],
     this.lifetimeClicks = 0,
     this.artifactsJson,
+    BigInt? lifetimeEarned,
+    this.lifetimeUpgradeLevels = 0,
+    this.lifetimeSparks = 0,
+    this.trialsJson,
     required this.updatedAt,
-  });
+  }) : lifetimeEarned = lifetimeEarned ?? BigInt.zero;
+
+  TrialCounters get trialCounters => TrialCounters(
+        earned: lifetimeEarned,
+        taps: lifetimeClicks,
+        prestiges: prestigeCount,
+        upgrades: lifetimeUpgradeLevels,
+        sparks: lifetimeSparks,
+      );
 
   int get totalUpgradeLevels =>
       upgradeLevels.values.fold<int>(0, (sum, level) => sum + level);
@@ -85,6 +108,10 @@ class PlayerProgress {
     List<String>? achievements,
     int? lifetimeClicks,
     String? artifactsJson,
+    BigInt? lifetimeEarned,
+    int? lifetimeUpgradeLevels,
+    int? lifetimeSparks,
+    String? trialsJson,
     DateTime? updatedAt,
   }) {
     return PlayerProgress(
@@ -105,6 +132,11 @@ class PlayerProgress {
       achievements: achievements ?? this.achievements,
       lifetimeClicks: lifetimeClicks ?? this.lifetimeClicks,
       artifactsJson: artifactsJson ?? this.artifactsJson,
+      lifetimeEarned: lifetimeEarned ?? this.lifetimeEarned,
+      lifetimeUpgradeLevels:
+          lifetimeUpgradeLevels ?? this.lifetimeUpgradeLevels,
+      lifetimeSparks: lifetimeSparks ?? this.lifetimeSparks,
+      trialsJson: trialsJson ?? this.trialsJson,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -128,6 +160,10 @@ class PlayerProgress {
       'achievements': achievements,
       'lifetime_clicks': lifetimeClicks,
       if (artifactsJson != null) 'artifacts': artifactsJson,
+      'lifetime_earned_numeric': lifetimeEarned.toString(),
+      'lifetime_upgrade_levels': lifetimeUpgradeLevels,
+      'lifetime_sparks': lifetimeSparks,
+      if (trialsJson != null) 'trials': trialsJson,
       'updated_at': updatedAt.toUtc().toIso8601String(),
     };
   }
@@ -180,6 +216,12 @@ class PlayerProgress {
           .toList(),
       lifetimeClicks: (row['lifetime_clicks'] as num?)?.toInt() ?? 0,
       artifactsJson: row['artifacts'] as String?,
+      lifetimeEarned:
+          BigInt.tryParse(row['lifetime_earned_numeric'] as String? ?? ''),
+      lifetimeUpgradeLevels:
+          (row['lifetime_upgrade_levels'] as num?)?.toInt() ?? 0,
+      lifetimeSparks: (row['lifetime_sparks'] as num?)?.toInt() ?? 0,
+      trialsJson: row['trials'] as String?,
       updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
     );
