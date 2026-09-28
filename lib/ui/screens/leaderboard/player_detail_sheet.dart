@@ -61,42 +61,36 @@ class PlayerDetailSheet extends StatelessWidget {
     final stats = <_Stat>[
       _Stat(
         'Highest number',
-        Icons.trending_up,
         entry,
         compare,
         LeaderboardMetric.highest,
       ),
       _Stat(
         'Total earned',
-        Icons.savings_outlined,
         entry,
         compare,
         LeaderboardMetric.earned,
       ),
       _Stat(
         'Prestiges',
-        Icons.auto_awesome,
         entry,
         compare,
         LeaderboardMetric.prestiges,
       ),
       _Stat(
         'Neural accuracy',
-        Icons.hub_outlined,
         entry,
         compare,
         LeaderboardMetric.accuracy,
       ),
       _Stat(
         'Lifetime taps',
-        Icons.touch_app_outlined,
         entry,
         compare,
         LeaderboardMetric.taps,
       ),
       _Stat(
         'Achievements',
-        Icons.military_tech_outlined,
         entry,
         compare,
         LeaderboardMetric.achievements,
@@ -104,7 +98,6 @@ class PlayerDetailSheet extends StatelessWidget {
       ),
       _Stat(
         'This week',
-        Icons.flag_outlined,
         entry,
         compare,
         LeaderboardMetric.weekly,
@@ -112,7 +105,6 @@ class PlayerDetailSheet extends StatelessWidget {
       ),
       _Stat(
         'This month',
-        Icons.event_outlined,
         entry,
         compare,
         LeaderboardMetric.monthly,
@@ -229,7 +221,6 @@ class PlayerDetailSheet extends StatelessWidget {
 class _Stat {
   _Stat(
     this.label,
-    this.icon,
     this.entry,
     this.me,
     this.metric, {
@@ -238,7 +229,6 @@ class _Stat {
   }) : current = current ?? ((_) => true);
 
   final String label;
-  final IconData icon;
   final LeaderboardEntry entry;
   final LeaderboardEntry? me;
   final LeaderboardMetric metric;
@@ -297,19 +287,11 @@ class _StatTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(stat.icon, size: 14, color: AppTheme.outline),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  stat.label.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
-                ),
-              ),
-            ],
+          Text(
+            stat.label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
           ),
           const SizedBox(height: 8),
           FittedBox(

@@ -25,26 +25,6 @@ class LeaderboardFormat {
     }
   }
 
-  static IconData iconFor(LeaderboardMetric metric) {
-    switch (metric) {
-      case LeaderboardMetric.highest:
-        return Icons.trending_up;
-      case LeaderboardMetric.earned:
-        return Icons.savings_outlined;
-      case LeaderboardMetric.prestiges:
-        return Icons.auto_awesome;
-      case LeaderboardMetric.accuracy:
-        return Icons.hub_outlined;
-      case LeaderboardMetric.taps:
-        return Icons.touch_app_outlined;
-      case LeaderboardMetric.achievements:
-        return Icons.military_tech_outlined;
-      case LeaderboardMetric.weekly:
-      case LeaderboardMetric.monthly:
-        return Icons.flag_outlined;
-    }
-  }
-
   static String _count(int? value) =>
       value == null ? '—' : NumberFormatter.format(BigInt.from(value));
 
@@ -163,21 +143,6 @@ class LeaderboardFormat {
         .subtract(const Duration(days: 1));
     return '${_months[start.month - 1]} ${start.day} – '
         '${_months[end.month - 1]} ${end.day}';
-  }
-
-  static IconData goalIcon(TrialGoal goal) {
-    switch (goal) {
-      case TrialGoal.earn:
-        return Icons.savings_outlined;
-      case TrialGoal.taps:
-        return Icons.touch_app_outlined;
-      case TrialGoal.prestiges:
-        return Icons.auto_awesome;
-      case TrialGoal.upgrades:
-        return Icons.upgrade;
-      case TrialGoal.sparks:
-        return Icons.bolt;
-    }
   }
 
   static String goalTitle(TrialObjective objective) {

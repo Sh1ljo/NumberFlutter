@@ -91,19 +91,6 @@ class _TrialPanelState extends State<TrialPanel> {
         children: [
           Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _weekly ? Icons.flag_outlined : Icons.event_outlined,
-                  color: cs.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,11 +117,10 @@ class _TrialPanelState extends State<TrialPanel> {
                 ),
               ),
               _Pill(
-                icon: Icons.schedule,
-                label: LeaderboardFormat.timeLeft(
+                label: '${LeaderboardFormat.timeLeft(
                   TrialPeriods.endOf(widget.cadence, now),
                   now: now,
-                ),
+                )} left',
               ),
             ],
           ),
@@ -225,14 +211,6 @@ class _ObjectiveTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Icon(
-            complete
-                ? Icons.check_circle
-                : LeaderboardFormat.goalIcon(objective.goal),
-            size: 22,
-            color: complete ? cs.primary : AppTheme.outline,
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,12 +299,6 @@ class _SweepTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.workspace_premium_outlined,
-            size: 22,
-            color: ready || claimed ? LeaderboardFormat.gold : AppTheme.outline,
-          ),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -414,9 +386,8 @@ class _ClaimButton extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({super.key, this.icon, required this.label});
+  const _Pill({super.key, required this.label});
 
-  final IconData? icon;
   final String label;
 
   @override
@@ -429,21 +400,12 @@ class _Pill extends StatelessWidget {
         color: AppTheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 13, color: AppTheme.outline),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              letterSpacing: 0.4,
-              color: cs.onSurface,
-            ),
-          ),
-        ],
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          letterSpacing: 0.4,
+          color: cs.onSurface,
+        ),
       ),
     );
   }

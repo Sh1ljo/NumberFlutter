@@ -267,7 +267,6 @@ class _RankingBoardState extends State<RankingBoard>
                 if (!_available)
                   _messageSliver(
                     theme,
-                    icon: Icons.cloud_off_outlined,
                     title: 'Rankings are offline',
                     body: 'Could not reach the cloud. You can keep playing; '
                         'rankings come back once you reconnect.',
@@ -313,11 +312,6 @@ class _RankingBoardState extends State<RankingBoard>
                   final metric = widget.metrics[index];
                   final selected = metric == _metric;
                   return ChoiceChip(
-                    avatar: Icon(
-                      LeaderboardFormat.iconFor(metric),
-                      size: 16,
-                      color: selected ? cs.onPrimary : AppTheme.outline,
-                    ),
                     showCheckmark: false,
                     label: Text(metric.label),
                     selected: selected,
@@ -335,18 +329,15 @@ class _RankingBoardState extends State<RankingBoard>
                   segments: [
                     const ButtonSegment(
                       value: LeaderboardScope.global,
-                      icon: Icon(Icons.public, size: 16),
                       label: Text('Global'),
                     ),
                     ButtonSegment(
                       value: LeaderboardScope.country,
-                      icon: const Icon(Icons.flag_outlined, size: 16),
                       label: const Text('Country'),
                       enabled: _hasCountry,
                     ),
                     ButtonSegment(
                       value: LeaderboardScope.city,
-                      icon: const Icon(Icons.location_city, size: 16),
                       label: const Text('City'),
                       enabled: _hasCountry && _hasCity,
                     ),
@@ -388,7 +379,6 @@ class _RankingBoardState extends State<RankingBoard>
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
                         isDense: true,
-                        prefixIcon: const Icon(Icons.search, size: 20),
                         hintText: 'Name, city or country',
                         filled: true,
                         fillColor: AppTheme.surfaceContainerLow,
@@ -447,7 +437,6 @@ class _RankingBoardState extends State<RankingBoard>
       return [
         _messageSliver(
           theme,
-          icon: Icons.person_pin_circle_outlined,
           title: 'Add your location',
           body: 'Set your country and city in your profile to compete '
               'locally.',
@@ -461,7 +450,6 @@ class _RankingBoardState extends State<RankingBoard>
       return [
         _messageSliver(
           theme,
-          icon: _query.isEmpty ? Icons.emoji_events_outlined : Icons.search_off,
           title: _query.isEmpty ? 'No one here yet' : 'No players found',
           body: _query.isEmpty
               ? (widget.emptyHint ?? 'Be the first to rank.')
@@ -529,13 +517,11 @@ class _RankingBoardState extends State<RankingBoard>
     );
     return _messageSliver(
       theme,
-      icon: Icons.wifi_off_outlined,
       title: 'Couldn\'t load rankings',
       body: message,
-      action: OutlinedButton.icon(
+      action: OutlinedButton(
         onPressed: () => _load(force: true),
-        icon: const Icon(Icons.refresh, size: 18),
-        label: const Text('TRY AGAIN'),
+        child: const Text('TRY AGAIN'),
       ),
     );
   }
@@ -543,23 +529,20 @@ class _RankingBoardState extends State<RankingBoard>
   Widget _signInSliver(ThemeData theme) {
     return _messageSliver(
       theme,
-      icon: Icons.emoji_events_outlined,
       title: 'Sign in to compete',
       body: 'Your local progress is safe. Create an account to see where '
           'you rank and appear on the boards.',
-      action: FilledButton.icon(
+      action: FilledButton(
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const AuthScreen()),
         ),
-        icon: const Icon(Icons.login),
-        label: const Text('SIGN IN OR SIGN UP'),
+        child: const Text('SIGN IN OR SIGN UP'),
       ),
     );
   }
 
   Widget _messageSliver(
     ThemeData theme, {
-    required IconData icon,
     required String title,
     required String body,
     Widget? action,
@@ -569,8 +552,6 @@ class _RankingBoardState extends State<RankingBoard>
         padding: const EdgeInsets.fromLTRB(32, 40, 32, 16),
         child: Column(
           children: [
-            Icon(icon, size: 40, color: AppTheme.outline),
-            const SizedBox(height: 14),
             Text(
               title,
               style: theme.textTheme.titleLarge,
@@ -735,11 +716,7 @@ class _PodiumSpot extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (winner)
-              Icon(Icons.emoji_events, color: medal, size: 22)
-            else
-              const SizedBox(height: 22),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             _Avatar(
               entry: entry,
               size: winner ? 60 : 50,
@@ -964,8 +941,6 @@ class _OwnStandingBar extends StatelessWidget {
       content = Row(
         key: const ValueKey('absent'),
         children: [
-          Icon(Icons.info_outline, color: AppTheme.outline, size: 20),
-          const SizedBox(width: 12),
           Expanded(
             child: Text(
               emptyHint ??
@@ -1034,9 +1009,7 @@ class _OwnStandingBar extends StatelessWidget {
                   style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
                 ),
               ],
-            )
-          else if (rank == 1)
-            const Icon(Icons.emoji_events, color: LeaderboardFormat.gold),
+            ),
           const SizedBox(width: 4),
           Icon(Icons.chevron_right, color: AppTheme.outline),
         ],
