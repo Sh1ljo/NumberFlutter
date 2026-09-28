@@ -39,8 +39,8 @@ enum ShopEffect {
   /// Temporal Collapse cooldown −20% permanently.
   collapseEfficiency,
 
-  /// Carry +2% of net worth through each prestige permanently.
-  surgeProtocol,
+  /// +10% click power and +10% idle generation permanently.
+  catalystCore,
 
   /// −10% neural network costs permanently.
   neuralPatron,

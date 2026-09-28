@@ -70,11 +70,13 @@ void main() {
       expect(gs.prestigePointsMultiplier, closeTo(before * 1.15, 1e-9));
     });
 
-    test('surge protocol adds 200 bps carry', () async {
+    test('catalyst core adds 10% click and idle bonus', () async {
       final gs = await _game();
-      final before = gs.surgeProtocolNetWorthCarryBps;
-      gs.debugGrantShopProduct(ShopCatalog.surgeProtocol);
-      expect(gs.surgeProtocolNetWorthCarryBps, before + 200);
+      final beforeClick = gs.shopClickMultiplier;
+      final beforeIdle = gs.shopIdleMultiplier;
+      gs.debugGrantShopProduct(ShopCatalog.catalystCore);
+      expect(gs.shopClickMultiplier, closeTo(beforeClick + 0.10, 1e-9));
+      expect(gs.shopIdleMultiplier, closeTo(beforeIdle + 0.10, 1e-9));
     });
 
     test('neural patron discounts neural branch cost by 10%', () async {

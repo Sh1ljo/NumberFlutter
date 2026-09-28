@@ -68,7 +68,7 @@ class ResearchNode {
 // Effect type constants
 abstract class ResearchEffect {
   static const String costReduction = 'cost_reduction';
-  static const String surgeSeconds = 'surge_seconds';
+  static const String productionMult = 'production_mult';
   static const String prestigeDeltaMult = 'prestige_delta_mult';
   static const String idleBonus = 'idle_bonus';
   static const String offlineMult = 'offline_mult';

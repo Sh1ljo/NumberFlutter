@@ -162,8 +162,8 @@ class _ShopProductTile extends StatelessWidget {
         return Icons.timelapse;
       case ShopEffect.collapseEfficiency:
         return Icons.timer_off;
-      case ShopEffect.surgeProtocol:
-        return Icons.swap_vert;
+      case ShopEffect.catalystCore:
+        return Icons.science;
       case ShopEffect.neuralPatron:
         return Icons.hub;
       case ShopEffect.prestigeDividend:

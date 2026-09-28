@@ -18,7 +18,7 @@ There are exactly two real currencies.
 
 | Currency | Field | Earned by | Spent on |
 |---|---|---|---|
-| **Number** (`N`) | `BigInt number` | clicks, idle ticker, offline gains, Temporal Collapse burst, Surge Protocol carry-over | all upgrades, the whole neural network |
+| **Number** (`N`) | `BigInt number` | clicks, idle ticker, offline gains, Temporal Collapse burst | all upgrades, the whole neural network |
 | **Prestige Points** (`PP`) | `double prestigeCurrency` | `prestige()` | Nexus research nodes only |
 
 The shop screen displays USD prices but is a non-functional mock — no IAP plugin is wired up.
@@ -224,20 +224,27 @@ durationSeconds   = min(180, 30 + 5 × (L - 1))
 ### Requirement — the load-bearing pacing constant
 
 ```
-requirement(n) = 100,000,000 × (21/10)^n        // n = completed prestiges
-               = 10,000 × (21/10)^n             // test environment
+requirement(n) = 100,000,000 × ∏ growth(i) for i in [0, n)   // n = completed prestiges
+                = 10,000 × ∏ growth(i)                        // test environment
+
+growth(i) = 21/10                          // i < 5 (prestigeGrowthRampStart)
+          = (42 + (i - 4)) / 20            // i >= 5
 ```
 
-Held as the **exact rational 21/10**, not a double. Computing `base × pow(2.1, n)` in floating
-point and handing the result to `BigInt.from` saturates at int64 max
-(`9223372036854775807`) around prestige 35 — which silently flattens the curve back into the
-exact bug this constant exists to fix. Clamped at `maxPrestigeRequirementExponent = 1000`
-(`100M × 2.1^1000 ≈ 1e338`, far past anything reachable) so a corrupt save reporting a wild
-count can't blow up the BigInt arithmetic.
+Held as **exact rationals**, not doubles. Computing `base × pow(2.1, n)` in floating point and
+handing the result to `BigInt.from` saturates at int64 max (`9223372036854775807`) around
+prestige 35 — which silently flattens the curve back into the exact bug this constant exists to
+fix. Clamped at `maxPrestigeRequirementExponent = 1000` so a corrupt save reporting a wild count
+can't blow up the BigInt arithmetic.
 
-This used to be a **flat 100M forever**, while the reward grew `1.35^n`. That inverted the
-whole progression — every prestige was cheaper in real terms than the last, PP/hour rose
-~850× from run 1 to run 16, and the full 16-prestige arc took ~22 h.
+The first 5 prestiges keep a flat **2.1x** ratio so a new player gets a stable, predictable early
+ramp. From prestige 6 onward the ratio itself climbs by **0.05x per prestige** (2.15x, 2.20x,
+2.25x, …), so the requirement grows super-exponentially instead of a flat geometric curve. This
+exists because a flat 2.1x let later prestiges — once production upgrades compounded — be blown
+through in a minute or two; PP/hour was rising without limit late-game instead of declining.
+
+This used to be a **flat 100M forever** before the flat-2.1x fix, while the reward grew `1.35^n`.
+That inverted the whole progression — every prestige was cheaper in real terms than the last.
 
 ### Reward and multiplier
 
@@ -250,7 +257,9 @@ multiplier(n) = 1 + Σ delta(i) for i in [0, n)  = 1 + 0.20n + 0.05·n(n-1)/2
 Quadratic: `n=10 → 4.25×`, `n=50 → 72.25×`, `n=100 → 268.5×`.
 
 `prestigeRequirementGrowth (2.1)` must stay **above** `prestigeRewardGrowth (1.35)` or the loop
-runs backwards again. That invariant is asserted in `test/economy_test.dart`.
+runs backwards again. That invariant is asserted in `test/economy_test.dart`. It holds even more
+comfortably once the ramp kicks in past prestige 5, since the effective ratio only grows from
+2.1 onward.
 
 ### Measured pacing (optimal reinvestment)
 
@@ -258,27 +267,22 @@ runs backwards again. That invariant is asserted in `test/economy_test.dart`.
 |---|---|---|---|---|---|
 | 1 | 1.0e8 | 1.00 | 1.3 h | 1.3 h | ~2 |
 | 5 | 1.9e9 | 2.10 | ~0.8 h | ~5 h | ~13 |
-| 9 | 3.8e10 | 4.00 | ~1.4 h | ~9 h | **~43 (peak)** |
-| 13 | 7.4e11 | 6.70 | ~4.4 h | 21 h | ~25 |
-| 15 | 3.2e12 | 8.35 | ~13 h | ~45 h | ~16 |
-| 16 | 6.8e12 | 9.25 | ~23 h | 68 h | ~12 |
 
-Run 1 in this table predates the early-game click repricing; the measured first run by tap
-pace is in "Early-game balance" (25-52 min). Later runs have not been re-measured.
-
-PP/hour rises to a peak around run 9 and then declines — the correct shape. Prestige 15 at
-~45 h sits inside the intended 40-60 h band.
+Runs 6+ have not been re-measured since the post-5 requirement ramp was added — the requirement
+now grows faster than a flat 2.1x from prestige 6 onward (see above), so run time and PP/h past
+run 5 will differ from (and run longer than) any earlier flat-2.1x measurement. Run 1 in this
+table predates the early-game click repricing; the measured first run by tap pace is in
+"Early-game balance" (25-52 min).
 
 ### What prestige resets
 
 **Reset:** `number → 0`, `clickPower → base`, `autoClickRate → 0`, all `upgrade.level → 0`,
-momentum / overclock / temporal state.
+momentum / overclock / temporal state. Prestige always zeroes `number` — nothing carries a
+balance through the reset.
 
 **Preserved:** `prestigeCurrency`, `prestigeMultiplier`, `prestigeCount`, all Nexus
 `researchNodes` levels, the entire `neuralNetwork` **including `loss`**, `highestNumber`,
 `nexusStabilized`.
-
-Surge Protocol refunds `netWorthBefore × 0.005 × level` (0.5% per level, max 2.5%).
 
 ---
 
@@ -297,7 +301,7 @@ unlocking and PP had **no sink at all** afterwards.
 | id | Tier | Prereq | base/lvl | maxLvl | Effect |
 |---|---|---|---|---|---|
 | `opt_protocol` | 1 | — | 3 | 10 | -1% all upgrade costs per level (max -10%) |
-| `surge_protocol` | 1 | — | 6 | 5 | +0.5% pre-prestige net worth carried per level |
+| `surge_protocol` | 1 | — | 6 | 5 | +5% all production (click + idle) per level |
 | `enhanced_extraction` | 1 | — | 6 | 5 | +10% prestige delta per level |
 | `idle_foundation` | 2 | opt ≥3 | 6 | 10 | +1.0/s permanent idle per level |
 | `quick_resume` | 2 | opt ≥5 | 9 | 5 | +10% offline gains per level |

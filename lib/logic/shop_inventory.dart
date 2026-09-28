@@ -26,23 +26,25 @@ class ShopInventory {
   bool get hasIdleAmplifier => owns(ShopCatalog.idleAmplifier);
   bool get hasChronoLensPro => owns(ShopCatalog.chronoLensPro);
   bool get hasCollapseEfficiency => owns(ShopCatalog.collapseEfficiency);
-  bool get hasSurgeProtocol => owns(ShopCatalog.surgeProtocol);
+  bool get hasCatalystCore => owns(ShopCatalog.catalystCore);
   bool get hasNeuralPatron => owns(ShopCatalog.neuralPatron);
   bool get hasPrestigeDividend => owns(ShopCatalog.prestigeDividend);
 
-  /// Additive click bonus from owned primers/amplifiers (0.03 + 0.12 max).
+  /// Additive click bonus from owned primers/amplifiers (0.03 + 0.12 + 0.10 max).
   double get clickBonus {
     var bonus = 0.0;
     if (hasClickPrimer) bonus += 0.03;
     if (hasKineticAmplifier) bonus += 0.12;
+    if (hasCatalystCore) bonus += 0.10;
     return bonus;
   }
 
-  /// Additive idle bonus from owned primers/amplifiers (0.03 + 0.15 max).
+  /// Additive idle bonus from owned primers/amplifiers (0.03 + 0.15 + 0.10 max).
   double get idleBonus {
     var bonus = 0.0;
     if (hasIdlePrimer) bonus += 0.03;
     if (hasIdleAmplifier) bonus += 0.15;
+    if (hasCatalystCore) bonus += 0.10;
     return bonus;
   }
 
@@ -65,9 +67,6 @@ class ShopInventory {
   double get neuralSparkSpawnDelayFactor => hasSparkMagnet ? 0.75 : 1.0;
 
   double get collapseCooldownFactor => hasCollapseEfficiency ? 0.80 : 1.0;
-
-  /// Extra net-worth carry in basis points (2% = 200).
-  int get surgeCarryBps => hasSurgeProtocol ? 200 : 0;
 
   double get neuralCostFactor => hasNeuralPatron ? 0.90 : 1.0;
 
