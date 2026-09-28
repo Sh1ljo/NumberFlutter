@@ -4,12 +4,18 @@ import '../../utils/number_formatter.dart';
 class OfflineGainsDialog extends StatelessWidget {
   final BigInt gains;
   final double accuracyGain;
+
+  /// Mastery the training Skill gained while away, and that Skill's name.
+  final double masteryGain;
+  final String? skillName;
   final VoidCallback onAcknowledge;
 
   const OfflineGainsDialog({
     super.key,
     required this.gains,
     this.accuracyGain = 0.0,
+    this.masteryGain = 0.0,
+    this.skillName,
     required this.onAcknowledge,
   });
 
@@ -17,6 +23,8 @@ class OfflineGainsDialog extends StatelessWidget {
     BuildContext context,
     BigInt gains, {
     double accuracyGain = 0.0,
+    double masteryGain = 0.0,
+    String? skillName,
     required VoidCallback onAcknowledge,
   }) {
     return showDialog(
@@ -25,6 +33,8 @@ class OfflineGainsDialog extends StatelessWidget {
       builder: (_) => OfflineGainsDialog(
         gains: gains,
         accuracyGain: accuracyGain,
+        masteryGain: masteryGain,
+        skillName: skillName,
         onAcknowledge: onAcknowledge,
       ),
     );
@@ -34,6 +44,7 @@ class OfflineGainsDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final hasAccuracyGain = accuracyGain > 0;
+    final hasMasteryGain = masteryGain > 0 && skillName != null;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -70,7 +81,7 @@ class OfflineGainsDialog extends StatelessWidget {
                 color: theme.colorScheme.primary,
               ),
             ),
-            if (!hasAccuracyGain && gains == BigInt.zero) ...[
+            if (!hasAccuracyGain && !hasMasteryGain && gains == BigInt.zero) ...[
               const SizedBox(height: 12),
               Text(
                 'No idle gains were generated this time.',
@@ -93,6 +104,23 @@ class OfflineGainsDialog extends StatelessWidget {
               Text(
                 '+${(accuracyGain * 100).toStringAsFixed(2)}% accuracy',
                 style: theme.textTheme.headlineMedium?.copyWith(
+                  color: Colors.greenAccent,
+                ),
+              ),
+            ],
+            if (hasMasteryGain) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Your network kept studying $skillName:',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '+${(masteryGain * 100).toStringAsFixed(1)}% mastery',
+                style: theme.textTheme.titleLarge?.copyWith(
                   color: Colors.greenAccent,
                 ),
               ),

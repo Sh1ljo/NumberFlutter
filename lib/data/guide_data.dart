@@ -32,6 +32,7 @@ class GuideSection {
 bool _always(GameState gs) => true;
 bool _prestiged(GameState gs) => gs.prestigeCount >= 1;
 bool _neural(GameState gs) => gs.neuralNetworkUnlocked;
+bool _skills(GameState gs) => gs.skillsUnlocked;
 
 /// Unlocked once its tip has been shown, or the upgrade was bought anyway.
 bool Function(GameState) _upgradeMet(String upgradeId) => (gs) {
@@ -224,6 +225,51 @@ abstract class GuideData {
         isUnlocked: _neural,
         lockedHint: 'Not yet.',
         secret: true,
+      ),
+    ]),
+    GuideSection(name: 'SKILLS', entries: [
+      GuideEntry(
+        title: 'Skills',
+        body:
+            'With all 7 pyramid layers grown, the network can learn jobs: '
+            'Tapping, Shopping, Spark Hunting and Prestige Planning. In real '
+            'AI, the examples a network studies are called a dataset — each '
+            'Skill is one. Find them under NEURAL › SKILLS.',
+        isUnlocked: _skills,
+        lockedHint: 'Grow the neural pyramid to all 7 layers.',
+      ),
+      GuideEntry(
+        title: 'Training & Mastery',
+        body:
+            'Press TRAIN on a Skill and its Mastery rises over time, even '
+            'offline. One Skill trains at a time; Mastery is kept when you '
+            'switch, prestige or start an Epoch. The first half comes fast, '
+            'the last few percent take days.',
+        isUnlocked: _skills,
+        lockedHint: 'Grow the neural pyramid to all 7 layers.',
+      ),
+      GuideEntry(
+        title: 'Fit',
+        body:
+            'Every Skill has a favourite activation: Tapping likes ReLU, '
+            'Shopping Tanh, Spark Hunting Sigmoid and Prestige Planning '
+            'Linear. The share of your neurons using it sets training speed, '
+            'from 0.5× (none) to 2× (all). A stronger network trains every '
+            'Skill faster too.',
+        isUnlocked: _skills,
+        lockedHint: 'Grow the neural pyramid to all 7 layers.',
+      ),
+      GuideEntry(
+        title: 'Helpers',
+        body:
+            'Each Skill powers a helper you switch on: Auto-Tap (1 to 10 taps '
+            'a second, building streaks from 75% Mastery), Auto-Buy (buys the '
+            "advisor's pick within the spending limit you set — never "
+            'real-money items), Auto-Catch (catches sparks, and more of them '
+            'appear) and Auto-Prestige (from 50% Mastery, always off until '
+            'you confirm it). Helpers work while the game is open.',
+        isUnlocked: _skills,
+        lockedHint: 'Grow the neural pyramid to all 7 layers.',
       ),
     ]),
   ];

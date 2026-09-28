@@ -45,6 +45,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
   String? _lastCategory;
   int? _lastTab;
   int? _lastSubTab;
+  int? _lastNeuralSubTab;
   int _holeGeneration = 0;
   Timer? _retryTimer;
 
@@ -190,12 +191,13 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
     // Selected rather than consumed: this overlay is mounted for the whole
     // session and the game ticker notifies ~10x/s, but what it renders only
     // depends on these three values.
-    return Selector<GameState, (bool, TutorialStep, String, int)>(
+    return Selector<GameState, (bool, TutorialStep, String, int, int)>(
       selector: (_, gs) => (
         gs.isTutorialActive,
         gs.tutorialStep,
         gs.selectedUpgradeCategory,
         gs.prestigeSubTabIndex,
+        gs.neuralSubTabIndex,
       ),
       builder: (context, _, __) {
         final gameState = context.read<GameState>();
@@ -206,6 +208,7 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         final category = gameState.selectedUpgradeCategory;
         final tab = widget.currentTab;
         final subTab = gameState.prestigeSubTabIndex;
+        final neuralSubTab = gameState.neuralSubTabIndex;
 
         // Re-resolve the hole when anything that could move the target
         // changes. Still kicked from build, but it only schedules a
@@ -223,11 +226,13 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         if (step != _lastStep ||
             category != _lastCategory ||
             tab != _lastTab ||
-            subTab != _lastSubTab) {
+            subTab != _lastSubTab ||
+            neuralSubTab != _lastNeuralSubTab) {
           _lastStep = step;
           _lastCategory = category;
           _lastTab = tab;
           _lastSubTab = subTab;
+          _lastNeuralSubTab = neuralSubTab;
           _restartHoleTracking(step);
         }
 
@@ -238,8 +243,11 @@ class _TutorialOverlayState extends State<TutorialOverlay> {
         final onWrongCategory =
             spec.requiredCategory != null && spec.requiredCategory != category;
         // Wrong Prestige sub-tab: the Prestige screen is already switching.
-        final onWrongSubTab = spec.requiredPrestigeSubTab != null &&
-            spec.requiredPrestigeSubTab != subTab;
+        // Same for the Neural screen's NETWORK / SKILLS tabs.
+        final onWrongSubTab = (spec.requiredPrestigeSubTab != null &&
+                spec.requiredPrestigeSubTab != subTab) ||
+            (spec.requiredNeuralSubTab != null &&
+                spec.requiredNeuralSubTab != neuralSubTab);
 
         final media = MediaQuery.of(context);
 

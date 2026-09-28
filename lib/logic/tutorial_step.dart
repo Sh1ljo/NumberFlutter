@@ -122,6 +122,39 @@ enum TutorialStep {
   tipDeepLayers,
   tipEpoch,
 
+  /// Teaser: the pyramid is two layers from teaching Skills.
+  skillsWhisper,
+
+  // ── Chapter 6 · Skills (once the pyramid is complete) ──────────────────
+  skillsUnlocked,
+
+  /// Spotlight on NEURAL in the nav bar.
+  navNeuralForSkills,
+
+  /// Pulsing outline on the SKILLS tab — tap it.
+  skillsOpenTab,
+
+  /// What a dataset is, in plain words.
+  skillsHowItLearns,
+
+  /// Spotlight on Tapping's real TRAIN button.
+  skillsTrainTapping,
+
+  /// Spotlight on Tapping's Mastery bar.
+  skillsMastery,
+
+  /// Spotlight on Tapping's Fit line.
+  skillsFit,
+
+  /// Spotlight on the real Auto-Tap switch.
+  skillsHelper,
+  skillsGoal,
+
+  // ── Skill tips ─────────────────────────────────────────────────────────
+  tipSkillSparks,
+  tipSkillPrestige,
+  tipSkillExpert,
+
   /// Tutorial finished or skipped — overlay hidden.
   done,
 }
@@ -156,6 +189,7 @@ enum TutorialScope {
   artifacts,
   nexus,
   neural,
+  skills,
 
   /// Single cards (new-upgrade tips and teasers). Each is its own
   /// one-shot "tutorial", remembered by its step.
@@ -216,6 +250,11 @@ enum TutorialTarget {
   neuralHud,
   upgradeAutoClicker,
   upgradeClickPower,
+  skillsTab,
+  skillTrainTapping,
+  skillMasteryTapping,
+  skillFitTapping,
+  skillHelperTapping,
 }
 
 /// Tab indices in MainLayout's screen list.
@@ -231,6 +270,12 @@ abstract class PrestigeSubTab {
   static const int prestige = 0;
   static const int nexus = 1;
   static const int artifacts = 2;
+}
+
+/// Tab indices inside the Neural screen.
+abstract class NeuralSubTab {
+  static const int network = 0;
+  static const int skills = 1;
 }
 
 /// Everything the overlay needs to know about one step, in one place.
@@ -249,6 +294,10 @@ class TutorialStepSpec {
   /// Prestige-screen tab the target lives on. The Prestige screen switches
   /// to it by itself while the step is active.
   final int? requiredPrestigeSubTab;
+
+  /// Neural-screen tab the target lives on. The Neural screen switches to
+  /// it by itself while the step is active.
+  final int? requiredNeuralSubTab;
 
   /// Upgrade category that must be selected for [target] to exist.
   final String? requiredCategory;
@@ -271,6 +320,7 @@ class TutorialStepSpec {
     this.target,
     this.requiredTab,
     this.requiredPrestigeSubTab,
+    this.requiredNeuralSubTab,
     this.requiredCategory,
     this.title,
     this.body,
@@ -372,6 +422,22 @@ const List<TutorialChapter> tutorialChapters = [
       TutorialStep.neuralBranchNeuron,
       TutorialStep.neuralViewAccuracy,
       TutorialStep.neuralAccuracyLimit,
+    ],
+  ),
+  TutorialChapter(
+    number: 6,
+    name: 'SKILLS',
+    scope: TutorialScope.skills,
+    steps: [
+      TutorialStep.skillsUnlocked,
+      TutorialStep.navNeuralForSkills,
+      TutorialStep.skillsOpenTab,
+      TutorialStep.skillsHowItLearns,
+      TutorialStep.skillsTrainTapping,
+      TutorialStep.skillsMastery,
+      TutorialStep.skillsFit,
+      TutorialStep.skillsHelper,
+      TutorialStep.skillsGoal,
     ],
   ),
 ];
@@ -852,8 +918,9 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
     title: 'ALWAYS TRAINING',
     body:
         'Accuracy never reaches 100% — it only creeps closer. Keep growing '
-        'the pyramid. Train it well enough and you can start an Epoch, and '
-        'later prestiges open layers deeper than the pyramid itself.',
+        'the pyramid: once all 7 layers stand, the network can learn Skills '
+        '(see the SKILLS tab). Train it well enough and you can start an '
+        'Epoch, and later prestiges open layers deeper than the pyramid.',
   ),
 
   // ── Late game ────────────────────────────────────────────────────────────
@@ -876,6 +943,141 @@ const Map<TutorialStep, TutorialStepSpec> tutorialSpecs = {
         'Your network is trained well enough to start an Epoch. It resets '
         'training and gradients but keeps every neuron, and each Epoch adds '
         '+10% to all production — permanently.',
+  ),
+
+  // ── Skills ───────────────────────────────────────────────────────────────
+  TutorialStep.skillsWhisper: TutorialStepSpec(
+    scope: TutorialScope.tips,
+    mode: TutorialMode.tapToContinue,
+    kicker: 'DEEPER',
+    title: 'ALMOST READY TO LEARN',
+    body:
+        'Your pyramid is almost complete. Grow all 7 layers and the network '
+        'can learn Skills — jobs like tapping and shopping that it then does '
+        'for you. Peek at the SKILLS tab on NEURAL to see what is waiting.',
+  ),
+  TutorialStep.skillsUnlocked: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.tapToContinue,
+    title: 'YOUR NETWORK CAN LEARN SKILLS',
+    body:
+        'The pyramid is complete. Until now your network trained in general. '
+        'From now on you can teach it specific jobs — and once it has '
+        'learned one, it does that job for you.',
+  ),
+  TutorialStep.navNeuralForSkills: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.navNeural,
+    title: 'OPEN NEURAL',
+    body: 'Tap NEURAL below.',
+  ),
+  TutorialStep.skillsOpenTab: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.passthroughHint,
+    target: TutorialTarget.skillsTab,
+    requiredTab: TutorialTab.neural,
+    title: 'OPEN SKILLS',
+    body: 'Tap SKILLS at the top.',
+  ),
+  TutorialStep.skillsHowItLearns: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.tapToContinue,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'HOW A NETWORK LEARNS',
+    body:
+        'Real AI learns by studying lots of examples. A collection of '
+        'examples is called a DATASET. Each Skill here is one: recordings of '
+        'taps, of purchases, of sparks. The longer your network studies one, '
+        'the better it gets at that job.',
+  ),
+  TutorialStep.skillsTrainTapping: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.skillTrainTapping,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'TEACH IT TO TAP',
+    body: 'Press TRAIN on Tapping. Your network starts studying it right away.',
+  ),
+  TutorialStep.skillsMastery: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.spotlightTapToContinue,
+    target: TutorialTarget.skillMasteryTapping,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'MASTERY',
+    body:
+        'This bar is how well the network knows the job. It fills while the '
+        'Skill is training — even while you are away. Only one Skill trains '
+        'at a time, but Mastery is never lost when you switch.',
+  ),
+  TutorialStep.skillsFit: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.spotlightTapToContinue,
+    target: TutorialTarget.skillFitTapping,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'FIT',
+    body:
+        'Each job suits a different kind of neuron. Tapping is about fast '
+        "reflexes, so it loves ReLU. The more of your neurons use a Skill's "
+        'favourite activation, the faster it learns — up to 4× faster than a '
+        'bad fit. Change activations on the NETWORK tab.',
+  ),
+  TutorialStep.skillsHelper: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.spotlightAction,
+    target: TutorialTarget.skillHelperTapping,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'PUT IT TO WORK',
+    body:
+        'Turn on Auto-Tap. The network taps for you whenever the game is '
+        'open — once a second now, up to 10 a second as Mastery grows.',
+  ),
+  TutorialStep.skillsGoal: TutorialStepSpec(
+    scope: TutorialScope.skills,
+    mode: TutorialMode.tapToContinue,
+    requiredTab: TutorialTab.neural,
+    requiredNeuralSubTab: NeuralSubTab.skills,
+    title: 'A NETWORK WITH A JOB',
+    body:
+        'Switch Skills any time — Mastery is kept. Shopping is ready now. '
+        'Spark Hunting opens with your first deep layer, and Prestige '
+        'Planning after your first Epoch.',
+  ),
+  TutorialStep.tipSkillSparks: TutorialStepSpec(
+    scope: TutorialScope.tips,
+    mode: TutorialMode.tapToContinue,
+    kicker: 'NEW SKILL',
+    title: 'SPARK HUNTING',
+    body:
+        'Your network can now learn to hunt Neural Sparks. Its Auto-Catch '
+        'grabs sparks on the GENERATORS screen and makes them appear more '
+        'often. It learns best with Sigmoid neurons — catch or ignore is a '
+        'yes/no decision.',
+  ),
+  TutorialStep.tipSkillPrestige: TutorialStepSpec(
+    scope: TutorialScope.tips,
+    mode: TutorialMode.tapToContinue,
+    kicker: 'NEW SKILL',
+    title: 'PRESTIGE PLANNING',
+    body:
+        'Your network can now learn to plan prestiges. It tells you exactly '
+        'when your next one is due, and from 50% Mastery it can prestige '
+        'for you. Auto-Prestige is always off until you turn it on.',
+  ),
+  TutorialStep.tipSkillExpert: TutorialStepSpec(
+    scope: TutorialScope.tips,
+    mode: TutorialMode.tapToContinue,
+    kicker: 'SKILLS',
+    title: 'EXPERT',
+    body:
+        'One of your Skills just passed 90% Mastery. From here each percent '
+        'takes longer — a good moment to train a different Skill and come '
+        'back later.',
   ),
 
   TutorialStep.done: TutorialStepSpec(

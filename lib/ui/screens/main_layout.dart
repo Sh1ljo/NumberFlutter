@@ -7,6 +7,7 @@ import '../../data/achievement_data.dart';
 import '../../logic/game_state.dart';
 import '../../logic/login_prompt_policy.dart';
 import '../../logic/tutorial_step.dart';
+import '../../models/neural_skill.dart';
 import '../../logic/backend_service.dart';
 import '../../utils/network_error_utils.dart';
 import '../widgets/app_background.dart';
@@ -19,6 +20,7 @@ import 'prestige/prestige_screen.dart';
 import 'achievements_screen.dart';
 import 'leaderboard_screen.dart';
 import 'neural_network_screen.dart';
+import 'neural_network/skills_view.dart';
 import 'settings_screen.dart';
 import 'shop_screen.dart';
 import 'more_menu_screen.dart';
@@ -75,6 +77,11 @@ class _MainLayoutState extends State<MainLayout> {
   final GlobalKey _idleCategoryKey = GlobalKey();
   final GlobalKey _advisorBannerKey = GlobalKey();
   final GlobalKey _nexusStabilizeKey = GlobalKey();
+  final GlobalKey _skillsTabKey = GlobalKey();
+  final GlobalKey _skillTrainTappingKey = GlobalKey();
+  final GlobalKey _skillMasteryTappingKey = GlobalKey();
+  final GlobalKey _skillFitTappingKey = GlobalKey();
+  final GlobalKey _skillHelperTappingKey = GlobalKey();
 
   late final List<Widget> _screens;
 
@@ -113,6 +120,16 @@ class _MainLayoutState extends State<MainLayout> {
         return _upgradeRowKeys[GameState.autoClickerId];
       case TutorialTarget.upgradeClickPower:
         return _upgradeRowKeys[GameState.clickPowerId];
+      case TutorialTarget.skillsTab:
+        return _skillsTabKey;
+      case TutorialTarget.skillTrainTapping:
+        return _skillTrainTappingKey;
+      case TutorialTarget.skillMasteryTapping:
+        return _skillMasteryTappingKey;
+      case TutorialTarget.skillFitTapping:
+        return _skillFitTappingKey;
+      case TutorialTarget.skillHelperTapping:
+        return _skillHelperTappingKey;
     }
   }
 
@@ -136,6 +153,13 @@ class _MainLayoutState extends State<MainLayout> {
       NeuralNetworkScreen(
         neuralNeuronKey: _neuralNeuronKey,
         neuralHudKey: _neuralHudKey,
+        skillsTabKey: _skillsTabKey,
+        skillKeys: SkillTutorialKeys(
+          train: _skillTrainTappingKey,
+          mastery: _skillMasteryTappingKey,
+          fit: _skillFitTappingKey,
+          helper: _skillHelperTappingKey,
+        ),
       ),
       const ShopScreen(),
       const SettingsScreen(),
@@ -198,11 +222,13 @@ class _MainLayoutState extends State<MainLayout> {
 
     _maybePromptForLocation();
     _maybeShowLoginPrompt();
+    _maybeShowHelperNotice(gameState);
     _maybeShowOfflineNotice(gameState.lastCloudSyncError);
     _maybeShowReconnectNotice();
 
     final hasOfflineProgress = gameState.offlineGainsThisSession > BigInt.zero ||
-        gameState.offlineAccuracyGain > 0;
+        gameState.offlineAccuracyGain > 0 ||
+        gameState.offlineMasteryGain > 0;
     // Hold off on the "new upgrade" popup while the offline-earnings dialog
     // is still up (or about to appear) so it doesn't stack on top of it —
     // it fires the moment the player acknowledges those earnings instead.
@@ -231,6 +257,10 @@ class _MainLayoutState extends State<MainLayout> {
         context,
         gameState.offlineGainsThisSession,
         accuracyGain: gameState.offlineAccuracyGain,
+        masteryGain: gameState.offlineMasteryGain,
+        skillName: gameState.offlineMasterySkill == null
+            ? null
+            : NeuralSkills.def(gameState.offlineMasterySkill!).name,
         onAcknowledge: () {
           if (!mounted) return;
           context.read<GameState>().clearOfflineGains();
@@ -239,6 +269,22 @@ class _MainLayoutState extends State<MainLayout> {
     } else if (!hasOfflineProgress && _offlineDialogQueued) {
       _offlineDialogQueued = false;
     }
+  }
+
+  int _shownHelperNoticeId = 0;
+
+  /// A helper did something on its own (Auto-Prestige) — say so briefly.
+  void _maybeShowHelperNotice(GameState gameState) {
+    final id = gameState.helperNoticeId;
+    final message = gameState.helperNotice;
+    if (id == _shownHelperNoticeId || message == null) return;
+    _shownHelperNoticeId = id;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   /// Considers the unprompted account modal. [LoginPromptPolicy] owns the
@@ -820,12 +866,14 @@ class _MainLayoutState extends State<MainLayout> {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: Selector<GameState, bool>(
-                  selector: (_, gs) => gs.pendingArtifactChoices > 0,
-                  builder: (context, hasPendingArtifact, _) => BottomNavBar(
+                child: Selector<GameState, (bool, bool)>(
+                  selector: (_, gs) =>
+                      (gs.pendingArtifactChoices > 0, gs.hasUnseenSkills),
+                  builder: (context, badges, _) => BottomNavBar(
                     currentIndex: _currentIndex,
                     itemKeys: _navKeys,
-                    showPrestigeBadge: hasPendingArtifact,
+                    showPrestigeBadge: badges.$1,
+                    showNeuralBadge: badges.$2,
                     onIndexChanged: (index) {
                       // Handle "More" menu button
                       if (index == 4) {

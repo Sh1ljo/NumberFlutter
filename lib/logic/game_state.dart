@@ -10,6 +10,7 @@ import '../data/achievement_data.dart';
 import '../data/artifact_data.dart';
 import '../models/artifact.dart';
 import '../models/neural_network.dart';
+import '../models/neural_skill.dart';
 import '../models/trials.dart';
 import '../models/upgrade_recommendation.dart';
 import '../models/shop_product.dart';
@@ -20,6 +21,7 @@ import 'storage_service.dart';
 import 'sync_service.dart';
 import 'backend_service.dart';
 import '../utils/big_number.dart';
+import '../utils/number_formatter.dart';
 import 'tutorial_step.dart';
 
 class GameState extends ChangeNotifier with WidgetsBindingObserver {
@@ -496,8 +498,12 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   double get shopIdleMultiplier => shopInventory.idleMultiplier;
 
   /// Scale applied to Neural Spark spawn delays (Spark Magnet).
-  double get neuralSparkSpawnDelayFactor =>
-      shopInventory.neuralSparkSpawnDelayFactor;
+  double get neuralSparkSpawnDelayFactor {
+    final factor = shopInventory.neuralSparkSpawnDelayFactor;
+    if (!isHelperActive(SkillId.sparkHunting)) return factor;
+    return factor /
+        NeuralSkills.sparkSpawnRateBonus(skillMastery(SkillId.sparkHunting));
+  }
 
   // Upgrades
   /// The upgrade catalog. Built fresh per call so each [GameState] owns its
@@ -1009,6 +1015,319 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
+  // ── Skills ─────────────────────────────────────────────────────────────
+  //
+  // Once the pyramid is complete the network can be taught jobs. One Skill
+  // trains at a time; each one's Mastery drives a helper that does that job
+  // for the player. See NeuralSkills for the curves.
+
+  SkillsState get skills => neuralNetwork.skills;
+
+  /// Skills open once all 7 pyramid layers exist.
+  bool get skillsUnlocked =>
+      neuralNetworkUnlocked && neuralNetwork.isPyramidComplete;
+
+  /// Pyramid layers grown so far, for "5 / 7 layers" progress.
+  int get pyramidLayersBuilt => math.min(
+      neuralNetwork.layers
+          .where((l) => l.index < NeuralNetwork.pyramidLayerCount)
+          .length,
+      NeuralNetwork.pyramidLayerCount);
+
+  bool _skillGateMet(SkillGate gate) {
+    switch (gate) {
+      case SkillGate.none:
+        return true;
+      case SkillGate.firstDeepLayer:
+        return neuralNetwork.deepLayerCount > 0;
+      case SkillGate.firstEpoch:
+        return neuralNetwork.epochs > 0;
+    }
+  }
+
+  bool isSkillAvailable(SkillId id) =>
+      skillsUnlocked && _skillGateMet(NeuralSkills.def(id).gate);
+
+  int get availableSkillCount =>
+      SkillId.values.where(isSkillAvailable).length;
+
+  /// A Skill became available that the player hasn't looked at yet.
+  bool get hasUnseenSkills =>
+      skillsUnlocked && availableSkillCount > skills.seenUnlockCount;
+
+  double skillMastery(SkillId id) => skills.masteryOf(id);
+
+  double skillFitFor(SkillId id) => skillFit(neuralNetwork, id);
+
+  /// Mastery training speed (the c in m = c·t / (1 + c·t)) for [id].
+  double skillTrainingRate(SkillId id) =>
+      NeuralSkills.trainingK *
+      neuralNetworkStrength *
+      NeuralSkills.fitMultiplier(skillFitFor(id));
+
+  /// Seconds until [id] reaches [target] Mastery at the current rate.
+  double? skillSecondsTo(SkillId id, double target) {
+    final m = skillMastery(id);
+    if (m >= target) return 0;
+    final rate = skillTrainingRate(id);
+    if (!(rate > 0)) return null;
+    return (1.0 / (1.0 - target) - 1.0 / (1.0 - m)) / rate;
+  }
+
+  /// Whether [id]'s helper is actually working right now.
+  bool isHelperActive(SkillId id) {
+    if (!isSkillAvailable(id) || !skills.isHelperOn(id)) return false;
+    if (id == SkillId.prestigePlanning) {
+      return skills.autoPrestigeConfirmed &&
+          skillMastery(id) >= NeuralSkills.autoPrestigeMastery;
+    }
+    return true;
+  }
+
+  /// Auto-Tap rate in taps per second, 0 when off.
+  double get autoTapRate => isHelperActive(SkillId.tapping)
+      ? NeuralSkills.tapsPerSecond(skillMastery(SkillId.tapping))
+      : 0.0;
+
+  /// Auto-Tap is trained well enough to keep a streak going.
+  bool get autoTapKeepsRhythm =>
+      skillMastery(SkillId.tapping) >= NeuralSkills.rhythmMastery;
+
+  /// Auto-Catch's chance to catch a spark, 0 when off.
+  double get sparkAutoCatchChance => isHelperActive(SkillId.sparkHunting)
+      ? NeuralSkills.sparkCatchChance(skillMastery(SkillId.sparkHunting))
+      : 0.0;
+
+  /// Seconds until the next prestige is affordable at the current pace,
+  /// 0 when it already is, null with no income yet. Auto-Tap is already
+  /// part of the measured tap pace.
+  double? get secondsToNextPrestige {
+    final requirement = prestigeRequirement;
+    if (number >= requirement) return 0;
+    final income = _expectedValuePerSecond(_advisorClickRate);
+    if (!(income > 0)) return null;
+    return (requirement - number).toDouble() / income;
+  }
+
+  /// Coarse fingerprint of everything the SKILLS tab shows, so it rebuilds
+  /// when something visible changes rather than on every tick.
+  int get skillsViewSignature {
+    if (!skillsUnlocked) {
+      return Object.hash(neuralNetworkUnlocked, pyramidLayersBuilt);
+    }
+    final eta = isSkillAvailable(SkillId.prestigePlanning)
+        ? secondsToNextPrestige?.round()
+        : null;
+    return Object.hash(
+      Object.hashAll(SkillId.values.map(isSkillAvailable)),
+      Object.hashAll(
+          SkillId.values.map((id) => (skillMastery(id) * 1000).floor())),
+      skills.training,
+      Object.hashAll(
+          skills.helpersOn.toList()..sort((a, b) => a.index - b.index)),
+      skills.spendLimit,
+      skills.autoPrestigeConfirmed,
+      _neuralRevision,
+      eta,
+    );
+  }
+
+  void trainSkill(SkillId id) {
+    if (!isSkillAvailable(id) || skills.training == id) return;
+    skills.training = id;
+    if (_tutorialStep == TutorialStep.skillsTrainTapping &&
+        id == SkillId.tapping) {
+      _enterStep(TutorialStep.skillsMastery);
+    }
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  /// Turns [id]'s helper on or off. Auto-Prestige needs
+  /// [confirmAutoPrestige] first; the UI asks.
+  void setSkillHelper(SkillId id, bool on) {
+    if (!isSkillAvailable(id)) return;
+    if (on && id == SkillId.prestigePlanning && !skills.autoPrestigeConfirmed) {
+      return;
+    }
+    final changed = on ? skills.helpersOn.add(id) : skills.helpersOn.remove(id);
+    if (!changed) return;
+    if (id == SkillId.shopping) _shoppingElapsed = 0.0;
+    if (id == SkillId.prestigePlanning) _prestigeReadyFor = 0.0;
+    if (on &&
+        id == SkillId.tapping &&
+        _tutorialStep == TutorialStep.skillsHelper) {
+      _enterStep(TutorialStep.skillsGoal);
+    }
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  void confirmAutoPrestige() {
+    if (skills.autoPrestigeConfirmed) return;
+    skills.autoPrestigeConfirmed = true;
+    _scheduleStateSave();
+  }
+
+  void setShoppingSpendLimit(double limit) {
+    if (!NeuralSkills.spendLimits.contains(limit) ||
+        skills.spendLimit == limit) {
+      return;
+    }
+    skills.spendLimit = limit;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  /// The SKILLS tab is on screen: everything unlocked so far has been seen.
+  void markSkillsSeen() {
+    if (!skillsUnlocked) return;
+    final count = availableSkillCount;
+    if (skills.seenUnlockCount >= count) return;
+    skills.seenUnlockCount = count;
+    notifyListeners();
+    _scheduleStateSave();
+  }
+
+  /// Sub-tab on the NEURAL screen: 0 = NETWORK, 1 = SKILLS.
+  int neuralSubTabIndex = NeuralSubTab.network;
+
+  void setNeuralSubTabIndex(int index) {
+    if (neuralSubTabIndex == index) return;
+    neuralSubTabIndex = index;
+    if (index == NeuralSubTab.skills) markSkillsSeen();
+    final next = _resolveTutorialShortcuts(_tutorialStep);
+    if (next != _tutorialStep) {
+      _enterStep(next);
+      return;
+    }
+    notifyListeners();
+  }
+
+  // Helper timers, advanced by the ticker. Transient.
+  double _autoTapAccumulator = 0.0;
+  double _shoppingElapsed = 0.0;
+  double _prestigeReadyFor = 0.0;
+  bool _autoPrestigeInFlight = false;
+
+  /// Short messages from helpers (Auto-Prestige fired), shown as a snackbar.
+  String? helperNotice;
+  int helperNoticeId = 0;
+
+  void _postHelperNotice(String message) {
+    helperNotice = message;
+    helperNoticeId++;
+  }
+
+  /// Mastery gained while away, for the offline report.
+  double offlineMasteryGain = 0.0;
+  SkillId? offlineMasterySkill;
+
+  /// Trains the active Skill for [seconds]. Returns the Mastery gained.
+  double _trainActiveSkill(double seconds) {
+    final id = skills.training;
+    if (id == null || !isSkillAvailable(id)) return 0.0;
+    final before = skillMastery(id);
+    if (before >= NeuralSkills.maxMastery) return 0.0;
+    final after = NeuralSkills.train(before, skillTrainingRate(id), seconds);
+    skills.mastery[id] = after;
+    return after - before;
+  }
+
+  /// Test hook: runs [ticks] Skills ticks (100ms each) synchronously.
+  @visibleForTesting
+  void debugTickSkills([int ticks = 1]) {
+    for (var i = 0; i < ticks; i++) {
+      _tickSkills();
+    }
+  }
+
+  /// Skill training and helpers, advanced once per 100ms tick.
+  bool _tickSkills() {
+    if (!skillsUnlocked) return false;
+    var changed = _trainActiveSkill(_neuralDt) > 0;
+    // Helpers stand aside while a prestige reveal plays.
+    if (isPrestigeAnimating) return changed;
+
+    final tapRate = autoTapRate;
+    if (tapRate > 0) {
+      _autoTapAccumulator += tapRate * _neuralDt;
+      while (_autoTapAccumulator >= 1.0) {
+        _autoTapAccumulator -= 1.0;
+        _tap(manual: false);
+        changed = true;
+      }
+    } else {
+      _autoTapAccumulator = 0.0;
+    }
+
+    // Buying and prestiging wait while any tutorial card is up, so a
+    // helper never changes what a card is pointing at.
+    if (isHelperActive(SkillId.shopping) && !isTutorialActive) {
+      _shoppingElapsed += _neuralDt;
+      if (_shoppingElapsed >=
+          NeuralSkills.shoppingIntervalSeconds(
+              skillMastery(SkillId.shopping))) {
+        _shoppingElapsed = 0.0;
+        if (_autoBuy()) changed = true;
+      }
+    }
+
+    if (isHelperActive(SkillId.prestigePlanning) &&
+        !isTutorialActive &&
+        !_autoPrestigeInFlight &&
+        number >= prestigeRequirement) {
+      _prestigeReadyFor += _neuralDt;
+      if (_prestigeReadyFor >=
+          NeuralSkills.prestigeReactionSeconds(
+              skillMastery(SkillId.prestigePlanning))) {
+        _prestigeReadyFor = 0.0;
+        unawaited(_autoPrestige());
+      }
+    } else {
+      _prestigeReadyFor = 0.0;
+    }
+    return changed;
+  }
+
+  /// Auto-Buy: the advisor's pick, within the spending limit. Falls back to
+  /// a single level when the whole recommended amount is over the limit.
+  bool _autoBuy() {
+    final rec = recommendedUpgrade;
+    if (rec == null) return false;
+    final upgrade = _upgradeById(rec.upgradeId);
+    if (upgrade == null) return false;
+    final budget = number *
+            BigInt.from((skills.spendLimit * 100).round()) ~/
+            BigInt.from(100);
+    if (rec.cost <= budget) {
+      return buyUpgradeLevels(rec.upgradeId, rec.amount);
+    }
+    if (rec.amount > 1 &&
+        _costOfLevels(upgrade, upgrade.level, 1) <= budget) {
+      return buyUpgradeLevels(rec.upgradeId, 1);
+    }
+    return false;
+  }
+
+  Future<void> _autoPrestige() async {
+    _autoPrestigeInFlight = true;
+    try {
+      final points = calculatePrestigePoints(number);
+      if (points <= 0) return;
+      final previousCount = prestigeCount;
+      await prestige();
+      if (prestigeCount == previousCount) return;
+      _postHelperNotice('AUTO-PRESTIGE · prestige #$prestigeCount · '
+          '+${NumberFormatter.formatDouble(points)} PP');
+      // No reveal animation plays, so start any post-prestige chapter now.
+      _maybeStartPostPrestigeTutorial();
+      notifyListeners();
+    } finally {
+      _autoPrestigeInFlight = false;
+    }
+  }
+
   bool upgradeNeuronGradient(String neuronId) {
     final neuron = neuralNetwork.findNeuron(neuronId);
     if (neuron == null || neuralNetwork.isGradientMaxed(neuron)) return false;
@@ -1411,6 +1730,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _seenBeats.add(TutorialStep.tipDeepLayers);
     }
     if (neuralNetwork.epochs > 0) _seenBeats.add(TutorialStep.tipEpoch);
+    if (skillsUnlocked) _seenBeats.add(TutorialStep.skillsWhisper);
   }
 
   Future<void> _init() async {
@@ -1586,12 +1906,19 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
           offlineAccuracyGain = neuralNetwork.accuracy - oldAccuracy;
         }
       }
+
+      if (skillsUnlocked) {
+        offlineMasteryGain = _trainActiveSkill(diff.toDouble());
+        offlineMasterySkill = offlineMasteryGain > 0 ? skills.training : null;
+      }
     }
   }
 
   void clearOfflineGains() {
     offlineGainsThisSession = BigInt.zero;
     offlineAccuracyGain = 0.0;
+    offlineMasteryGain = 0.0;
+    offlineMasterySkill = null;
     notifyListeners();
   }
 
@@ -1641,6 +1968,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       if (_tickArtifacts()) hasStateChange = true;
+      if (_tickSkills()) hasStateChange = true;
       // Twice a second is plenty for a card that waits on a balance.
       if (timer.tick % 5 == 0 && _checkTutorialTriggers()) {
         hasStateChange = true;
@@ -2055,23 +2383,45 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     bool probabilityStrikeTriggered,
     bool personalBestReached,
   }) click() {
+    final result = _tap(manual: true);
+    _checkTutorialTriggers();
+    // The number always changes on a click, so this always notifies;
+    // Selectors keep the resulting rebuilds narrow.
+    notifyListeners();
+    _scheduleStateSave();
+    return result;
+  }
+
+  /// One tap, by the player ([manual]) or by Auto-Tap. An auto tap only
+  /// builds the Momentum / Overclock streak once Auto-Tap keeps a steady
+  /// rhythm, and never counts toward lifetime taps.
+  ({
+    BigInt gain,
+    bool probabilityStrikeTriggered,
+    bool personalBestReached,
+  }) _tap({required bool manual}) {
     final now = DateTime.now();
-    final bool chainBroken = _lastManualClickTime == null ||
-        now.difference(_lastManualClickTime!).inMilliseconds > 1000;
+    final buildsStreak = manual || autoTapKeepsRhythm;
+    if (buildsStreak) {
+      final bool chainBroken = _lastManualClickTime == null ||
+          now.difference(_lastManualClickTime!).inMilliseconds > 1000;
 
-    if (chainBroken) {
-      _clickStreak = 0;
-      _overclockTriggeredThisChain = false;
-      _momentumMultiplier = 1.0;
-      _momentumProgress = 0.0;
+      if (chainBroken) {
+        _clickStreak = 0;
+        _overclockTriggeredThisChain = false;
+        _momentumMultiplier = 1.0;
+        _momentumProgress = 0.0;
+      }
+
+      _clickStreak++;
+      _lastManualClickTime = now;
     }
-
-    _clickStreak++;
-    lifetimeClicks++;
-    _lastManualClickTime = now;
+    if (manual) lifetimeClicks++;
     _recordClickForRate(now.millisecondsSinceEpoch);
 
-    if (_isUpgradeActive(momentumId)) {
+    if (!buildsStreak) {
+      // Leave the player's own streak exactly as it is.
+    } else if (_isUpgradeActive(momentumId)) {
       final comboBonus = (_clickStreak - 1) * _momentumPerClickBonus;
       final newMultiplier = (1.0 + comboBonus).clamp(1.0, _momentumCap);
       final newProgress = (_clickStreak / _momentumClicksToCap).clamp(0.0, 1.0);
@@ -2084,7 +2434,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       _momentumProgress = 0.0;
     }
 
-    if (_isUpgradeActive(overclockId) &&
+    if (buildsStreak &&
+        _isUpgradeActive(overclockId) &&
         _clickStreak >= _overclockStreakRequirement &&
         !_overclockTriggeredThisChain) {
       _overclockTriggeredThisChain = true;
@@ -2134,14 +2485,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _creditEarned(gained);
     _updateHighestNumber();
     _advanceTutorialOnNumberReached();
-    _checkTutorialTriggers();
     final personalBestReached = highestNumber > previousHighest;
 
-    // The number always changes on a click, so this always notifies;
-    // Selectors keep the resulting rebuilds narrow.
-    notifyListeners();
-
-    _scheduleStateSave();
     return (
       gain: gained,
       probabilityStrikeTriggered: probabilityStrikeTriggered,
@@ -3664,10 +4009,14 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     // added to the number; only the new amount is reported.
     offlineGainsThisSession = BigInt.zero;
     offlineAccuracyGain = 0.0;
+    offlineMasteryGain = 0.0;
+    offlineMasterySkill = null;
     _calculateOfflineProgress(backgroundedAt, now: clock());
     if (clock().difference(backgroundedAt) < offlineDialogMinAway) {
       offlineGainsThisSession = BigInt.zero;
       offlineAccuracyGain = 0.0;
+      offlineMasteryGain = 0.0;
+      offlineMasterySkill = null;
     }
   }
 
@@ -3734,9 +4083,38 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       final next = _stepAfterTab(step, _mainTab);
       if (next != null) _tutorialStep = next;
     }
+    _tutorialStep = _resolveTutorialShortcuts(_tutorialStep);
     _applyStepSideEffects(_tutorialStep);
     notifyListeners();
     _scheduleStateSave();
+  }
+
+  /// Passes over Skills steps whose action the player has already taken —
+  /// the SKILLS tab already open, Tapping already training, Auto-Tap
+  /// already on — since their spotlit control could no longer advance them.
+  TutorialStep _resolveTutorialShortcuts(TutorialStep step) {
+    var current = step;
+    while (true) {
+      final TutorialStep? next;
+      switch (current) {
+        case TutorialStep.skillsOpenTab:
+          next = neuralSubTabIndex == NeuralSubTab.skills
+              ? TutorialStep.skillsHowItLearns
+              : null;
+        case TutorialStep.skillsTrainTapping:
+          next = skills.training == SkillId.tapping
+              ? TutorialStep.skillsMastery
+              : null;
+        case TutorialStep.skillsHelper:
+          next = skills.isHelperOn(SkillId.tapping)
+              ? TutorialStep.skillsGoal
+              : null;
+        default:
+          next = null;
+      }
+      if (next == null) return current;
+      current = next;
+    }
   }
 
   /// Puts the Upgrades screen on the category a step's target lives under.
@@ -3767,6 +4145,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         return tab == TutorialTab.prestige ? TutorialStep.nexusStabilize : null;
       case TutorialStep.navNeural:
         return tab == TutorialTab.neural ? TutorialStep.neuralIntro : null;
+      case TutorialStep.navNeuralForSkills:
+        return tab == TutorialTab.neural ? TutorialStep.skillsOpenTab : null;
       default:
         return null;
     }
@@ -3813,6 +4193,16 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _enterStep(TutorialStep.neuralAccuracyLimit);
       case TutorialStep.neuralAccuracyLimit:
         _completeNeuralTutorial();
+      case TutorialStep.skillsUnlocked:
+        _enterStep(TutorialStep.navNeuralForSkills);
+      case TutorialStep.skillsHowItLearns:
+        _enterStep(TutorialStep.skillsTrainTapping);
+      case TutorialStep.skillsMastery:
+        _enterStep(TutorialStep.skillsFit);
+      case TutorialStep.skillsFit:
+        _enterStep(TutorialStep.skillsHelper);
+      case TutorialStep.skillsGoal:
+        _finishBeat(TutorialStep.skillsUnlocked);
       default:
         if (specFor(_tutorialStep).scope == TutorialScope.tips) {
           _finishBeat(_tutorialStep);
@@ -3880,6 +4270,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
         _completeNexusTutorial();
       case TutorialScope.neural:
         _completeNeuralTutorial();
+      case TutorialScope.skills:
+        _finishBeat(TutorialStep.skillsUnlocked);
       case TutorialScope.tips:
         _finishBeat(step);
       case TutorialScope.none:
@@ -3891,8 +4283,8 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _mainTab = index;
     final next = _stepAfterTab(_tutorialStep, index);
     if (next != null) {
-      _tutorialStep = next;
-      _applyStepSideEffects(next);
+      _tutorialStep = _resolveTutorialShortcuts(next);
+      _applyStepSideEffects(_tutorialStep);
       notifyListeners();
       _scheduleStateSave();
       return;
@@ -3988,6 +4380,36 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (!_seenBeats.contains(TutorialStep.tipEpoch) && canStartEpoch) {
       return TutorialStep.tipEpoch;
+    }
+    return _nextSkillsBeat();
+  }
+
+  /// The Skills chapter, its teaser and its tips.
+  TutorialStep? _nextSkillsBeat() {
+    if (!neuralNetworkUnlocked) return null;
+    if (!skillsUnlocked) {
+      if (!_seenBeats.contains(TutorialStep.skillsWhisper) &&
+          pyramidLayersBuilt >= NeuralNetwork.pyramidLayerCount - 2) {
+        return TutorialStep.skillsWhisper;
+      }
+      return null;
+    }
+    // Nothing left to tease once Skills are open.
+    _seenBeats.add(TutorialStep.skillsWhisper);
+    if (!_seenBeats.contains(TutorialStep.skillsUnlocked)) {
+      return TutorialStep.skillsUnlocked;
+    }
+    if (!_seenBeats.contains(TutorialStep.tipSkillSparks) &&
+        isSkillAvailable(SkillId.sparkHunting)) {
+      return TutorialStep.tipSkillSparks;
+    }
+    if (!_seenBeats.contains(TutorialStep.tipSkillPrestige) &&
+        isSkillAvailable(SkillId.prestigePlanning)) {
+      return TutorialStep.tipSkillPrestige;
+    }
+    if (!_seenBeats.contains(TutorialStep.tipSkillExpert) &&
+        SkillId.values.any((id) => skillMastery(id) >= 0.9)) {
+      return TutorialStep.tipSkillExpert;
     }
     return null;
   }

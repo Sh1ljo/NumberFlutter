@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'neural_skill.dart';
+
 enum NeuronBranchBlock {
   alreadyBranched,
   terminal,
@@ -145,7 +147,8 @@ class NeuralNetwork {
   // v4: per-neuron unlockedActivations set so paid activation buys persist
   // across switches. Older saves seed the set from the current activationFn.
   // v5: epochs.
-  static const int _saveVersion = 5;
+  // v6: skills (mastery, helpers, the training Skill).
+  static const int _saveVersion = 6;
 
   /// Full-expansion neuron count per layer: the original 1-2-4-8-4-2-1
   /// pyramid, then a prestige-gated deep block.
@@ -175,13 +178,23 @@ class NeuralNetwork {
   /// for permanent bonuses (see GameState).
   int epochs;
 
+  /// Skills the network has been taught. Survive prestige and Epochs.
+  SkillsState skills;
+
   NeuralNetwork({
     required this.layers,
     this.unlocked = false,
     this.loss = 1.0,
     this.lowestLossEver = 1.0,
     this.epochs = 0,
-  });
+    SkillsState? skills,
+  }) : skills = skills ?? SkillsState();
+
+  /// The original pyramid is fully grown: every one of its 7 layers exists
+  /// (a layer only ever exists at its full neuron count).
+  bool get isPyramidComplete =>
+      layers.where((l) => l.index < pyramidLayerCount).length >=
+      pyramidLayerCount;
 
   /// Highest gradient level reachable right now; each Epoch adds one.
   int get gradientCap => math.min(baseGradientCap + epochs, maxGradientCap);
@@ -384,6 +397,7 @@ class NeuralNetwork {
         'loss': loss,
         'lowestLossEver': lowestLossEver,
         'epochs': epochs,
+        'skills': skills.toJson(),
       };
 
   factory NeuralNetwork.fromJson(Map<String, dynamic> j) {
@@ -402,6 +416,9 @@ class NeuralNetwork {
       loss: loadedLoss.clamp(0.0, 1.0),
       lowestLossEver: loadedLowest.clamp(0.0, 1.0),
       epochs: ((j['epochs'] as num?)?.toInt() ?? 0).clamp(0, 1000000),
+      skills: SkillsState.fromJson(j['skills'] is Map
+          ? Map<String, dynamic>.from(j['skills'] as Map)
+          : null),
     );
 
     // Migrate v0 saves: non-last-layer neurons were implicitly fully branched

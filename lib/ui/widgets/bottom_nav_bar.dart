@@ -9,12 +9,16 @@ class BottomNavBar extends StatelessWidget {
   /// (e.g. an artifact choice) even while the player is on another tab.
   final bool showPrestigeBadge;
 
+  /// Same dot on NEURAL — a new Skill is waiting on the SKILLS tab.
+  final bool showNeuralBadge;
+
   const BottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onIndexChanged,
     this.itemKeys,
     this.showPrestigeBadge = false,
+    this.showNeuralBadge = false,
   });
 
   /// Height of the bar's own chrome, excluding any system inset.
@@ -65,7 +69,8 @@ class BottomNavBar extends StatelessWidget {
                 icon: _navIcon(i),
                 label: _navLabel(i),
                 isActive: currentIndex == i,
-                showBadge: i == 2 && showPrestigeBadge,
+                showBadge: (i == 2 && showPrestigeBadge) ||
+                    (i == 3 && showNeuralBadge),
                 onTap: () => onIndexChanged(i),
               ),
             ),

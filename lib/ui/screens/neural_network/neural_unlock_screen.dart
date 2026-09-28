@@ -186,6 +186,25 @@ class _NeuralUnlockScreenState extends State<NeuralUnlockScreen>
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                // What the network grows into, so there is more to chase
+                // than a multiplier.
+                Row(
+                  children: [
+                    Icon(Icons.school_outlined, size: 16, color: cs.outline),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Later, grow it enough and it learns SKILLS — '
+                        'tapping, shopping and more, done for you.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: cs.outline),
+                      ),
+                    ),
+                    Icon(Icons.lock_outline,
+                        size: 14, color: cs.outlineVariant),
+                  ],
+                ),
               ],
             ),
           ),

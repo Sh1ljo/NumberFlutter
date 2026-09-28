@@ -142,6 +142,27 @@ class _MainGameScreenState extends State<MainGameScreen> {
       _sparkKey = UniqueKey();
       _currentSparkLifetime = tutorial ? _tutorialSparkLifetime : _sparkLifetime;
     });
+
+    // Auto-Catch (Spark Hunting): the network grabs it after a beat, so the
+    // player still sees the spark appear before it is caught.
+    final catchChance = context.read<GameState>().sparkAutoCatchChance;
+    if (!tutorial && catchChance > 0 && _sparkRng.nextDouble() < catchChance) {
+      final key = _sparkKey;
+      Timer(const Duration(milliseconds: 700), () {
+        if (!mounted || _sparkKey != key || _sparkPosition == null) return;
+        final stackBox =
+            _rootStackKey.currentContext?.findRenderObject() as RenderBox?;
+        if (stackBox != null && stackBox.attached) {
+          _floatingLayerKey.currentState?.add(
+            text: 'AUTO-CATCH',
+            isProbabilityStrike: false,
+            position: stackBox.localToGlobal(_sparkPosition!) -
+                const Offset(40, 20),
+          );
+        }
+        _onSparkCaught();
+      });
+    }
   }
 
   void _onSparkExpired() {
@@ -409,6 +430,44 @@ class _MainGameScreenState extends State<MainGameScreen> {
                                       letterSpacing: 2.0,
                                       color: NeuralSpark.glowColor,
                                     ),
+                                  ),
+                                );
+                              },
+                            ),
+                            // Network helpers at work (Skills).
+                            Selector<GameState, (double, bool)>(
+                              selector: (_, s) => (
+                                (s.autoTapRate * 10).roundToDouble() / 10,
+                                s.sparkAutoCatchChance > 0,
+                              ),
+                              builder: (context, helpers, child) {
+                                final parts = [
+                                  if (helpers.$1 > 0)
+                                    'AUTO-TAP ${helpers.$1.toStringAsFixed(1)}/s',
+                                  if (helpers.$2) 'AUTO-CATCH ON',
+                                ];
+                                if (parts.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+                                final color = theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.45);
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.smart_toy_outlined,
+                                          size: 12, color: color),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'NETWORK · ${parts.join(' · ')}',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                          letterSpacing: 1.6,
+                                          color: color,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 );
                               },

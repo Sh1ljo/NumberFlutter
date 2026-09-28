@@ -1,5 +1,6 @@
 import '../logic/game_state.dart';
 import '../models/achievement.dart';
+import '../models/neural_skill.dart';
 
 /// Every achievement in the game. Each one unlocked adds
 /// [Achievements.bonusPerAchievement] to all production.
@@ -211,6 +212,27 @@ class Achievements {
       title: 'Veteran Network',
       description: 'Complete 5 Epochs.',
       isMet: (s) => s.neuralNetwork.epochs >= 5,
+    ),
+    AchievementDef(
+      id: 'skill_50',
+      category: AchievementCategory.neural,
+      title: 'Quick Learner',
+      description: 'Train any Skill to 50% Mastery.',
+      isMet: (s) => SkillId.values.any((id) => s.skillMastery(id) >= 0.5),
+    ),
+    AchievementDef(
+      id: 'skill_99',
+      category: AchievementCategory.neural,
+      title: 'Specialist',
+      description: 'Train any Skill to 99% Mastery.',
+      isMet: (s) => SkillId.values.any((id) => s.skillMastery(id) >= 0.99),
+    ),
+    AchievementDef(
+      id: 'skill_all_90',
+      category: AchievementCategory.neural,
+      title: 'Polymath',
+      description: 'Train all four Skills to 90% Mastery.',
+      isMet: (s) => SkillId.values.every((id) => s.skillMastery(id) >= 0.9),
     ),
     const AchievementDef(
       id: firstStrike,
