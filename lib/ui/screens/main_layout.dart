@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../data/achievement_data.dart';
 import '../../logic/game_state.dart';
 import '../../logic/login_prompt_policy.dart';
+import '../../logic/notice_scheduler.dart';
 import '../../logic/tutorial_step.dart';
 import '../../models/neural_skill.dart';
 import '../../logic/backend_service.dart';
@@ -51,8 +52,14 @@ class _MainLayoutState extends State<MainLayout> {
   OverlayEntry? _prestigeNoticeEntry;
   bool _reconnectNoticeVisible = false;
   OverlayEntry? _reconnectNoticeEntry;
-  bool _unlockNoticeVisible = false;
-  OverlayEntry? _unlockNoticeEntry;
+  bool _noticeVisible = false;
+  OverlayEntry? _noticeEntry;
+  final NoticeScheduler _upgradeNoticeSchedule = NoticeScheduler.upgrades();
+  final NoticeScheduler _achievementNoticeSchedule =
+      NoticeScheduler.achievements();
+  Set<String> _knownPendingUpgradeIds = {};
+  Set<String> _knownPendingAchievementIds = {};
+  DateTime? _lastPrestigeBannerAt;
   GameState? _gameState;
 
   final GlobalKey _tapAreaKey = GlobalKey();
@@ -193,6 +200,13 @@ class _MainLayoutState extends State<MainLayout> {
     return ModalRoute.of(context)?.isCurrent != false;
   }
 
+  /// Unlock popups wait while the Upgrades tab is up (a tab — route checks
+  /// can't see it) or any modal route owns the screen (Achievements included).
+  /// Both pipelines use this single gate. Notices earned meanwhile stay
+  /// queued and surface after leaving; nothing is dropped.
+  bool get _unlockPopupsAllowed =>
+      _screenIsFree && _currentIndex != TutorialTab.upgrades;
+
   bool get _topBannerVisible =>
       _prestigeNoticeVisible || _reconnectNoticeVisible;
 
@@ -235,13 +249,14 @@ class _MainLayoutState extends State<MainLayout> {
     // A tutorial or the prestige animation starting takes the screen back
     // from any notice already showing.
     if (gameState.isTutorialActive || gameState.isPrestigeAnimating) {
-      if (_unlockNoticeVisible) _removeUnlockNotice();
+      if (_noticeVisible) _removeNotice();
       if (_prestigeNoticeVisible) _removePrestigeNotice();
     }
     if (!hasOfflineProgress) {
       // The artifact pick goes first; notices wait until it's closed.
       _maybeShowArtifactOffer();
-      _maybeShowNotice();
+      _maybeShowAchievementNotice();
+      _maybeShowUpgradeNotice();
     }
 
     if (!gameState.isPrestigeAnimating) {
@@ -507,138 +522,170 @@ class _MainLayoutState extends State<MainLayout> {
     _reconnectNoticeVisible = false;
   }
 
-  /// When the last notice closed. Upgrade and achievement notices share one
-  /// slot and at least [_noticeGap] of quiet between them; anything that
-  /// unlocks meanwhile waits and is folded into the next notice, so a burst
-  /// of progress reads as one popup instead of a stream of them.
-  DateTime? _lastNoticeClosedAt;
-  static const Duration _noticeGap = Duration(seconds: 30);
+  void _scheduleNoticePipelines() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybeShowAchievementNotice();
+      _maybeShowUpgradeNotice();
+    });
+  }
 
-  void _maybeShowNotice() {
+  Set<String> _noteArrivalsIfNew(
+    List<String> pending,
+    Set<String> known,
+    NoticeScheduler schedule,
+  ) {
+    final pendingSet = pending.toSet();
+    if (pendingSet.difference(known).isNotEmpty) {
+      schedule.noteArrivals();
+    }
+    return pendingSet;
+  }
+
+  void _maybeShowUpgradeNotice() {
     final gameState = _gameState;
-    if (gameState == null || _unlockNoticeVisible || _artifactOfferOpen) {
+    if (gameState == null || _noticeVisible || _artifactOfferOpen) {
       return;
     }
-    final upgradeIds = List<String>.from(gameState.pendingUnlockedUpgradeIds);
-    final achievementIds = List<String>.from(gameState.pendingAchievementIds);
-    final hasNexusNotice =
-        upgradeIds.remove(GameState.nexusReadyNoticeId);
-    if (upgradeIds.isEmpty && achievementIds.isEmpty && !hasNexusNotice) {
+    final pending = List<String>.from(gameState.pendingUnlockedUpgradeIds);
+    final hasNexusNotice = pending.remove(GameState.nexusReadyNoticeId);
+    _knownPendingUpgradeIds = _noteArrivalsIfNew(
+      pending,
+      _knownPendingUpgradeIds,
+      _upgradeNoticeSchedule,
+    );
+
+    // Rare one-off: show immediately, draining only the nexus sentinel so
+    // queued upgrades/achievements are not swallowed with it.
+    if (hasNexusNotice && _unlockPopupsAllowed) {
+      gameState.dismissUnlockNotice(GameState.nexusReadyNoticeId);
+      _presentNotice(
+        label: 'NEXUS READY',
+        message: 'The Nexus awaits stabilization.',
+        onTap: _goToPrestigeTab,
+      );
       return;
     }
 
-    void drain() {
-      if (hasNexusNotice) {
-        gameState.dismissUnlockNotice(GameState.nexusReadyNoticeId);
-      }
-      for (final id in upgradeIds) {
+    if (pending.isEmpty) return;
+    if (!_unlockPopupsAllowed) return;
+
+    pending.removeWhere((id) {
+      final upgrade =
+          gameState.upgrades.where((u) => u.id == id).firstOrNull;
+      if (upgrade == null || upgrade.level > 0) {
         gameState.dismissUnlockNotice(id);
+        return true;
       }
-      for (final id in achievementIds) {
-        gameState.dismissAchievementNotice(id);
-      }
-    }
+      return false;
+    });
+    if (pending.isEmpty) return;
 
-    // Tutorials (chapter 1 included — its progress is kept), the prestige
-    // animation and open sheets
-    // (neuron sheet, artifact pick, dialogs) all take priority: hold the
-    // queue and fold it into one notice once the player is free.
-    if (!_screenIsFree) return;
-
-    final lastClosed = _lastNoticeClosedAt;
-    if (lastClosed != null &&
-        DateTime.now().difference(lastClosed) < _noticeGap) {
+    if (!_upgradeNoticeSchedule.canShow(
+      hasPending: true,
+      screenAllows: true,
+    )) {
       return;
     }
 
-    // Rare one-off event: give it its own notice rather than folding it into
-    // the upgrade/achievement branching below.
-    if (hasNexusNotice) {
-      drain();
-      _unlockNoticeVisible = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          _unlockNoticeVisible = false;
-          return;
-        }
-        final overlay = Overlay.of(context, rootOverlay: true);
-        _unlockNoticeEntry?.remove();
-        _unlockNoticeEntry = OverlayEntry(
-          builder: (ctx) => _UpgradeUnlockedNotice(
-            label: 'NEXUS READY',
-            message: 'The Nexus awaits stabilization.',
-            onClosed: _removeUnlockNotice,
-            onTap: () {
-              _removeUnlockNotice();
-              _goToPrestigeTab();
-            },
-          ),
-        );
-        overlay.insert(_unlockNoticeEntry!);
-      });
-      return;
+    for (final id in pending) {
+      gameState.dismissUnlockNotice(id);
     }
-    drain();
+    _upgradeNoticeSchedule.recordShown();
 
-    final String label;
-    final String message;
-    final VoidCallback onTap;
-    if (achievementIds.isEmpty && upgradeIds.length == 1) {
-      final upgradeId = upgradeIds.first;
+    if (pending.length == 1) {
+      final upgradeId = pending.first;
       final upgrade =
           gameState.upgrades.where((u) => u.id == upgradeId).firstOrNull;
       if (upgrade == null) return;
-      label = 'NEW UPGRADE';
-      message = upgrade.name;
-      onTap = () => _revealUpgrade(upgradeId, upgrade.effectType);
-    } else if (achievementIds.isEmpty) {
-      label = 'NEW UPGRADES';
-      message = '${upgradeIds.length} new upgrades available';
-      onTap = () => _revealUpgrades(upgradeIds);
-    } else if (upgradeIds.isEmpty && achievementIds.length == 1) {
-      label = 'ACHIEVEMENT · +1%';
-      message = Achievements.byId(achievementIds.first)?.title ??
-          'Achievement unlocked';
-      onTap = () => AchievementsScreen.open(
-            context,
-            highlightIds: achievementIds.toSet(),
-          );
-    } else if (upgradeIds.isEmpty) {
-      label = 'ACHIEVEMENTS · +${achievementIds.length}%';
-      message = '${achievementIds.length} achievements unlocked';
-      onTap = () => AchievementsScreen.open(
-            context,
-            highlightIds: achievementIds.toSet(),
-          );
-    } else {
-      label = 'NEW UNLOCKS';
-      message = '${upgradeIds.length} '
-          '${upgradeIds.length == 1 ? 'upgrade' : 'upgrades'} · '
-          '${achievementIds.length} '
-          '${achievementIds.length == 1 ? 'achievement' : 'achievements'}';
-      onTap = () => _revealUpgrades(upgradeIds);
+      _presentNotice(
+        label: 'NEW UPGRADE',
+        message: upgrade.name,
+        onTap: () => _revealUpgrade(upgradeId, upgrade.effectType),
+      );
+      return;
+    }
+    _presentNotice(
+      label: 'NEW UPGRADES',
+      message: '${pending.length} new upgrades available',
+      onTap: () => _revealUpgrades(pending),
+    );
+  }
+
+  void _maybeShowAchievementNotice() {
+    final gameState = _gameState;
+    if (gameState == null || _noticeVisible || _artifactOfferOpen) {
+      return;
+    }
+    final pending = List<String>.from(gameState.pendingAchievementIds);
+    _knownPendingAchievementIds = _noteArrivalsIfNew(
+      pending,
+      _knownPendingAchievementIds,
+      _achievementNoticeSchedule,
+    );
+    if (pending.isEmpty) return;
+    if (!_unlockPopupsAllowed) return;
+
+    if (!_achievementNoticeSchedule.canShow(
+      hasPending: true,
+      screenAllows: true,
+    )) {
+      return;
     }
 
-    _unlockNoticeVisible = true;
+    for (final id in pending) {
+      gameState.dismissAchievementNotice(id);
+    }
+    _achievementNoticeSchedule.recordShown();
+    final highlightIds = pending.toSet();
+
+    if (pending.length == 1) {
+      _presentNotice(
+        label: 'ACHIEVEMENT · +1%',
+        message: Achievements.byId(pending.first)?.title ??
+            'Achievement unlocked',
+        onTap: () => _openAchievementsFromNotice(highlightIds),
+      );
+      return;
+    }
+    _presentNotice(
+      label: 'ACHIEVEMENTS · +${pending.length}%',
+      message: '${pending.length} achievements unlocked',
+      onTap: () => _openAchievementsFromNotice(highlightIds),
+    );
+  }
+
+  void _openAchievementsFromNotice(Set<String> highlightIds) {
+    AchievementsScreen.open(context, highlightIds: highlightIds).then((_) {
+      if (mounted) _scheduleNoticePipelines();
+    });
+  }
+
+  void _presentNotice({
+    required String label,
+    required String message,
+    required VoidCallback onTap,
+  }) {
+    _noticeVisible = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        _unlockNoticeVisible = false;
+      if (!mounted || !_noticeVisible) {
+        _noticeVisible = false;
         return;
       }
       final overlay = Overlay.of(context, rootOverlay: true);
-      _unlockNoticeEntry?.remove();
-      _unlockNoticeEntry = OverlayEntry(
+      _noticeEntry?.remove();
+      _noticeEntry = OverlayEntry(
         builder: (ctx) => _UpgradeUnlockedNotice(
           label: label,
           message: message,
-          onClosed: _removeUnlockNotice,
+          onClosed: _removeNotice,
           onTap: () {
-            _removeUnlockNotice();
+            _removeNotice();
             onTap();
           },
         ),
       );
-      overlay.insert(_unlockNoticeEntry!);
+      overlay.insert(_noticeEntry!);
     });
   }
 
@@ -664,7 +711,7 @@ class _MainLayoutState extends State<MainLayout> {
         _artifactOfferPromptedFor = null;
         return;
       }
-      _removeUnlockNotice();
+      _removeNotice(reschedule: false);
       await ArtifactChoiceSheet.show(context);
       _artifactOfferOpen = false;
       if (!mounted) return;
@@ -680,11 +727,11 @@ class _MainLayoutState extends State<MainLayout> {
     });
   }
 
-  void _removeUnlockNotice() {
-    if (_unlockNoticeVisible) _lastNoticeClosedAt = DateTime.now();
-    _unlockNoticeEntry?.remove();
-    _unlockNoticeEntry = null;
-    _unlockNoticeVisible = false;
+  void _removeNotice({bool reschedule = true}) {
+    _noticeEntry?.remove();
+    _noticeEntry = null;
+    _noticeVisible = false;
+    if (reschedule) _scheduleNoticePipelines();
   }
 
   /// Switches to the Upgrades tab, selects the right click/idle category, and
@@ -723,7 +770,10 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() => _currentIndex = 1);
     if (changingTabs) gameState.onMainTabChanged(1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollToUpgradeRow(firstUpgrade.id);
+      if (!mounted) return;
+      _scrollToUpgradeRow(firstUpgrade.id);
+      _maybeShowAchievementNotice();
+      _maybeShowUpgradeNotice();
     });
   }
 
@@ -732,6 +782,7 @@ class _MainLayoutState extends State<MainLayout> {
       setState(() => _currentIndex = 1);
       context.read<GameState>().onMainTabChanged(1);
     }
+    _scheduleNoticePipelines();
   }
 
   void _goToPrestigeTab() {
@@ -768,11 +819,25 @@ class _MainLayoutState extends State<MainLayout> {
     if (!canPrestige ||
         _topBannerVisible ||
         _lastPrestigeReadyNotifiedCount == prestigeCount ||
-        !_screenIsFree) {
+        !_screenIsFree ||
+        _noticeVisible) {
+      return;
+    }
+    final gameState = _gameState;
+    if (gameState == null) return;
+    if (gameState.pendingUnlockedUpgradeIds.isNotEmpty ||
+        gameState.pendingAchievementIds.isNotEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final lastBanner = _lastPrestigeBannerAt;
+    if (lastBanner != null &&
+        now.difference(lastBanner) < const Duration(minutes: 3)) {
       return;
     }
 
     _lastPrestigeReadyNotifiedCount = prestigeCount;
+    _lastPrestigeBannerAt = now;
     _prestigeNoticeVisible = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -811,6 +876,7 @@ class _MainLayoutState extends State<MainLayout> {
             _currentIndex = index;
           });
           context.read<GameState>().onMainTabChanged(index);
+          _scheduleNoticePipelines();
         },
       ),
     );
@@ -820,7 +886,7 @@ class _MainLayoutState extends State<MainLayout> {
   void dispose() {
     _removePrestigeNotice();
     _removeReconnectNotice();
-    _removeUnlockNotice();
+    _removeNotice(reschedule: false);
     // The reset callback is a single slot holding this State's setState, so
     // leaving it registered retained the disposed MainLayout.
     _gameState?.unregisterTutorialResetCallback(_onTutorialReset);
@@ -885,6 +951,7 @@ class _MainLayoutState extends State<MainLayout> {
                         _currentIndex = index;
                       });
                       context.read<GameState>().onMainTabChanged(index);
+                      _scheduleNoticePipelines();
                     },
                   ),
                 ),
