@@ -35,17 +35,51 @@ void main() {
       }
     });
 
-    test('ratio between successive requirements is exactly 2.1', () {
-      for (final n in [0, 1, 10, 37, 100, 500]) {
+    test('ratio is flat 2.1 for the first 5 prestiges, then ramps up', () {
+      // Reference implementation of the shipped ramp: flat 42/20 (=2.1) for
+      // the first 5 transitions, then +1/20 (=0.05) to the numerator per
+      // additional prestige, so newer players get a stable early ramp before
+      // it becomes harder to blow through prestiges in a couple of minutes.
+      BigInt expectedNumeratorAt(int i) {
+        final rampSteps = i - 4;
+        return BigInt.from(rampSteps > 0 ? 42 + rampSteps : 42);
+      }
+
+      for (final n in [0, 1, 4, 5, 10, 37, 100, 500]) {
         final here = GameState.prestigeRequirementAtCount(n);
         final next = GameState.prestigeRequirementAtCount(n + 1);
+        final expectedNumerator = expectedNumeratorAt(n);
         // Compared as a rational rather than round-tripping a 300-digit
-        // BigInt through a double. Each level floors once, so next * 10 and
-        // here * 21 agree only to within the accumulated truncation, which
-        // is bounded by the numerator (21).
-        final drift = next * BigInt.from(10) - here * BigInt.from(21);
-        expect(drift.abs(), lessThanOrEqualTo(BigInt.from(21)),
+        // BigInt through a double. Each level floors once, so next * 20 and
+        // here * expectedNumerator agree only to within the accumulated
+        // truncation, which is bounded by the numerator.
+        final drift = next * BigInt.from(20) - here * expectedNumerator;
+        expect(drift.abs(), lessThanOrEqualTo(expectedNumerator),
             reason: 'growth drifted at prestige $n by $drift');
+        if (n < 4) {
+          expect(expectedNumerator, BigInt.from(42),
+              reason: 'first 5 prestiges must stay at flat 2.1x growth');
+        }
+      }
+    });
+
+    test('growth ratio strictly increases past the first 5 prestiges', () {
+      double ratioAt(int n) {
+        final here = GameState.prestigeRequirementAtCount(n).toDouble();
+        final next = GameState.prestigeRequirementAtCount(n + 1).toDouble();
+        return next / here;
+      }
+
+      for (var n = 0; n < 4; n++) {
+        expect(ratioAt(n), closeTo(2.1, 1e-6),
+            reason: 'prestige $n must still use the flat early ratio');
+      }
+      var prev = ratioAt(4);
+      for (var n = 5; n < 60; n++) {
+        final ratio = ratioAt(n);
+        expect(ratio, greaterThan(prev),
+            reason: 'ratio must keep climbing past prestige $n');
+        prev = ratio;
       }
     });
 

@@ -335,10 +335,18 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     return 1.0 + per * maxed;
   }
 
+  /// Surge Protocol Nexus node: +5% all production per level (max level 5).
+  double get nexusSurgeProductionMultiplier =>
+      1.0 + _nexusLevel('surge_protocol') * 0.05;
+
   /// Everything that multiplies all production (idle and click) outside of
-  /// the prestige multiplier: achievements, Resonance Prism, Epochs.
+  /// the prestige multiplier: achievements, Resonance Prism, Epochs, Surge
+  /// Protocol.
   double get globalProductionMultiplier =>
-      achievementBonus * resonancePrismMultiplier * epochProductionMultiplier;
+      achievementBonus *
+      resonancePrismMultiplier *
+      epochProductionMultiplier *
+      nexusSurgeProductionMultiplier;
 
   NeuralNetwork neuralNetwork = NeuralNetwork.initial();
   bool get neuralNetworkUnlocked => _nexusLevel('neural_genesis') >= 1;
@@ -836,10 +844,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     final level = _nexusLevel('opt_protocol');
     return (1.0 - level * 0.01).clamp(0.01, 1.0);
   }
-
-  /// Basis points (1/100 of 1%) of pre-prestige net worth paid after prestige.
-  int get surgeProtocolNetWorthCarryBps =>
-      _nexusLevel('surge_protocol') * 50 + shopInventory.surgeCarryBps;
 
   /// Multiplier applied to the prestige delta (Enhanced Extraction).
   double get prestigeDeltaMultiplier {
@@ -1493,22 +1497,44 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   /// This is the single most important pacing constant in the game. The reward
   /// grows at [prestigeRewardGrowth] (1.35), so if the requirement were flat
   /// the loop would run *backwards* — every prestige cheaper in real terms than
-  /// the last, with PP/hour compounding without limit. 2.1 is tuned so run
-  /// times bottom out around prestige 7 and then grow, putting prestige 13 at
-  /// roughly 36 cumulative hours with PP/hour declining after run 10.
+  /// the last, with PP/hour compounding without limit. 2.1 is the flat ratio
+  /// used for the first [prestigeGrowthRampStart] prestiges, tuned so a new
+  /// player gets a stable, predictable early ramp.
   ///
-  /// Held as 21/10 rather than a double on purpose: computing
+  /// Held as 42/20 rather than a double on purpose: computing
   /// `base * pow(2.1, n)` in floating point and handing the result to
   /// `BigInt.from` saturates at int64 max around prestige 35, which silently
-  /// flattens the curve back into the bug this constant exists to fix.
-  static final BigInt _prestigeGrowthNumerator = BigInt.from(21);
-  static final BigInt _prestigeGrowthDenominator = BigInt.from(10);
+  /// flattens the curve back into the bug this constant exists to fix. 42/20
+  /// (rather than 21/10) leaves room for the ramp below to step the ratio up
+  /// by an exact 1/20 (0.05) per prestige.
+  static final BigInt _prestigeGrowthNumerator = BigInt.from(42);
+  static final BigInt _prestigeGrowthDenominator = BigInt.from(20);
 
-  /// Convenience view of the growth factor for docs and tests.
+  /// Number of early prestiges (indices 0 until this) that keep the flat
+  /// [prestigeRequirementGrowth] ratio, so newer players get a stable,
+  /// familiar ramp before things start ramping up.
+  static const int prestigeGrowthRampStart = 5;
+
+  /// Growth ratio numerator applied when advancing from [i] completed
+  /// prestiges to [i + 1]. Flat at [_prestigeGrowthNumerator] (2.1x) for the
+  /// first [prestigeGrowthRampStart] transitions; after that the ratio itself
+  /// grows by 0.05x per additional prestige, so the requirement grows
+  /// super-exponentially and late-game prestiges can't be blown through in a
+  /// couple of minutes the way flat 2.1x growth allowed once production
+  /// upgrades compounded.
+  static BigInt _prestigeGrowthNumeratorAt(int i) {
+    final rampSteps = i - (prestigeGrowthRampStart - 1);
+    return rampSteps > 0
+        ? _prestigeGrowthNumerator + BigInt.from(rampSteps)
+        : _prestigeGrowthNumerator;
+  }
+
+  /// Convenience view of the (early, flat) growth factor for docs and tests.
   static const double prestigeRequirementGrowth = 2.1;
 
-  /// Hard ceiling on the exponent. 100M x 2.1^1000 is about 1e338 — far past
-  /// anything reachable — so clamping here costs nothing and keeps the BigInt
+  /// Hard ceiling on the exponent. Even before the ramp above, 100M x 2.1^1000
+  /// is already far past anything reachable, and the ramp only grows faster
+  /// from there — so clamping here costs nothing and keeps the BigInt
   /// arithmetic from blowing up if a corrupt save reports a wild count.
   static const int maxPrestigeRequirementExponent = 1000;
 
@@ -1556,9 +1582,11 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     if (exponent > maxPrestigeRequirementExponent) {
       exponent = maxPrestigeRequirementExponent;
     }
-    return base *
-        _prestigeGrowthNumerator.pow(exponent) ~/
-        _prestigeGrowthDenominator.pow(exponent);
+    var numerator = BigInt.one;
+    for (var i = 0; i < exponent; i++) {
+      numerator *= _prestigeGrowthNumeratorAt(i);
+    }
+    return base * numerator ~/ _prestigeGrowthDenominator.pow(exponent);
   }
 
   /// Base PP awarded by the first prestige.
@@ -2709,7 +2737,7 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
       case ShopEffect.idleAmplifier:
       case ShopEffect.chronoLensPro:
       case ShopEffect.collapseEfficiency:
-      case ShopEffect.surgeProtocol:
+      case ShopEffect.catalystCore:
       case ShopEffect.neuralPatron:
       case ShopEffect.prestigeDividend:
         shopInventory.grantPermanent(productId);
@@ -3420,7 +3448,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> prestige() async {
-    final netWorthBeforePrestige = number;
     final pointsToEarn = calculatePrestigePoints(number);
     if (pointsToEarn <= 0.0) return;
 
@@ -3487,16 +3514,6 @@ class GameState extends ChangeNotifier with WidgetsBindingObserver {
     _echoRecentGains.clear();
     _echoClickCounter = 0;
     _recalculateDerivedStatsFromUpgrades();
-
-    final carryBps = surgeProtocolNetWorthCarryBps;
-    if (carryBps > 0 && netWorthBeforePrestige > BigInt.zero) {
-      final carried = (netWorthBeforePrestige * BigInt.from(carryBps)) ~/
-          BigInt.from(10000);
-      if (carried > BigInt.zero) {
-        number += carried;
-        _updateHighestNumber();
-      }
-    }
 
     // However the player got here, the prestige chapter has done its job.
     _seenBeats.add(TutorialStep.prestigeReady);

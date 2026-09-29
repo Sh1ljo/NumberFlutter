@@ -17,7 +17,7 @@ class ShopCatalog {
   static const String idleAmplifier = 'idle_amplifier';
   static const String chronoLensPro = 'chrono_lens_pro';
   static const String collapseEfficiency = 'collapse_efficiency';
-  static const String surgeProtocol = 'surge_protocol_shop';
+  static const String catalystCore = 'surge_protocol_shop';
   static const String neuralPatron = 'neural_patron';
   static const String prestigeDividend = 'prestige_dividend';
 
@@ -125,12 +125,12 @@ class ShopCatalog {
       effect: ShopEffect.collapseEfficiency,
     ),
     ShopProduct(
-      id: surgeProtocol,
-      name: 'Surge Protocol',
-      description: 'Carry +2% of net worth through each prestige',
+      id: catalystCore,
+      name: 'Catalyst Core',
+      description: '+10% click power and +10% idle generation permanently',
       priceLabel: '€3.99',
       kind: ShopProductKind.permanent,
-      effect: ShopEffect.surgeProtocol,
+      effect: ShopEffect.catalystCore,
     ),
     ShopProduct(
       id: neuralPatron,
